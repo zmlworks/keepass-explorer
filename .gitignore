@@ -1,0 +1,17 @@
+.gradle/
+.kotlin/
+build/
+app/build/
+kotpass/build/
+local.properties
+*.jks
+*.keystore
+keystore.properties
+.idea/
+*.iml
+.secrets
+*.secret
+# Local KeePass test DBs / fixture lists (never commit user files or passwords)
+*.kdbx
+fixtures.properties
+app/src/test/resources/kdbx-fixtures/

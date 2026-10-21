@@ -1,0 +1,226 @@
+package io.github.zmlworks.kpexplorer
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
+import android.text.TextUtils
+import android.view.GestureDetector
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.ListView
+import android.widget.TextView
+import android.widget.Toast
+import io.github.zmlworks.kpexplorer.db.Kdbx
+import io.github.zmlworks.kpexplorer.ui.Dlg
+import io.github.zmlworks.kpexplorer.ui.Menus
+import io.github.zmlworks.kpexplorer.ui.Px
+import io.github.zmlworks.kpexplorer.ui.W
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/** Backup folder window: list, one-tap create, export (SAF), share, restore, delete. */
+class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
+    private val ctx = a
+    private val root = W.vbox(ctx)
+    override val view: View get() = root
+    var files: List<File> = emptyList()
+        private set
+    var selected: File? = null
+    private val listHolder = FrameLayout(ctx)
+    private lateinit var status: TextView
+    private val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneId.systemDefault())
+
+    init {
+        val cap = W.titleBar(ctx, "バックアップ - KeePass Explorer", Px.floppy16, onClose = { a.showExplorer() })
+        root.addView(cap.bar, W.lp())
+        val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
+        fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
+        b("今すぐ作成") { create() }
+        b("エクスポート...") { selected?.let { export(it) } ?: need() }
+        b("共有...") { selected?.let { share(it) } ?: need() }
+        b("復元...") { selected?.let { restore(it) } ?: need() }
+        b("削除") { selected?.let { delete(it) } ?: need() }
+        root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
+        val addr = W.hbox(ctx).apply { setPadding(W.dp(6), W.dp(2), W.dp(4), W.dp(5)) }
+        addr.addView(W.text(ctx, "場所", 14f), W.lp(W.WRAP, W.WRAP, r = 6))
+        addr.addView(W.text(ctx, displayPath(), 14f).apply {
+            background = W.Bevel(W.Style.FIELD); setPadding(W.dp(6), W.dp(7), W.dp(6), W.dp(7)); isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.START
+        }, W.lp(0, W.WRAP, 1f))
+        root.addView(addr, W.lp())
+        listHolder.background = W.Bevel(W.Style.FIELD)
+        listHolder.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
+        root.addView(listHolder, W.lp(W.MATCH, 0, 1f, l = 2, r = 2))
+        val sb = W.hbox(ctx).apply { setPadding(W.dp(2), W.dp(3), W.dp(2), W.dp(2)) }
+        status = W.text(ctx, "", 13f).apply { background = W.Bevel(W.Style.THIN_SUNKEN); setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(5)) }
+        sb.addView(status, W.lp(0, W.WRAP, 1f))
+        root.addView(sb, W.lp())
+        reload()
+    }
+
+    private fun displayPath(): String {
+        val p = a.store.backupDir.absolutePath
+        val i = p.indexOf("/Android/")
+        return if (i >= 0) "内部ストレージ" + p.substring(i) else p
+    }
+
+    private fun need() = Dlg.message(ctx, "バックアップ", "先に一覧からバックアップを選んでください。", 'i')
+
+    fun reload() {
+        files = a.store.backups()
+        if (selected != null && files.none { it.name == selected!!.name }) selected = null
+        listHolder.removeAllViews()
+        val col = W.vbox(ctx).apply { setBackgroundColor(W.WINDOW) }
+        val header = W.hbox(ctx)
+        fun h(s: String, w: Int, weight: Float) = header.addView(W.text(ctx, s, 13f).apply {
+            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(6), W.dp(4), W.dp(6))
+        }, W.lp(w, W.WRAP, weight))
+        h("名前", 0, 1f); h("サイズ", W.dp(70), 0f); h("更新日時", W.dp(122), 0f)
+        col.addView(header)
+        val list = ListView(ctx)
+        list.divider = null
+        list.selector = android.graphics.drawable.ColorDrawable(0)
+        W.classicScrollbars(list)
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = files.size
+            override fun getItem(p: Int) = files[p]
+            override fun getItemId(p: Int) = p.toLong()
+            override fun getView(p: Int, c: View?, parent: ViewGroup?): View {
+                val f = files[p]
+                val sel = f.name == selected?.name
+                val row = W.hbox(ctx).apply { setPadding(W.dp(4), 0, 0, 0); minimumHeight = W.dp(40) }
+                row.addView(ImageView(ctx).apply {
+                    setImageDrawable(Px.drawable(ctx, if (sel) Px.selected(Px.floppy16) else Px.floppy16, W.iconScale()))
+                }, W.lp(W.WRAP, W.WRAP, r = 4))
+                val nb = FrameLayout(ctx)
+                nb.addView(W.text(ctx, f.name, 15f, color = if (sel) W.HILITE else W.TEXT).apply {
+                    isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(3), W.dp(2), W.dp(3), W.dp(2))
+                    if (sel) setBackgroundColor(W.NAVY)
+                }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
+                row.addView(nb, W.lp(0, W.WRAP, 1f))
+                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(70), W.WRAP))
+                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(122), W.WRAP))
+                return row
+            }
+        }
+        list.adapter = adapter
+        val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent) = true
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val pos = list.pointToPosition(e.x.toInt(), e.y.toInt())
+                selected = files.getOrNull(pos); adapter.notifyDataSetChanged(); updateStatus(); return true
+            }
+            override fun onLongPress(e: MotionEvent) {
+                val pos = list.pointToPosition(e.x.toInt(), e.y.toInt())
+                val f = files.getOrNull(pos) ?: return
+                selected = f; adapter.notifyDataSetChanged(); updateStatus()
+                val loc = IntArray(2); list.getLocationInWindow(loc)
+                Menus.at(list, loc[0] + e.x.toInt(), loc[1] + e.y.toInt(), menuFor(f))
+            }
+        })
+        list.setOnTouchListener { _, e -> gd.onTouchEvent(e); false }
+        if (files.isEmpty()) {
+            val f = FrameLayout(ctx); f.addView(list)
+            f.addView(W.text(ctx, "バックアップはまだありません。\n「今すぐ作成」またはエクスプローラーのフロッピーのボタンで作成できます。", 14f, color = W.SHADOW).apply {
+                gravity = Gravity.CENTER
+            }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(60); leftMargin = W.dp(16); rightMargin = W.dp(16) })
+            col.addView(f, W.lp(W.MATCH, 0, 1f))
+        } else col.addView(list, W.lp(W.MATCH, 0, 1f))
+        listHolder.addView(col)
+        updateStatus()
+    }
+
+    fun menuFor(f: File) = listOf(
+        Menus.Item("エクスポート (保存先を選ぶ)...") { export(f) },
+        Menus.Item("共有...") { share(f) },
+        Menus.sep(),
+        Menus.Item("このバックアップから復元...") { restore(f) },
+        Menus.sep(),
+        Menus.Item("削除") { delete(f) }
+    )
+
+    private fun updateStatus() {
+        val total = files.sumOf { it.length() }
+        status.text = selected?.let { "「${it.name}」を選択 — ${(it.length() + 1023) / 1024} KB" }
+            ?: "${files.size} 個のバックアップ (${(total + 1023) / 1024} KB)"
+    }
+
+    fun create() {
+        Session.flushAndWait()
+        runCatching { a.store.backup() }
+            .onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, "バックアップ: ${f.name}", Toast.LENGTH_SHORT).show() }
+            .onFailure { Dlg.message(ctx, "バックアップ", "作成できませんでした。\n$it", 'x') }
+    }
+
+    private fun export(f: File) {
+        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, f.name)
+        }
+        a.startForResult(i) { rc, data ->
+            val uri: Uri = data?.data ?: return@startForResult
+            if (rc != Activity.RESULT_OK) return@startForResult
+            runCatching { a.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(f.readBytes()) } }
+                .onSuccess { Toast.makeText(ctx, "エクスポートしました", Toast.LENGTH_SHORT).show() }
+                .onFailure { Dlg.message(ctx, "エクスポート", "書き込めませんでした。\n$it", 'x') }
+        }
+    }
+
+    private fun share(f: File) {
+        val uri = Uri.parse("content://${a.packageName}.backups/${Uri.encode(f.name)}")
+        val i = Intent(Intent.ACTION_SEND).apply {
+            type = "application/octet-stream"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri(f.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try { a.startActivity(Intent.createChooser(i, "バックアップを共有").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+        catch (t: Throwable) { Dlg.message(ctx, "共有", "共有できるアプリがありません。", '!') }
+    }
+
+    private fun restore(f: File) {
+        Dlg.confirm(ctx, "バックアップから復元", "現在のデータベースを「${f.name}」の内容で置き換えますか?\n\n置き換える前に、現在の内容も自動でバックアップします。", '!') {
+            val key = Session.compositeCopy() ?: return@confirm
+            val busy = Dlg.busy(ctx, "復元", "バックアップを確認しています…")
+            Session.flushAndWait()
+            Session.io.execute {
+                val r = runCatching {
+                    val bytes = f.readBytes()
+                    val db = Kdbx.open(bytes, key)
+                    val safety = a.store.backup()
+                    a.store.write(bytes)
+                    db to safety
+                }
+                key.fill(0)
+                a.runOnUiThread {
+                    busy.dismiss()
+                    r.onSuccess { (db, safety) ->
+                        Security.opened(a, db)
+                        a.explorer = null
+                        reload()
+                        Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
+                    }.onFailure { t ->
+                        Dlg.message(ctx, "復元", if (t is Kdbx.WrongPasswordException)
+                            "このバックアップは現在のマスターパスワードでは開けないため、復元できません。" else "復元できませんでした。\n$t", 'x')
+                    }
+                }
+            }
+        }
+    }
+
+    private fun delete(f: File) {
+        Dlg.confirm(ctx, "ファイルの削除の確認", "「${f.name}」を削除しますか?", '!') {
+            f.delete(); selected = null; reload()
+        }
+    }
+
+    override fun onBack(): Boolean { a.showExplorer(); return true }
+}

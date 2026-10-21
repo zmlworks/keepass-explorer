@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light only: the classic Windows look has no dark mode. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#000080</item>
+        <item name="android:colorPrimaryDark">#000080</item>
+        <item name="android:colorAccent">#000080</item>
+        <item name="android:colorBackground">#C0C0C0</item>
+        <item name="android:windowBackground">@android:color/darker_gray</item>
+        <item name="android:textColorPrimary">#000000</item>
+        <item name="android:textColorSecondary">#404040</item>
+        <item name="android:statusBarColor">#C0C0C0</item>
+        <item name="android:navigationBarColor">#C0C0C0</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+</resources>
