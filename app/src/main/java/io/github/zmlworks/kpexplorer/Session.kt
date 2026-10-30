@@ -7,7 +7,6 @@ import io.github.zmlworks.kpexplorer.db.Kdbx
 import io.github.zmlworks.kpexplorer.db.Store
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /**
  * The unlocked database (immutable kotpass model) and the auto-saver. Every change goes through [update];
@@ -36,9 +35,17 @@ object Session {
 
     val isOpen get() = db != null
 
+    /** Result of the last save task on [io] (null = ok). Written and read on the io thread. */
+    @Volatile private var lastIoError: Throwable? = null
+    /** A save started by [lock] failed after the session was gone; shown once by [takeLockSaveError]. */
+    @Volatile private var lockSaveError: String? = null
+
+    class SaveFailedException(cause: Throwable) : Exception("保存できませんでした: $cause", cause)
+
     fun open(d: KeePassDatabase) {
         generation++
         db = d; version = 0; savedVersion = 0; saveState = SaveState.SAVED
+        io.execute { lastIoError = null }
     }
 
     /** Apply a change and schedule an auto-save. */
@@ -69,6 +76,7 @@ object Session {
             try {
                 val bytes = Kdbx.encodeVerified(snap)
                 st.write(bytes)
+                lastIoError = null
                 main.post {
                     if (gen != generation) return@post
                     if (v > savedVersion) savedVersion = v
@@ -78,17 +86,33 @@ object Session {
                     if (saveState == SaveState.PENDING) main.postDelayed(saveRunnable, debounceMs)
                 }
             } catch (t: Throwable) {
-                main.post { if (gen == generation) { saveState = SaveState.ERROR; lastError = t.toString(); notifyListener() } }
+                lastIoError = t
+                main.post {
+                    if (gen == generation) { saveState = SaveState.ERROR; lastError = t.toString() }
+                    else lockSaveError = t.toString()   // locked meanwhile: report on the next screen
+                    notifyListener()
+                }
             }
         }
     }
 
-    /** Save synchronously from the caller's thread (used before backups / lock). */
-    fun flushAndWait(timeoutMs: Long = 30_000) {
+    /**
+     * Save pending changes, then run [task] on the io thread after that save (saves are serialized
+     * there, so [task] sees the saved file). [done] gets the result on the main thread; a failed
+     * save is a [SaveFailedException] and [task] is not run. Never blocks the main thread.
+     */
+    fun <T> afterSave(task: () -> T, done: (Result<T>) -> Unit) {
+        val open = db != null   // when locked there is nothing of ours to save
         flush()
-        val f = io.submit { }
-        try { f.get(timeoutMs, TimeUnit.MILLISECONDS) } catch (_: Exception) {}
+        io.execute {
+            val err = if (open) lastIoError else null
+            val r: Result<T> = if (err != null) Result.failure(SaveFailedException(err)) else runCatching(task)
+            main.post { done(r) }
+        }
     }
+
+    /** Error of a save that was still running when the database was locked (once). */
+    fun takeLockSaveError(): String? = lockSaveError.also { lockSaveError = null }
 
     val hasUnsaved get() = db != null && version != savedVersion
 

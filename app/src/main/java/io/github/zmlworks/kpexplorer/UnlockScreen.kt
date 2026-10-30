@@ -96,6 +96,9 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun toggleOptions() { options.visibility = if (options.visibility == View.GONE) View.VISIBLE else View.GONE }
 
     override fun onShown() {
+        Session.takeLockSaveError()?.let {
+            Dlg.message(ctx, "保存エラー", "ロックする直前の変更を保存できませんでした。最後の変更は失われた可能性があります。\n$it", 'x')
+        }
         if (!autoPrompted && a.vault.hasStoredKey() && Vault.forceAvailableForTest == null) {
             autoPrompted = true
             password.post { biometric() }
@@ -133,12 +136,13 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
 
     private fun replaceDb() {
         Dlg.confirm(ctx, "データベースの置き換え", "現在のデータベースをバックアップしてから削除し、セットアップに戻りますか?", '!') {
-            val r = runCatching { a.store.backup() }
-            r.onSuccess { f ->
-                a.store.delete(); a.vault.clear()
-                App.prefs(ctx).edit().remove("dbName").remove("lastGroup").apply()
-                Dlg.message(ctx, "データベースの置き換え", "バックアップ ${f.name} を作成しました。\nバックアップはアプリの backups フォルダーに残ります。") { a.route() }
-            }.onFailure { Dlg.message(ctx, "データベースの置き換え", "バックアップできなかったため中止しました。\n$it", 'x') }
+            Session.afterSave({ a.store.backup() }) { r ->
+                r.onSuccess { f ->
+                    a.store.delete(); a.vault.clear()
+                    App.prefs(ctx).edit().remove("dbName").remove("lastGroup").apply()
+                    Dlg.message(ctx, "データベースの置き換え", "バックアップ ${f.name} を作成しました。\nバックアップはアプリの backups フォルダーに残ります。") { a.route() }
+                }.onFailure { Dlg.message(ctx, "データベースの置き換え", "バックアップできなかったため中止しました。\n${it.message ?: it}", 'x') }
+            }
         }
     }
 }

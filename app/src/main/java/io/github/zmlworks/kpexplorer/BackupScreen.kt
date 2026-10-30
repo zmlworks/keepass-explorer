@@ -155,10 +155,12 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun create() {
-        Session.flushAndWait()
-        runCatching { a.store.backup() }
-            .onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, "バックアップ: ${f.name}", Toast.LENGTH_SHORT).show() }
-            .onFailure { Dlg.message(ctx, "バックアップ", "作成できませんでした。\n$it", 'x') }
+        val busy = Dlg.busy(ctx, "バックアップ", "保存してからバックアップしています…")
+        Session.afterSave({ a.store.backup() }) { r ->
+            busy.dismiss()
+            r.onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, "バックアップ: ${f.name}", Toast.LENGTH_SHORT).show() }
+             .onFailure { Dlg.message(ctx, "バックアップ", "作成できませんでした。\n${it.message ?: it}", 'x') }
+        }
     }
 
     private fun export(f: File) {
@@ -190,27 +192,28 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         Dlg.confirm(ctx, "バックアップから復元", "現在のデータベースを「${f.name}」の内容で置き換えますか?\n\n置き換える前に、現在の内容も自動でバックアップします。", '!') {
             val key = Session.compositeCopy() ?: return@confirm
             val busy = Dlg.busy(ctx, "復元", "バックアップを確認しています…")
-            Session.flushAndWait()
-            Session.io.execute {
-                val r = runCatching {
+            Session.afterSave({
+                try {
                     val bytes = f.readBytes()
                     val db = Kdbx.open(bytes, key)
                     val safety = a.store.backup()
                     a.store.write(bytes)
                     db to safety
-                }
+                } finally { key.fill(0) }
+            }) { r ->
                 key.fill(0)
-                a.runOnUiThread {
-                    busy.dismiss()
-                    r.onSuccess { (db, safety) ->
-                        Security.opened(a, db)
-                        a.explorer = null
-                        reload()
-                        Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
-                    }.onFailure { t ->
-                        Dlg.message(ctx, "復元", if (t is Kdbx.WrongPasswordException)
-                            "このバックアップは現在のマスターパスワードでは開けないため、復元できません。" else "復元できませんでした。\n$t", 'x')
-                    }
+                busy.dismiss()
+                r.onSuccess { (db, safety) ->
+                    Security.opened(a, db)
+                    a.explorer = null
+                    reload()
+                    Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
+                }.onFailure { t ->
+                    Dlg.message(ctx, "復元", when (t) {
+                        is Kdbx.WrongPasswordException -> "このバックアップは現在のマスターパスワードでは開けないため、復元できません。"
+                        is Session.SaveFailedException -> "現在の変更を保存できなかったため、復元を中止しました。\n${t.message}"
+                        else -> "復元できませんでした。\n$t"
+                    }, 'x')
                 }
             }
         }

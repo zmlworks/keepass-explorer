@@ -47,6 +47,21 @@ object Security {
         })
     }
 
+    /** After a master key change: enroll the new key; if that is cancelled, drop the stale old one. */
+    private fun reEnroll(a: MainActivity, done: () -> Unit) {
+        val c = Session.compositeCopy() ?: run { a.vault.clear(); return done() }
+        a.vault.enroll(a, c, object : Vault.Result {
+            override fun ok(composite: ByteArray?) {
+                Toast.makeText(a, "指紋認証を登録し直しました", Toast.LENGTH_SHORT).show(); done()
+            }
+            override fun fail(msg: String, invalidated: Boolean) {
+                a.vault.clear(); App.prefs(a).edit().putBoolean("bio", false).apply()
+                Dlg.message(a, "指紋認証", "指紋認証を登録し直せなかったため、無効にしました。" +
+                    (if (msg.isNotEmpty()) "\n$msg" else ""), '!') { done() }
+            }
+        })
+    }
+
     fun toggleBiometric(a: MainActivity, done: () -> Unit) {
         if (a.vault.hasStoredKey()) {
             Dlg.confirm(a, "指紋認証", "指紋認証を無効にしますか?\nキーストアの鍵を削除し、次回からはマスターパスワードで解除します。") {
@@ -76,13 +91,29 @@ object Security {
                     n1.text.isEmpty() -> { Dlg.message(a, "マスターパスワードの変更", "新しいパスワードを入力してください。", '!'); false }
                     else -> {
                         val nk = Kdbx.compositeKey(n1.text)
+                        val old = Session.compositeCopy()
                         Session.update { Kdbx.withCredentials(it, nk) }
                         nk.fill(0)
-                        Session.flush()
-                        val hadBio = a.vault.hasStoredKey()
-                        a.vault.clear()
-                        Dlg.message(a, "マスターパスワードの変更", "マスターパスワードを変更しました。" +
-                            if (hadBio) "\n続けて指紋認証を登録し直します。" else "") { if (hadBio) enroll(a, done) else done() }
+                        val busy = Dlg.busy(a, "マスターパスワードの変更", "保存しています…")
+                        // Report success only once the file with the new key is written and verified.
+                        Session.afterSave({ Unit }) { r ->
+                            busy.dismiss()
+                            r.onSuccess {
+                                old?.fill(0)
+                                val hadBio = a.vault.hasStoredKey()
+                                Dlg.message(a, "マスターパスワードの変更", "マスターパスワードを変更しました。" +
+                                    if (hadBio) "\n続けて指紋認証を登録し直します。" else "") {
+                                    // the stored fingerprint key still wraps the old master key: replace it
+                                    // (enroll keeps the old entry until the new one is stored), else drop it
+                                    if (hadBio) reEnroll(a, done) else done()
+                                }
+                            }.onFailure { t ->
+                                // the file still has the old key: keep it in memory too
+                                if (old != null) { Session.update { Kdbx.withCredentials(it, old) }; old.fill(0) }
+                                Dlg.message(a, "マスターパスワードの変更",
+                                    "保存できなかったため、マスターパスワードは変更されていません。\n${t.message ?: t}", 'x') { done() }
+                            }
+                        }
                         true
                     }
                 }

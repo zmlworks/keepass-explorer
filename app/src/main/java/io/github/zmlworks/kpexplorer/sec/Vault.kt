@@ -40,15 +40,25 @@ class Vault(ctx: Context) {
         } catch (_: Throwable) { false }
     }
 
-    fun clear() {
-        prefs.edit().clear().apply()
-        try { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS) } catch (_: Throwable) {}
+    /** Keystore alias of the stored blob ("alias" pref; 0.1.0 always used [ALIAS]). */
+    private fun currentAlias(): String = prefs.getString("alias", null) ?: ALIAS
+
+    private fun deleteAlias(alias: String) {
+        try { KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(alias) } catch (_: Throwable) {}
     }
 
-    private fun newKey(): SecretKey {
+    fun clear() {
+        val alias = currentAlias()
+        prefs.edit().clear().apply()
+        deleteAlias(alias)
+        if (alias != ALIAS) deleteAlias(ALIAS)
+    }
+
+    /** A fresh key under a new alias; the old alias stays until the new blob is stored. */
+    private fun newKey(alias: String): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        if (ks.containsAlias(ALIAS)) ks.deleteEntry(ALIAS)
-        val b = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+        if (ks.containsAlias(alias)) ks.deleteEntry(alias)
+        val b = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
@@ -62,7 +72,7 @@ class Vault(ctx: Context) {
 
     private fun existingKey(): SecretKey? {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        return ks.getKey(ALIAS, null) as? SecretKey
+        return ks.getKey(currentAlias(), null) as? SecretKey
     }
 
     private fun prompt(activity: Activity, title: String, subtitle: String, negative: String): BiometricPrompt {
@@ -83,12 +93,15 @@ class Vault(ctx: Context) {
     /** Ask for a fingerprint and store [composite] wrapped by a fresh Keystore key. [composite] is wiped. */
     fun enroll(activity: Activity, composite: ByteArray, r: Result) {
         val cipher: Cipher
+        val oldAlias = if (hasStoredKey()) currentAlias() else null
+        val alias = if (oldAlias == ALIAS + ".b") ALIAS + ".a" else ALIAS + ".b"
         try {
-            val key = newKey()
+            val key = newKey(alias)
             cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key)
         } catch (t: Throwable) {
             composite.fill(0)
+            deleteAlias(alias)
             r.fail("キーストアを準備できませんでした: ${t.javaClass.simpleName}", false)
             return
         }
@@ -99,17 +112,23 @@ class Vault(ctx: Context) {
                         try {
                             val c = result.cryptoObject.cipher!!
                             val ct = c.doFinal(composite)
-                            prefs.edit()
+                            check(prefs.edit()
                                 .putString("ct", Base64.encodeToString(ct, Base64.NO_WRAP))
                                 .putString("iv", Base64.encodeToString(c.iv, Base64.NO_WRAP))
-                                .apply()
+                                .putString("alias", alias)
+                                .commit()) { "prefs" }
+                            // the new blob is stored: only now drop the previous key
+                            if (oldAlias != null && oldAlias != alias) deleteAlias(oldAlias)
+                            if (oldAlias != ALIAS && alias != ALIAS) deleteAlias(ALIAS)
                             r.ok(null)
                         } catch (t: Throwable) {
+                            deleteAlias(alias)
                             r.fail("暗号化に失敗しました: ${t.javaClass.simpleName}", false)
                         } finally { composite.fill(0) }
                     }
                     override fun onAuthenticationError(code: Int, msg: CharSequence) {
                         composite.fill(0)
+                        deleteAlias(alias)   // cancelled: the previous key (if any) still works
                         r.fail(msg.toString(), false)
                     }
                 })

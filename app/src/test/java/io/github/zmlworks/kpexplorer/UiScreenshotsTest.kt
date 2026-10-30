@@ -80,6 +80,14 @@ class UiScreenshotsTest {
         return db
     }
 
+    private fun saveNow(): Result<Unit> {
+        var res: Result<Unit>? = null
+        Session.afterSave({ Unit }) { res = it }
+        repeat(1000) { if (res == null) { ShadowLooper.idleMainLooper(); Thread.sleep(10) } }
+        idle()
+        return res!!
+    }
+
     private fun idle() { repeat(40) { ShadowLooper.idleMainLooper(); Thread.sleep(5) } }
 
     private fun shot(v: View): Bitmap {
@@ -180,9 +188,22 @@ class UiScreenshotsTest {
         ex.moveTo(ids["Yahoo!メール"]!!, 0)
         assertEquals(0, Tree.indexInParent(Session.db!!, ids["Yahoo!メール"]!!))
 
-        Session.flushAndWait(); idle(); Session.flushAndWait(); idle()
+        assertTrue(saveNow().isSuccess)
         val disk = Kdbx.open(App.store(app()).read(), key)
         assertEquals(ids["仕事"], Tree.findEntry(disk, ids["Yahoo!メール"]!!)!!.first.uuid)
+
+        // a failed save is reported to afterSave callers (backup / restore / password change)
+        val dbDir = App.store(app()).dbFile.parentFile!!
+        dbDir.setWritable(false)
+        if (!dbDir.canWrite()) {
+            Session.update { Kdbx.withCredentials(it, key.copyOf()) }
+            val r = saveNow()
+            assertTrue(r.exceptionOrNull() is Session.SaveFailedException)
+            assertEquals(Session.SaveState.ERROR, Session.saveState)
+        }
+        dbDir.setWritable(true)
+        assertTrue(saveNow().isSuccess)
+        assertEquals(Session.SaveState.SAVED, Session.saveState)
 
         val st = App.store(app())
         st.backup(LocalDate.of(2026, 10, 12)); st.backup(LocalDate.of(2026, 10, 19)); st.backup(LocalDate.of(2026, 10, 21)); st.backup(LocalDate.of(2026, 10, 21))
