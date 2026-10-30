@@ -15,3 +15,8 @@ keystore.properties
 *.kdbx
 fixtures.properties
 app/src/test/resources/kdbx-fixtures/
+*.pfx
+*.p12
+*.pem
+*.ini
+.env

@@ -1,5 +1,9 @@
 # KeePass Explorer (v0.1.0 試作版)
 
+> このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
+> This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
+
+
 昔の Windows (95/98/2000) のエクスプローラー風の見た目で使う、KeePass (KDBX) 形式のパスワード／メモ帳アプリ (Android)。
 A KeePass (KDBX) password & memo manager for Android with a classic Windows-Explorer look. Japanese UI, light only.
 
