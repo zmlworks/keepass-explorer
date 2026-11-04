@@ -45,8 +45,10 @@ import kotlin.math.abs
 
 /**
  * Main window: navy title bar, toolbar (戻る / 上へ / 表示 / 新しいフォルダ / 新しい鍵 / 新しいメモ / 保存 / 検索 / メニュー),
- * "└" path tree, upper item pane (5-column icons or details) and lower preview pane, status bar.
- * Tap = select + preview, double tap = open, long press = context menu, long press + drag = move.
+ * "└" path tree, item pane (5-column icons or details) and, once something is selected, a lower preview pane.
+ * Folder: tap = open. Key / memo: tap = select + preview, tap the selected item again = open.
+ * Touch an item and move = drag (no long press); scroll from empty space or the scrollbar strip on the right.
+ * Long press without moving = context menu.
  */
 class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val ctx = a
@@ -61,14 +63,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val frame = FrameLayout(ctx)
     private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
     override val view: View get() = frame
-    private lateinit var caption: W.Caption
+    lateinit var caption: W.Caption
+        private set
     private val pathBox = FrameLayout(ctx)
     private val pathLines = ArrayList<View>()
     private val content = FrameLayout(ctx)
     private val preview = W.vbox(ctx, 8)
     private lateinit var previewScroll: ScrollView
-    private lateinit var statusLeft: TextView
-    private lateinit var statusRight: TextView
+    private lateinit var split: View
+    private var shownSaveError: String? = null
     private val tools = HashMap<String, View>()
     private var listView: AbsListView? = null
     private val ghost = ImageView(ctx).apply { visibility = View.GONE; alpha = 0.75f }
@@ -113,7 +116,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         tool("newFolder", Px.newFolder16, "フォルダ") { newFolder() }
         tool("newKey", Ico.newKey16, "鍵") { newKey() }
         tool("newMemo", Ico.newMemo16, "メモ") { newMemo() }
-        tool("save", Px.floppy16, "保存") { saveNow() }
+        tool("save", Px.floppy16, "保存") { Security.saveDialog(a) }
         tool("find", Px.find16, "検索") { askSearch() }
         tool("menu", Ico.menu16, "メニュー") { Menus.dropDown(tools["menu"]!!, mainMenu()) }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
@@ -127,7 +130,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         root.addView(content, W.lp(W.MATCH, 0, 1.15f, l = 2, r = 2))
 
         // splitter (drag to resize the two panes)
-        val split = View(ctx).apply { background = W.Bevel(W.Style.RAISED) }
+        split = View(ctx).apply { background = W.Bevel(W.Style.RAISED) }
         root.addView(split, W.lp(W.MATCH, W.dp(9), l = 2, r = 2))
         var startY = 0f; var startW = 0f
         split.setOnTouchListener { _, e ->
@@ -150,19 +153,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         preview.setBackgroundColor(W.WINDOW)
         root.addView(previewScroll, W.lp(W.MATCH, 0, 0.85f, l = 2, r = 2))
 
-        val sb = W.hbox(ctx).apply { setPadding(W.dp(2), W.dp(3), W.dp(2), W.dp(2)) }
-        statusLeft = W.text(ctx, "", 13f).apply {
-            background = W.Bevel(W.Style.THIN_SUNKEN); setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(5)); isSingleLine = true
-            ellipsize = TextUtils.TruncateAt.END
-        }
-        statusRight = W.text(ctx, "", 13f).apply {
-            background = W.Bevel(W.Style.THIN_SUNKEN); setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(5)); isSingleLine = true
-            setOnClickListener { Session.lastError?.let { Dlg.message(ctx, "保存エラー", it, 'x') } }
-        }
-        sb.addView(statusLeft, W.lp(0, W.WRAP, 1f))
-        sb.addView(statusRight, W.lp(W.dp(100), W.WRAP, l = 3))
-        root.addView(sb, W.lp())
-
         frame.addView(root, FrameLayout.LayoutParams(W.MATCH, W.MATCH))
         frame.addView(ghost, FrameLayout.LayoutParams(W.WRAP, W.WRAP))
     }
@@ -184,7 +174,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             pathBox.addView(W.text(ctx, "検索: $q", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
         } else {
             rows = Order.children(g)
-            caption.title.text = "${g.name.ifEmpty { "(名前なし)" }} - KeePass Explorer"
+            caption.title.text = "${groupLabel(g)} - KeePass Explorer"
             pathBox.addView(Parts.pathTree(ctx, path, onTap = { navigate(it.uuid) }, lines = pathLines))
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
@@ -214,22 +204,18 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         en("newFolder", search == null); en("newKey", search == null); en("newMemo", search == null)
     }
 
+    /** No status bar any more: only a save error is surfaced (once per distinct error). */
     fun updateStatus() {
         if (!Session.isOpen) return
-        val sel = rows.firstOrNull { it.uuid == selection }
-        val c = if (cut != null) "  (切り取り中)" else ""
-        statusLeft.text = when {
-            search != null -> "${rows.size} 件見つかりました"
-            sel != null -> "「${label(sel)}」を選択$c"
-            else -> "${rows.size} 個のオブジェクト$c"
-        }
-        statusRight.text = when (Session.saveState) {
-            Session.SaveState.SAVED -> "保存済み"
-            Session.SaveState.PENDING -> "未保存…"
-            Session.SaveState.SAVING -> "保存中…"
-            Session.SaveState.ERROR -> "⚠ 保存エラー"
+        val err = Session.lastError
+        if (Session.saveState == Session.SaveState.ERROR && err != null && err != shownSaveError) {
+            shownSaveError = err
+            Dlg.message(ctx, "保存エラー", "変更を保存できませんでした。\n$err", 'x')
         }
     }
+
+    /** The root folder has no name and is shown as "/". */
+    fun groupLabel(g: Group): String = if (g.uuid == Tree.root(db()).uuid) "/" else g.name.ifEmpty { "(名前なし)" }
 
     fun label(r: Order.Node): String = r.name.ifEmpty { if (r is Order.Node.F) "(名前なし)" else "(無題)" }
 
@@ -254,11 +240,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun updatePreview() {
         preview.removeAllViews()
         val r = rows.firstOrNull { it.uuid == selection }
-        if (r == null) {
-            preview.addView(W.text(ctx, "項目をタップすると、ここに内容が表示されます。\nダブルタップで開く / 長押しでメニュー / 長押ししたまま動かすと移動。", 14f, color = W.SHADOW)
-                .apply { setLineSpacing(0f, 1.2f) })
-            return
-        }
+        val vis = if (r == null) View.GONE else View.VISIBLE
+        previewScroll.visibility = vis; split.visibility = vis
+        if (r == null) return
+        previewScroll.scrollTo(0, 0)
         val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(W.icon(ctx, bmpFor(r, true).let { if (r.uuid == selection) unselected(r) else it }, maxOf(1, W.iconScale() - 2)), W.lp(W.WRAP, W.WRAP, r = 8))
         head.addView(W.text(ctx, label(r), 17f, true), W.lp(0, W.WRAP, 1f))
@@ -305,31 +290,74 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     // ------------------------------------------------------------------ item views
 
+    /**
+     * Touch handling (no GestureDetector):
+     *  - finger down on an item and moves past a small slop → drag that item (the list never sees the move);
+     *  - finger down on empty space, or in the scrollbar strip at the right edge ([gutter]) → normal list scrolling;
+     *  - no movement: short tap = folder opens / file selected (or opened if it was already selected);
+     *    long press = context menu (background menu on empty space).
+     */
     private fun attachGestures(v: AbsListView) {
         listView = v
-        val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent) = true
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                select(rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))?.uuid); return true
-            }
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-                rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))?.let { open(it) }; return true
-            }
-            override fun onLongPress(e: MotionEvent) {
-                val r = rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))
-                val loc = IntArray(2); v.getLocationOnScreen(loc)
-                val rx = loc[0] + e.x; val ry = loc[1] + e.y
-                // stop the list from scrolling: from now on the drag handler owns this gesture
-                val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
-                v.onTouchEvent(cancel); cancel.recycle()
-                if (r == null) { select(null); Menus.at(v, rx.toInt(), ry.toInt(), backgroundMenu()); return }
-                select(r.uuid)
-                beginDrag(r, rx, ry)
-            }
-        })
+        val slop = ViewConfiguration.get(ctx).scaledTouchSlop * 0.6f
+        val longMs = ViewConfiguration.getLongPressTimeout().toLong()
+        var downR: Order.Node? = null; var onItem = false; var x0 = 0f; var y0 = 0f; var moved = false; var longFired = false
+        val long = Runnable {
+            longFired = true
+            val loc = IntArray(2); v.getLocationOnScreen(loc)
+            val cancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { v.onTouchEvent(it); it.recycle() }
+            try { frame.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
+            val r = downR
+            if (r == null) { select(null); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), backgroundMenu()) }
+            else { if (r !is Order.Node.F) select(r.uuid); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r)) }
+        }
         v.setOnTouchListener { _, e ->
-            if (drag != null) { dragEvent(e); true }
-            else { gd.onTouchEvent(e); false }
+            if (drag != null) { dragEvent(e); return@setOnTouchListener true }
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    x0 = e.x; y0 = e.y; moved = false; longFired = false
+                    val inGutter = e.x >= v.width - gutter()
+                    downR = if (inGutter) null else rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))
+                    onItem = downR != null
+                    if (!inGutter) v.postDelayed(long, longMs)
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) {
+                        moved = true; v.removeCallbacks(long)
+                        val r = downR
+                        if (onItem && r != null && !longFired) {
+                            // take the gesture away from the list before it starts scrolling
+                            MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it); it.recycle() }
+                            beginDrag(r, e.rawX - (e.x - x0), e.rawY - (e.y - y0))
+                            drag!!.moving = true
+                            dragTo(e.rawX, e.rawY)
+                            return@setOnTouchListener true
+                        }
+                    }
+                    false
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.removeCallbacks(long)
+                    if (!moved && !longFired) tap(downR)
+                    false
+                }
+                MotionEvent.ACTION_CANCEL -> { v.removeCallbacks(long); false }
+                else -> false
+            }
+        }
+    }
+
+    /** Width of the right-edge strip that always scrolls (the list's scrollbar lives there). */
+    private fun gutter() = W.dp(28)
+
+    /** Folder: open. Key / memo: first tap selects, tapping the selected item again opens it. Empty: deselect. */
+    fun tap(r: Order.Node?) {
+        when {
+            r == null -> select(null)
+            r is Order.Node.F -> open(r)
+            r.uuid == selection -> open(r)
+            else -> select(r.uuid)
         }
     }
 
@@ -372,7 +400,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         grid.numColumns = 5
         grid.stretchMode = GridView.STRETCH_COLUMN_WIDTH
         grid.verticalSpacing = W.dp(4)
-        grid.setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(6))
+        grid.setPadding(W.dp(2), W.dp(6), gutter(), W.dp(6))
+        grid.scrollBarStyle = View.SCROLLBARS_OUTSIDE_INSET
         grid.clipToPadding = false
         grid.selector = android.graphics.drawable.ColorDrawable(0)
         grid.setBackgroundColor(W.WINDOW)
@@ -399,6 +428,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 return cell
             }
         }
+        grid.isScrollbarFadingEnabled = false
         attachGestures(grid)
         return if (rows.isEmpty()) empty(grid) else grid
     }
@@ -424,6 +454,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         h("更新日時", W.dp(92), 0f)
         col.addView(header, W.lp())
         val list = ListView(ctx)
+        list.setPadding(0, 0, gutter(), 0)
+        list.scrollBarStyle = View.SCROLLBARS_OUTSIDE_INSET
         list.divider = null
         list.selector = android.graphics.drawable.ColorDrawable(0)
         W.classicScrollbars(list)
@@ -459,6 +491,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 return row
             }
         }
+        list.isScrollbarFadingEnabled = false
         attachGestures(list)
         col.addView(if (rows.isEmpty()) empty(list) else list, W.lp(W.MATCH, 0, 1f))
         return col
@@ -476,7 +509,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun beginDrag(r: Order.Node, rx: Float, ry: Float) {
         drag = DragState(r.uuid, r, rx, ry)
         ghost.setImageDrawable(Px.drawable(ctx, unselected(r), maxOf(1, W.iconScale() - 1)))
-        try { frame.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
         notifyList()
     }
 
@@ -490,7 +522,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             }
             MotionEvent.ACTION_UP -> {
                 if (d.moving) { val target = drop; endDrag(); target?.let { performDrop(d.id, it) } }
-                else { endDrag(); val loc = IntArray(2); frame.getLocationInWindow(loc); Menus.at(frame, e.rawX.toInt(), e.rawY.toInt(), itemMenu(d.r)) }
+                else endDrag()
             }
             MotionEvent.ACTION_CANCEL -> endDrag()
         }
@@ -614,13 +646,27 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun searchFor(q: String) { search = q.trim().ifEmpty { null }; selection = null; refresh() }
 
-    private fun askSearch() {
-        Dlg.prompt(ctx, "検索", "探す文字列 (タイトル・ユーザー名・URL・メモ・タグ。#タグ で完全一致):", search ?: "", ok = "検索開始") { q ->
-            searchFor(q); true
+    /** Free text (title / user / URL / memo / tag) plus one-tap search by an already-used tag ("#tag"). */
+    fun askSearch(): ClassicDialog {
+        val col = W.vbox(ctx)
+        col.addView(W.text(ctx, "探す文字列 (タイトル・ユーザー名・URL・メモ・タグ。#タグ で完全一致):", 14f))
+        val f = W.field(ctx).apply { setText(search ?: "") }
+        col.addView(f, W.lp(W.MATCH, W.WRAP, t = 6))
+        val tags = Tree.allTags(db())
+        var dlg: ClassicDialog? = null
+        if (tags.isNotEmpty()) {
+            col.addView(W.text(ctx, "タグで検索:", 14f, true), W.lp(W.MATCH, W.WRAP, t = 10))
+            col.addView(Parts.tagChips(ctx, tags, emptySet()) { t -> dlg?.dismiss(); searchFor("#$t") }, W.lp(W.MATCH, W.WRAP, t = 4))
         }
+        dlg = ClassicDialog(ctx, "検索", col, listOf(
+            ClassicDialog.Btn("検索開始", true) { searchFor(f.text.toString()); true },
+            ClassicDialog.Btn("キャンセル")), scroll = true)
+        dlg.show()
+        return dlg
     }
 
     fun saveNow() {
+        Session.flush()
         Session.afterSave({ Unit }) { r ->
             r.onSuccess { Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show() }
              .onFailure { Dlg.message(ctx, "保存", "保存できませんでした。\n${it.message ?: it}", 'x') }
@@ -637,16 +683,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return listOf(
             Menus.Item("ロック") { a.lock() },
             Menus.sep(),
-            Menus.Item("バックアップを作成") { quickBackup() },
-            Menus.Item("バックアップの一覧...") { a.show(BackupScreen(a)) },
+            Menus.Item("アプリ内に保存 (日付.kdbx)") { Security.internalBackup(a) },
+            Menus.Item("外部に書き出す (パスワード付き)...") { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } },
+            Menus.Item("保存したファイルの一覧...") { a.show(BackupScreen(a)) },
             Menus.Item("ごみ箱を空にする", bin != null && (bin.groups.isNotEmpty() || bin.entries.isNotEmpty())) { askEmptyBin() },
             Menus.sep(),
-            Menus.Item("マスターパスワードの変更...") { Security.changePassword(a) { refresh() } },
-            Menus.Item(if (a.vault.hasStoredKey()) "指紋認証を無効にする" else "指紋認証を有効にする...", a.vault.isAvailable() || a.vault.hasStoredKey()) {
-                Security.toggleBiometric(a) { updateStatus() }
-            },
-            Menus.Item(if (a.pins.hasPin()) "PIN を変更..." else "PIN を設定...") { Security.setupPin(a) {} },
-            Menus.Item("PIN を解除", a.pins.hasPin()) { a.pins.clear(); Toast.makeText(ctx, "PIN を解除しました", Toast.LENGTH_SHORT).show() },
             Menus.Item("画面を保護 (スクリーンショット禁止)", checked = p.getBoolean("secure", true)) {
                 p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
             },
@@ -781,14 +822,5 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun copy(label: String, s: String, sensitive: Boolean) {
         Clip.copy(ctx, label, s, sensitive)
         Toast.makeText(ctx, "${label}をコピーしました" + if (sensitive) " (${Clip.CLEAR_MS / 1000} 秒後に消去)" else "", Toast.LENGTH_SHORT).show()
-    }
-
-    fun quickBackup() {
-        val busy = Dlg.busy(ctx, "バックアップ", "バックアップを作成しています…")
-        Session.afterSave({ a.store.backup() }) { res ->
-            busy.dismiss()
-            res.onSuccess { f -> statusLeft.text = "バックアップを作成しました: ${f.name}" }
-               .onFailure { Dlg.message(ctx, "バックアップ", "バックアップを作成できませんでした。\n${it.message ?: it}", 'x') }
-        }
     }
 }

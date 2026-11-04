@@ -17,7 +17,7 @@ import app.keemobile.kotpass.models.Group
 object Parts {
     /**
      * Folder path as an indented tree, one line per level:
-     *   メイン
+     *   /
      *     └フォルダ１
      *         └フォルダ２
      * Every line is a [View] tagged with the group uuid (drop target / tap to navigate).
@@ -25,7 +25,7 @@ object Parts {
     fun pathTree(ctx: Context, path: List<Group>, onTap: ((Group) -> Unit)? = null, lines: MutableList<View>? = null): LinearLayout {
         val box = W.vbox(ctx).apply { setPadding(W.dp(6), W.dp(3), W.dp(6), W.dp(4)) }
         path.forEachIndexed { i, g ->
-            val name = g.name.ifEmpty { "(名前なし)" }
+            val name = if (i == 0) "/" else g.name.ifEmpty { "(名前なし)" }
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = g.uuid; minimumHeight = W.dp(26) }
             row.setPadding(if (i == 0) 0 else W.dp(10) + W.dp(18) * (i - 1), 0, 0, 0)
             if (i > 0) row.addView(W.text(ctx, "└", 15f), W.lp(W.WRAP, W.WRAP))
@@ -70,10 +70,32 @@ object Parts {
         isClickable = true; setOnClickListener(f)
     }
 
-    /** Notebook paper: light-blue rule under every text line, red margin. */
+    /** Classic toggle buttons for tags; [on] tags are shown pressed with a check mark. */
+    fun tagChips(ctx: Context, tags: List<String>, on: Set<String>, onTap: (String) -> Unit): FlowLayout {
+        val chips = FlowLayout(ctx)
+        for (t in tags.take(80)) {
+            val sel = t in on
+            chips.addView(W.text(ctx, if (sel) "✓ $t" else t, 14f).apply {
+                background = W.Bevel(W.Style.BUTTON, if (sel) W.LIGHT else W.FACE).also { it.forcePressed = sel }
+                setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
+                isClickable = true; setOnClickListener { onTap(t) }
+            })
+        }
+        return chips
+    }
+
+    /**
+     * Notebook paper. One rule per text line, drawn just under that line's baseline from the real [getLayout]
+     * line bounds (so wrapped lines and mixed line heights stay aligned); below the last line the rules continue
+     * at [getLineHeight] spacing down to the bottom of the visible area. Everything is drawn in content
+     * coordinates, so the rules scroll together with the text. A red margin line runs down the left side.
+     */
     class RuledText(ctx: Context, editable: Boolean) : EditText(ctx) {
-        private val p = Paint().apply { color = 0xFF9EB8E0.toInt(); strokeWidth = maxOf(1f, W.px.toFloat()) }
+        private val rule = Paint().apply { color = 0xFF9EB8E0.toInt(); strokeWidth = maxOf(1f, W.px.toFloat()) }
         private val margin = Paint().apply { color = 0xFFE89090.toInt(); strokeWidth = maxOf(1f, W.px.toFloat()) }
+        private val r = android.graphics.Rect()
+        /** Rule positions drawn last (content coordinates) — exposed for tests. */
+        val ruleYs = ArrayList<Int>()
         init {
             setBackgroundColor(0xFFFFFFF4.toInt())
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
@@ -81,6 +103,8 @@ object Parts {
             gravity = Gravity.TOP or Gravity.START
             setPadding(W.dp(22), W.dp(8), W.dp(8), W.dp(8))
             setLineSpacing(W.dp(8).toFloat(), 1f)
+            includeFontPadding = false
+            isFallbackLineSpacing = false   // keep every line the same height (emoji / CJK fallback fonts)
             isSingleLine = false
             isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
@@ -89,12 +113,25 @@ object Parts {
             if (!editable) { isFocusable = false; isCursorVisible = false; keyListener = null; setTextIsSelectable(true) }
         }
         override fun onDraw(c: Canvas) {
-            val lh = lineHeight
-            val base = paddingTop + (layout?.getLineBaseline(0) ?: (lh - W.dp(8))) - paddingTop
-            val h = maxOf(height, (layout?.height ?: 0) + paddingTop + paddingBottom) + scrollY
-            var y = paddingTop + base + W.dp(4)
-            while (y < h) { c.drawLine(0f, y.toFloat(), width.toFloat(), y.toFloat(), p); y += lh }
-            c.drawLine(W.dp(16).toFloat(), 0f, W.dp(16).toFloat(), h.toFloat(), margin)
+            ruleYs.clear()
+            val gap = W.dp(4)                       // rule sits a little below the baseline (under descenders of Latin text)
+            val bottom = scrollY + height           // visible bottom in content coordinates
+            val l = layout
+            var last = -1
+            var step = lineHeight
+            if (l != null) {
+                for (i in 0 until lineCount) {
+                    val base = getLineBounds(i, r)  // baseline incl. padding, in content coordinates
+                    val y = base + gap
+                    ruleYs.add(y); last = y
+                    if (i > 0) step = maxOf(1, l.getLineBaseline(i) - l.getLineBaseline(i - 1))
+                }
+            }
+            var y = if (last < 0) extendedPaddingTop + (l?.getLineBaseline(0) ?: lineHeight) + gap else last + step
+            while (y < bottom) { ruleYs.add(y); y += step }
+            for (yy in ruleYs) if (yy >= scrollY) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
+            val mx = (scrollX + W.dp(16)).toFloat()
+            c.drawLine(mx, scrollY.toFloat(), mx, bottom.toFloat(), margin)
             super.onDraw(c)
         }
     }

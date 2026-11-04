@@ -1,9 +1,5 @@
 package io.github.zmlworks.kpexplorer
 
-import android.app.Activity
-import android.content.ClipData
-import android.content.Intent
-import android.net.Uri
 import android.text.TextUtils
 import android.view.GestureDetector
 import android.view.Gravity
@@ -27,7 +23,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Backup folder window: list, one-tap create, export (SAF), share, restore, delete. */
+/** Internal backups (app storage): list, create, password-protected export (SAF), restore, delete. */
 class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     private val ctx = a
     private val root = W.vbox(ctx)
@@ -36,7 +32,6 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         private set
     var selected: File? = null
     private val listHolder = FrameLayout(ctx)
-    private lateinit var status: TextView
     private val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneId.systemDefault())
 
     init {
@@ -45,8 +40,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
         fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
         b("今すぐ作成") { create() }
-        b("エクスポート...") { selected?.let { export(it) } ?: need() }
-        b("共有...") { selected?.let { share(it) } ?: need() }
+        b("外部に書き出す...") { selected?.let { export(it) } ?: need() }
         b("復元...") { selected?.let { restore(it) } ?: need() }
         b("削除") { selected?.let { delete(it) } ?: need() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
@@ -60,17 +54,11 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         listHolder.background = W.Bevel(W.Style.FIELD)
         listHolder.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
         root.addView(listHolder, W.lp(W.MATCH, 0, 1f, l = 2, r = 2))
-        val sb = W.hbox(ctx).apply { setPadding(W.dp(2), W.dp(3), W.dp(2), W.dp(2)) }
-        status = W.text(ctx, "", 13f).apply { background = W.Bevel(W.Style.THIN_SUNKEN); setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(5)) }
-        sb.addView(status, W.lp(0, W.WRAP, 1f))
-        root.addView(sb, W.lp())
         reload()
     }
 
     private fun displayPath(): String {
-        val p = a.store.backupDir.absolutePath
-        val i = p.indexOf("/Android/")
-        return if (i >= 0) "内部ストレージ" + p.substring(i) else p
+        return "アプリ内 / backups"
     }
 
     private fun need() = Dlg.message(ctx, "バックアップ", "先に一覧からバックアップを選んでください。", 'i')
@@ -130,7 +118,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         list.setOnTouchListener { _, e -> gd.onTouchEvent(e); false }
         if (files.isEmpty()) {
             val f = FrameLayout(ctx); f.addView(list)
-            f.addView(W.text(ctx, "バックアップはまだありません。\n「今すぐ作成」またはエクスプローラーのフロッピーのボタンで作成できます。", 14f, color = W.SHADOW).apply {
+            f.addView(W.text(ctx, "バックアップはまだありません。\n「今すぐ作成」またはツールバーの「保存」で作成できます。", 14f, color = W.SHADOW).apply {
                 gravity = Gravity.CENTER
             }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(60); leftMargin = W.dp(16); rightMargin = W.dp(16) })
             col.addView(f, W.lp(W.MATCH, 0, 1f))
@@ -140,19 +128,14 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun menuFor(f: File) = listOf(
-        Menus.Item("エクスポート (保存先を選ぶ)...") { export(f) },
-        Menus.Item("共有...") { share(f) },
+        Menus.Item("外部に書き出す (パスワード付き)...") { export(f) },
         Menus.sep(),
         Menus.Item("このバックアップから復元...") { restore(f) },
         Menus.sep(),
         Menus.Item("削除") { delete(f) }
     )
 
-    private fun updateStatus() {
-        val total = files.sumOf { it.length() }
-        status.text = selected?.let { "「${it.name}」を選択 — ${(it.length() + 1023) / 1024} KB" }
-            ?: "${files.size} 個のバックアップ (${(total + 1023) / 1024} KB)"
-    }
+    private fun updateStatus() {}
 
     fun create() {
         val busy = Dlg.busy(ctx, "バックアップ", "保存してからバックアップしています…")
@@ -163,29 +146,12 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         }
     }
 
+    /** Decrypt the internal copy with the current key, then write it out under a password the user chooses. */
     private fun export(f: File) {
-        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, f.name)
+        Security.askExportPassword(a, "keepass-explorer-${f.nameWithoutExtension}.kdbx") {
+            val key = Session.compositeCopy() ?: return@askExportPassword null
+            try { Kdbx.open(f.readBytes(), key) } finally { key.fill(0) }
         }
-        a.startForResult(i) { rc, data ->
-            val uri: Uri = data?.data ?: return@startForResult
-            if (rc != Activity.RESULT_OK) return@startForResult
-            runCatching { a.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(f.readBytes()) } }
-                .onSuccess { Toast.makeText(ctx, "エクスポートしました", Toast.LENGTH_SHORT).show() }
-                .onFailure { Dlg.message(ctx, "エクスポート", "書き込めませんでした。\n$it", 'x') }
-        }
-    }
-
-    private fun share(f: File) {
-        val uri = Uri.parse("content://${a.packageName}.backups/${Uri.encode(f.name)}")
-        val i = Intent(Intent.ACTION_SEND).apply {
-            type = "application/octet-stream"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            clipData = ClipData.newRawUri(f.name, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try { a.startActivity(Intent.createChooser(i, "バックアップを共有").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
-        catch (t: Throwable) { Dlg.message(ctx, "共有", "共有できるアプリがありません。", '!') }
     }
 
     private fun restore(f: File) {
@@ -210,7 +176,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
                     Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
                 }.onFailure { t ->
                     Dlg.message(ctx, "復元", when (t) {
-                        is Kdbx.WrongPasswordException -> "このバックアップは現在のマスターパスワードでは開けないため、復元できません。"
+                        is Kdbx.WrongPasswordException -> "このバックアップは現在の鍵では開けないため、復元できません。"
                         is Session.SaveFailedException -> "現在の変更を保存できなかったため、復元を中止しました。\n${t.message}"
                         else -> "復元できませんでした。\n$t"
                     }, 'x')

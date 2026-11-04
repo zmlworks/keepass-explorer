@@ -12,7 +12,6 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import io.github.zmlworks.kpexplorer.db.Store
-import io.github.zmlworks.kpexplorer.sec.PinVault
 import io.github.zmlworks.kpexplorer.sec.Vault
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.Menus
@@ -31,7 +30,6 @@ class MainActivity : Activity() {
 
     lateinit var store: Store
     lateinit var vault: Vault
-    lateinit var pins: PinVault
     lateinit var host: FrameLayout
     var screen: Screen? = null
         private set
@@ -46,7 +44,6 @@ class MainActivity : Activity() {
         App.wipeOldData(this)
         store = App.store(this)
         vault = Vault(this)
-        pins = PinVault(this)
         applySecure()
         host = FrameLayout(this)
         host.setOnApplyWindowInsetsListener { v, ins ->

@@ -124,9 +124,19 @@ object Order {
         val stored = e.customData[CD_FIELDS]?.value?.split('\n')?.filter { it.isNotEmpty() }
         val base = stored?.map { if (it.startsWith("-")) it.substring(1) to false else it to true } ?: DEFAULT_LAYOUT.map { it to true }
         val known = base.map { it.first }.toSet()
-        val extra = (DEFAULT_LAYOUT + customFieldNames(e)).filter { it !in known }.map { it to true }
+        // with a stored layout, a standard field the user deleted stays deleted unless it has content (e.g. edited elsewhere)
+        val std = if (stored == null) DEFAULT_LAYOUT else DEFAULT_LAYOUT.filter { hasContent(e, it) }
+        val extra = (std + customFieldNames(e)).filter { it !in known }.map { it to true }
         val customs = customFieldNames(e).toSet()
         return (base + extra).filter { (k, _) -> k in DEFAULT_LAYOUT || k in customs }
+    }
+
+    /** Whether a layout key has something to show (standard field, @Tags, @OTP). */
+    fun hasContent(e: Entry, key: String): Boolean = when (key) {
+        F_TITLE -> true
+        F_TAGS -> e.tags.isNotEmpty()
+        F_OTP -> otpUri(e) != null
+        else -> string(e, key).isNotEmpty()
     }
 
     fun encodeLayout(l: List<Pair<String, Boolean>>): String = l.joinToString("\n") { (k, v) -> if (v) k else "-$k" }

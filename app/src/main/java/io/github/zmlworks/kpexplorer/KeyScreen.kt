@@ -28,8 +28,8 @@ import java.util.UUID
 object KeyFields {
     val fmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss").withZone(ZoneId.systemDefault())
     fun label(k: String) = when (k) {
-        Order.F_TITLE -> "title:"; Order.F_USER -> "User:"; Order.F_PASS -> "Pass:"; Order.F_URL -> "URL:"
-        Order.F_TAGS -> "Tag:"; Order.F_OTP -> "ワンタイムパスワード:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
+        Order.F_TITLE -> "Title:"; Order.F_USER -> "User:"; Order.F_PASS -> "Pass:"; Order.F_URL -> "URL:"
+        Order.F_TAGS -> "Tag:"; Order.F_OTP -> "OTP:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
     }
     fun lastModified(e: Entry?): String = "Last Modified: " + (e?.times?.lastModificationTime?.let { fmt.format(it) } ?: "-")
 
@@ -53,7 +53,8 @@ object KeyFields {
 
 /**
  * Key (password entry) window: ← + title, folder path tree, Last Modified, then the fields in the per-key
- * layout (title / User / Pass / URL / Tag / ワンタイムパスワード / Memo / custom). Passwords are shown in clear.
+ * layout (Title / User / Pass / URL / Tag / OTP / Memo / custom), each "Label: [input]" on one line except Memo.
+ * Passwords are shown in clear. 戻る / 保存 are repeated at the bottom of the page.
  * [entryId] null = new key in [parent], created on the first save.
  */
 class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private val parent: UUID) : MainActivity.Screen {
@@ -69,6 +70,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private var otpView: KeyFields.OtpView? = null
     private lateinit var bar: Parts.AppBar
     private val body = W.vbox(ctx, 8)
+    private val allTags: List<String> = Session.db?.let { Tree.allTags(it) } ?: emptyList()
+    private var chips: android.widget.FrameLayout? = null
+    lateinit var scroll: ScrollView
+        private set
 
     private fun entry(): Entry? = entryId?.let { id -> Session.db?.let { Tree.findEntry(it, id)?.second } }
 
@@ -84,6 +89,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         bar.bar.addView(Parts.barButton(ctx, "≡", "メニュー") { v -> Menus.dropDown(v, menu()) }, W.lp(W.WRAP, W.dp(38), l = 4))
         root.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
+        scroll = sv
         sv.addView(body)
         root.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
@@ -102,25 +108,69 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             if (!vis) continue
             when (k) {
                 Order.F_OTP -> if (!values[Order.OTP].isNullOrBlank()) otpRow()
-                Order.F_TAGS -> fieldRow(k, tags, false) { tags = it }
+                Order.F_TAGS -> { fieldRow(k, tags, false) { tags = it; renderChips() }; tagPicker() }
                 Order.F_NOTES -> fieldRow(k, values["Notes"].orEmpty(), true) { values["Notes"] = it }
-                else -> {
-                    val name = if (k == Order.F_URL) "URL" else k
-                    fieldRow(k, values[name].orEmpty(), false) { values[name] = it; if (name == "Title") bar.title.text = titleText() }
-                }
+                else -> fieldRow(k, values[k].orEmpty(), false) { values[k] = it; if (k == "Title") bar.title.text = titleText() }
             }
         }
+        // 戻る / 保存 again at the very bottom (long keys: no need to scroll back up)
+        body.addView(View(ctx), W.lp(W.MATCH, 0, 1f))
+        body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10, b = 6))
+        val foot = W.hbox(ctx).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        foot.addView(W.button(ctx, "← 戻る") { onBack() }.apply { minWidth = W.dp(96) }, W.lp(W.WRAP, W.WRAP))
+        foot.addView(W.button(ctx, "保存", true) { save() }.apply { minWidth = W.dp(96) }, W.lp(W.WRAP, W.WRAP, l = 8))
+        body.addView(foot, W.lp(W.MATCH, W.WRAP, b = 4))
+    }
+
+    /** Already-used tags as toggle buttons under the Tag row (tap = add / remove). */
+    private fun tagPicker() {
+        if (allTags.isEmpty()) return
+        val holder = android.widget.FrameLayout(ctx)
+        chips = holder
+        body.addView(holder, W.lp(W.MATCH, W.WRAP, l = W.dp(4) / maxOf(1, W.px), b = 4))
+        renderChips()
+    }
+
+    private fun tagState(): Pair<List<String>, String> {
+        val s = tags
+        val toks = Tree.parseTags(s)
+        val last = toks.lastOrNull().orEmpty()
+        // still typing a tag (not yet followed by a space and not an existing tag) → filter the chips by it
+        val partial = if (s.isEmpty() || s.last().isWhitespace() || last in allTags) "" else last
+        return (if (partial.isEmpty()) toks else toks.dropLast(1)) to partial
+    }
+
+    private fun renderChips() {
+        val h = chips ?: return
+        h.removeAllViews()
+        val (have, partial) = tagState()
+        val list = if (partial.isEmpty()) allTags else
+            allTags.filter { it.startsWith(partial, true) } + allTags.filter { !it.startsWith(partial, true) && it.contains(partial, true) }
+        h.addView(Parts.tagChips(ctx, list, have.toSet()) { t -> toggleTag(t) })
+    }
+
+    fun toggleTag(t: String) {
+        val (have, _) = tagState()
+        val next = if (t in have) have - t else have + t
+        val text = Tree.formatTags(next).let { if (it.isEmpty()) "" else "$it " }
+        editors[Order.F_TAGS]?.let { it.setText(text); it.setSelection(text.length) } ?: run { tags = text; dirty = true }
     }
 
     private fun small(s: String, f: () -> Unit) = W.button(ctx, s) { f() }.apply {
         minWidth = W.dp(52); minHeight = W.dp(36); setPadding(W.dp(6), W.dp(4), W.dp(6), W.dp(4)); textSize = 13f
     }
 
+    private fun labelView(k: String) = W.text(ctx, KeyFields.label(k), 14f, true).apply {
+        isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+    }
+
+    /** "Label: [input] [コピー]" on one line; Memo (multi) keeps its label above a multi-line box. */
     private fun fieldRow(k: String, value: String, multi: Boolean, set: (String) -> Unit) {
-        body.addView(W.text(ctx, KeyFields.label(k), 14f, true), W.lp(W.MATCH, W.WRAP, t = 4))
+        if (multi) body.addView(labelView(k), W.lp(W.MATCH, W.WRAP, t = 6))
         val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        if (!multi) row.addView(labelView(k), W.lp(W.dp(62), W.WRAP, r = 4))
         val f = W.field(ctx, multi = multi)
-        if (multi) f.minLines = 4
+        if (multi) f.minLines = 5 else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
         if (k == Order.F_PASS) f.typeface = android.graphics.Typeface.MONOSPACE
         f.setText(value)
         f.addTextChangedListener(object : TextWatcher {
@@ -132,10 +182,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         row.addView(f, W.lp(0, W.WRAP, 1f))
         when (k) {
             Order.F_USER -> row.addView(small("コピー") { copy("ユーザー名", f.text.toString(), false) }, W.lp(W.WRAP, W.WRAP, l = 4))
-            Order.F_PASS -> {
-                row.addView(small("コピー") { copy("パスワード", f.text.toString(), true) }, W.lp(W.WRAP, W.WRAP, l = 4))
-                row.addView(small("生成") { f.setText(generate()) }, W.lp(W.WRAP, W.WRAP, l = 4))
-            }
+            Order.F_PASS -> row.addView(small("コピー") { copy("パスワード", f.text.toString(), true) }, W.lp(W.WRAP, W.WRAP, l = 4))
             Order.F_TITLE, Order.F_TAGS, Order.F_NOTES, Order.F_URL -> {}
             else -> row.addView(small("コピー") { copy(k, f.text.toString(), true) }, W.lp(W.WRAP, W.WRAP, l = 4))
         }
@@ -143,8 +190,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     private fun otpRow() {
-        body.addView(W.text(ctx, KeyFields.label(Order.F_OTP), 14f, true), W.lp(W.MATCH, W.WRAP, t = 4))
         val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(labelView(Order.F_OTP), W.lp(W.dp(62), W.WRAP, r = 4))
         val o = KeyFields.OtpView(ctx) { values[Order.OTP] }.apply {
             background = W.Bevel(W.Style.FIELD); setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
         }
@@ -170,9 +217,14 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Menus.Item("保存") { save() },
         Menus.sep(),
         Menus.Item("カスタム欄を追加...") { addCustom() },
+    ) + Order.DEFAULT_LAYOUT.filter { k -> k != Order.F_OTP && layout.none { it.first == k } }.map { k ->
+        Menus.Item("「${KeyFields.label(k).removeSuffix(":")}」欄を戻す") { restoreField(k) }
+    } + listOf(
         Menus.Item("欄の編集 (表示・順番・削除)...") { editLayout() },
         Menus.Item(if (values[Order.OTP].isNullOrBlank()) "ワンタイムパスワードを設定..." else "ワンタイムパスワードの設定を変更...") { setupOtp() },
-        Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) ?: run { values["Password"] = generate(); dirty = true; build() } },
+        Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) ?: run {
+            values["Password"] = generate(); if (layout.none { it.first == Order.F_PASS }) layout.add(minOf(1, layout.size), Order.F_PASS to true)
+            dirty = true; build() } },
         Menus.sep(),
         Menus.Item("この鍵を削除", entryId != null) { askDelete() }
     )
@@ -188,6 +240,12 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 else -> { addCustomField(name); true }
             }
         }
+    }
+
+    /** Put a deleted standard field back (empty), before Memo. */
+    fun restoreField(k: String) {
+        val at = layout.indexOfFirst { it.first == Order.F_NOTES }.let { if (it < 0) layout.size else it }
+        layout.add(at, k to true); dirty = true; build()
     }
 
     fun addCustomField(name: String, value: String = "") {
@@ -209,25 +267,37 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 r.addView(cb, W.lp(0, W.WRAP, 1f))
                 r.addView(small("↑") { if (i > 0) { work.add(i - 1, work.removeAt(i)); render() } }.apply { minWidth = W.dp(40) }, W.lp(W.WRAP, W.WRAP, l = 2))
                 r.addView(small("↓") { if (i < work.size - 1) { work.add(i + 1, work.removeAt(i)); render() } }.apply { minWidth = W.dp(40) }, W.lp(W.WRAP, W.WRAP, l = 2))
-                if (k !in Order.DEFAULT_LAYOUT) r.addView(small("削除") { work.removeAt(i); render() }, W.lp(W.WRAP, W.WRAP, l = 2))
+                if (k != Order.F_TITLE) r.addView(small("削除") { work.removeAt(i); render() }, W.lp(W.WRAP, W.WRAP, l = 2))
                 list.addView(r, W.lp(W.MATCH, W.WRAP, b = 2))
             }
         }
         render()
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "チェックを外した欄は表示しません (内容は残ります)。", 13f), W.lp(W.MATCH, W.WRAP, b = 8))
+        col.addView(W.text(ctx, "チェックを外した欄は表示しません (内容は残ります)。「削除」は欄と内容を消します (Title 以外)。", 13f), W.lp(W.MATCH, W.WRAP, b = 8))
         col.addView(list)
         ClassicDialog(ctx, "欄の編集", col, listOf(
             ClassicDialog.Btn("OK", true) {
                 captureEditors()
-                val removed = layout.map { it.first }.filter { k -> work.none { it.first == k } }
-                removed.forEach { values.remove(it) }
+                removeFields(layout.map { it.first }.filter { k -> work.none { it.first == k } })
                 layout = work; dirty = true; build(); true
             },
             ClassicDialog.Btn("キャンセル")), scroll = true).show()
     }
 
     private fun captureEditors() { /* values are kept live by the TextWatchers */ }
+
+    /** Delete fields and their content: customs disappear, standard ones are emptied, Tag / OTP cleared. */
+    fun removeFields(keys: List<String>) {
+        for (k in keys) when (k) {
+            Order.F_TITLE -> {}
+            Order.F_TAGS -> tags = ""
+            Order.F_OTP -> values.remove(Order.OTP)
+            in Order.STANDARD -> values[k] = ""
+            else -> values.remove(k)
+        }
+        layout.removeAll { it.first in keys && it.first != Order.F_TITLE }
+        dirty = true
+    }
 
     fun setupOtp() {
         val col = W.vbox(ctx)

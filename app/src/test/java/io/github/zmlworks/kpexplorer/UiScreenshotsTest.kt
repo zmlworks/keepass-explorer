@@ -51,7 +51,6 @@ class UiScreenshotsTest {
         app().getSharedPreferences("vault", 0).edit().clear().commit()
         Vault.forceAvailableForTest = true
         App.store(app()).let { s -> s.delete(); s.backups().forEach { it.delete() } }
-        app().getSharedPreferences("pin", 0).edit().clear().commit()
         File(app().filesDir, "data-version").writeText(App.DATA_VERSION.toString())
     }
 
@@ -61,7 +60,7 @@ class UiScreenshotsTest {
         Tree.Fields(t, u, p, url, n, Tree.parseTags(tags))
 
     private fun sample(): KeePassDatabase {
-        var db = Kdbx.create("わたしのパスワード", key)
+        var db = Kdbx.create("わたしのパスワード", key, rootName = "", light = true)
         val root = Tree.root(db).uuid
         val m = HashMap<String, UUID>()
         fun g(name: String, parent: UUID = root): UUID { val x = Tree.newGroup(name); db = Tree.addGroup(db, parent, x); m[name] = x.uuid; return x.uuid }
@@ -129,16 +128,26 @@ class UiScreenshotsTest {
         return launch()
     }
 
-    @Test fun explorer_keyMemoDragBackupsPin() {
+    @Test fun explorer_keyMemoDragBackupsUnlock() {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
         assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "ごみ箱", "Wi-Fi (自宅)", "買い物リスト"),
             ex.rows.map { ex.label(it) })
-        save(shot(a.host), "01-main-icons.png")
+        assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
+        save(shot(a.host), "01-main-no-selection.png")
 
+        // tap: file selects, tap again opens; folder opens on one tap
+        ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
+        assertEquals(ids["Wi-Fi (自宅)"], ex.selection)
+        save(shot(a.host), "02-main-selected.png")
+        ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
+        assertTrue(a.screen is KeyScreen)
+        a.showExplorer(); idle()
+        ex.tap(ex.rows.first { it.uuid == ids["メール"] }); idle()
+        assertEquals(ids["メール"], ex.current)
+        ex.navigate(Tree.root(Session.db!!).uuid); idle()
         ex.select(ids["Wi-Fi (自宅)"]); idle()
-        save(shot(a.host), "02-main-preview.png")
         val row = ex.rows.first { it.uuid == ids["メール"] }
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
@@ -158,7 +167,10 @@ class UiScreenshotsTest {
         assertTrue(ks.dirty)
         assertTrue(ks.save())
         idle()
-        save(shot(a.host), "05-key.png")
+        save(shot(a.host), "05-key-top.png")
+        ks.scroll.scrollTo(0, 100000)
+        save(shot(a.host), "05b-key-bottom.png")
+        ks.toggleTag("仕事"); assertTrue(ks.dirty)
         val gm = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
         assertEquals(1, gm.history.size)
         assertEquals(listOf("秘密の質問"), io.github.zmlworks.kpexplorer.db.Order.customFieldNames(gm))
@@ -174,6 +186,11 @@ class UiScreenshotsTest {
         ex.navigate(Tree.root(Session.db!!).uuid); idle()
         a.show(MemoScreen(a, ids["買い物リスト"]!!)); idle()
         save(shot(a.host), "07-memo.png")
+        val rt = findRuled(a.host)!!
+        val l = rt.layout
+        for (i in 0 until rt.lineCount) assertEquals(rt.getLineBounds(i, android.graphics.Rect()) + W.dp(4), rt.ruleYs[i])
+        assertTrue("rules reach the bottom", rt.ruleYs.last() + rt.lineHeight >= rt.scrollY + rt.height)
+        assertNotNull(l)
         a.showExplorer(); idle()
         val nf = ex.newFolder(); val nf2 = ex.newFolder(); val nm = ex.newMemo()
         val g = Tree.findGroup(Session.db!!, ex.current)!!
@@ -202,35 +219,37 @@ class UiScreenshotsTest {
         save(shot(a.host), "08-backups.png")
         a.showExplorer(); idle()
 
-        // PIN unlock
-        io.github.zmlworks.kpexplorer.sec.PinVault.testWrapper = TestWrapper()
-        val c = Session.compositeCopy()!!
-        a.pins.setPin("2468", c)
+        // 保存 dialog → internal (dated file) / external export password prompt
+        Security.saveDialog(a); idle()
+        save(withDialog(shot(a.host)), "09-save-dialog.png")
+        Dlg.last?.dismiss(); idle()
+        Security.askExportPassword(a, "x.kdbx") { Session.db }; idle()
+        save(withDialog(shot(a.host)), "10-export-password.png")
+        Dlg.last?.dismiss(); idle()
+
         a.lock(); idle()
         assertTrue(a.screen is UnlockScreen)
-        save(shot(a.host), "09-unlock-pin.png")
-        val un = a.screen as UnlockScreen
-        un.pin.setText("1111"); un.submit()
-        repeat(100) { idle() }
-        assertFalse(Session.isOpen)
-        assertEquals(4, a.pins.attemptsLeft())
-        un.pin.setText("2468"); un.submit()
-        repeat(300) { if (!Session.isOpen) { idle(); Thread.sleep(20) } }
-        idle()
-        assertTrue(Session.isOpen)
-        assertTrue(a.screen is ExplorerScreen)
-        io.github.zmlworks.kpexplorer.sec.PinVault.testWrapper = null
+        save(shot(a.host), "11-unlock.png")
+    }
+
+    private fun findRuled(v: View): io.github.zmlworks.kpexplorer.ui.Parts.RuledText? {
+        if (v is io.github.zmlworks.kpexplorer.ui.Parts.RuledText) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findRuled(v.getChildAt(i))?.let { return it }
+        return null
+    }
+
+    @Test fun exportOpensWithPassword() {
+        val db = sample()
+        val bytes = Kdbx.encodeVerified(Kdbx.exportCopy(db, "エクスポート pw"))
+        val back = Kdbx.open(bytes, Kdbx.compositeKey("エクスポート pw"))
+        assertEquals(Tree.countEntries(db.content.group), Tree.countEntries(back.content.group))
+        assertTrue(runCatching { Kdbx.open(bytes, key) }.isFailure)
     }
 
     @Test fun setupWizard() {
         val a = launch()
         assertTrue(a.screen is SetupScreen)
-        save(shot(a.host), "10-setup.png")
-        val s = a.screen as SetupScreen
-        s.show(1); idle()
-        save(shot(a.host), "11-setup-create.png")
-        s.importMode = true; s.show(1); idle()
-        save(shot(a.host), "12-setup-import.png")
+        save(shot(a.host), "12-setup.png")
     }
 
     @Test fun dialogs() {
@@ -252,8 +271,10 @@ class DataWipeTest {
         File(app.filesDir, "data-version").delete()
         val st = App.store(app); st.dbFile.parentFile!!.mkdirs(); st.dbFile.writeText("old")
         App.prefs(app).edit().putString("dbName", "x").commit()
+        val bk = File(app.filesDir, "backups/2026-01-01.kdbx"); bk.parentFile!!.mkdirs(); bk.writeText("old")
         App.wipeOldData(app)
         assertFalse(st.dbFile.exists())
+        assertFalse(bk.exists())
         assertFalse(App.prefs(app).contains("dbName"))
         assertEquals(App.DATA_VERSION.toString(), File(app.filesDir, "data-version").readText())
         st.dbFile.parentFile!!.mkdirs(); st.dbFile.writeText("new")

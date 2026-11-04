@@ -75,7 +75,7 @@ object Kdbx {
     }
 
     /** New KDBX 4 database: AES-256, Argon2id, recycle bin on. */
-    fun create(name: String, composite: ByteArray, rootName: String = name): KeePassDatabase {
+    fun create(name: String, composite: ByteArray, rootName: String = name, light: Boolean = false): KeePassDatabase {
         val random = SecureRandom()
         val now = Instant.now()
         var db: KeePassDatabase = KeePassDatabase.Ver4x.create(
@@ -84,19 +84,34 @@ object Kdbx {
             credentials = credentials(composite),
             random = random
         )
+        return withHeader(db, light, random)
+    }
+
+    /**
+     * Fresh AES-256 / Argon2id header (new salt + IV). [light] = 1 MiB × 1 for the app-internal file, whose key is
+     * 32 random bytes (nothing to brute-force, so key stretching only costs battery on every save); the full
+     * [ARGON2_MEMORY] × [ARGON2_ITERATIONS] for password-protected exports.
+     */
+    fun withHeader(db: KeePassDatabase, light: Boolean, random: SecureRandom = SecureRandom()): KeePassDatabase {
         val salt = ByteArray(32).also { random.nextBytes(it) }.toByteString()
         val kdf = KdfParameters.Argon2(
             variant = KdfParameters.Argon2.Variant.Argon2id, salt = salt,
-            parallelism = ARGON2_PARALLELISM.toUInt(), memory = ARGON2_MEMORY.toULong(),
-            iterations = ARGON2_ITERATIONS.toULong(), version = 0x13u, secretKey = null, associatedData = null
+            parallelism = (if (light) 1 else ARGON2_PARALLELISM).toUInt(),
+            memory = (if (light) 1024L * 1024 else ARGON2_MEMORY).toULong(),
+            iterations = (if (light) 1L else ARGON2_ITERATIONS).toULong(), version = 0x13u, secretKey = null, associatedData = null
         )
-        db as KeePassDatabase.Ver4x
-        db = db.copy(header = db.header.copy(
+        val v4 = db as? KeePassDatabase.Ver4x ?: throw IllegalArgumentException("KDBX 4 only")
+        return v4.copy(header = v4.header.copy(
             cipherId = BaseCiphers.Aes.uuid,
             encryptionIV = ByteArray(BaseCiphers.Aes.ivLength.toInt()).also { random.nextBytes(it) }.toByteString(),
             kdfParameters = kdf
         ))
-        return db
+    }
+
+    /** Copy of [db] as a standard password-protected KDBX 4 (what KeePass / KeePassXC open with [password]). */
+    fun exportCopy(db: KeePassDatabase, password: CharSequence): KeePassDatabase {
+        val k = compositeKey(password)
+        try { return withHeader(withCredentials(db, k), light = false) } finally { k.fill(0) }
     }
 
     /** Re-encrypt a Twofish database with AES-256 (only for the app-private imported copy). */
