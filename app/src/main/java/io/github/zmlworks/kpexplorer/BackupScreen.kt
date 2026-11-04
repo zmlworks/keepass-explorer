@@ -176,7 +176,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
                     Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
                 }.onFailure { t ->
                     Dlg.message(ctx, "復元", when (t) {
-                        is Kdbx.WrongPasswordException -> "このバックアップは現在の鍵では開けないため、復元できません。"
+                        is Kdbx.WrongPasswordException -> "このファイルは今のマスターパスワードでは開けないため、復元できません (変更前のパスワードで作られたファイルです)。"
                         is Session.SaveFailedException -> "現在の変更を保存できなかったため、復元を中止しました。\n${t.message}"
                         else -> "復元できませんでした。\n$t"
                     }, 'x')

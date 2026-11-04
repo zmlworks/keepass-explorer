@@ -26,6 +26,9 @@ import java.util.UUID
  * edits push the old version to the entry History.
  */
 object Tree {
+    /** At most this many history copies per entry (KeePass default; also written to Meta.HistoryMaxItems). */
+    const val HISTORY_MAX = 10
+
     /** Group CustomData key for the per-folder view override (icons / list / auto). */
     const val CD_VIEW = "KPExplorer.View"
 
@@ -174,7 +177,7 @@ object Tree {
     fun updateEntry(db: KeePassDatabase, id: UUID, f: Fields, now: Instant = Instant.now()): KeePassDatabase {
         val (parent, old) = findEntry(db, id) ?: throw TreeException("entry not found")
         if (fieldsOf(old) == f.copy(tags = normalizeTags(f.tags))) return db
-        val max = db.content.meta.historyMaxItems
+        val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
         val snapshot = old.copy(history = listOf())
         var hist = old.history + snapshot
         if (max >= 0) hist = hist.takeLast(max)

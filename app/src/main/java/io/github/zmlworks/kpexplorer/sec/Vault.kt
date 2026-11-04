@@ -9,23 +9,22 @@ import android.os.CancellationSignal
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
-import android.util.Base64
 import java.security.KeyStore
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * The app database is encrypted (KDBX) with a random 32-byte composite key that nobody types. That key is stored
- * only wrapped by an AES-256-GCM key in the Android Keystore which requires the OS screen lock (strong biometric
- * OR device PIN / pattern / password) for every use. Unwrapping happens once per unlock, via BiometricPrompt.
- * The Keystore key is not invalidated by adding a fingerprint; removing the screen lock destroys it (and the data).
+ * Everyday unlock without typing the master password. db.kdbx is a normal KDBX 4 protected by the master
+ * password; its 32-byte composite key (SHA-256 of SHA-256(password), never the password itself) is stored in
+ * filesDir/wrapped.bin, encrypted with an AES-256-GCM key in the Android Keystore that needs the OS screen lock
+ * (strong biometric OR device PIN / pattern / password) for every use. If that Keystore key disappears
+ * (screen lock removed, etc.) the data is still there: the master password opens it and [wrap] is done again.
  */
 class Vault(ctx: Context) {
     private val app = ctx.applicationContext
-    private val prefs = app.getSharedPreferences("vault", Context.MODE_PRIVATE)
+    private val file = java.io.File(app.filesDir, "wrapped.bin")
 
     companion object {
         const val ALIAS = "kpexplorer.db"
@@ -34,9 +33,9 @@ class Vault(ctx: Context) {
         var forceAvailableForTest: Boolean? = null
     }
 
-    fun hasStoredKey(): Boolean = prefs.contains("ct") && prefs.contains("iv")
+    fun hasStoredKey(): Boolean = file.length() > 12
 
-    /** A secure OS screen lock is set (required: the app has no password of its own). */
+    /** A secure OS screen lock is set, so a wrapped key can be used. */
     fun isAvailable(): Boolean {
         forceAvailableForTest?.let { return it }
         return try {
@@ -48,7 +47,7 @@ class Vault(ctx: Context) {
     private fun ks() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun clear() {
-        prefs.edit().clear().commit()
+        file.delete()
         try { ks().deleteEntry(ALIAS) } catch (_: Throwable) {}
     }
 
@@ -78,54 +77,56 @@ class Vault(ctx: Context) {
     interface Result {
         /** [composite]: the 32-byte database key (caller wipes it). */
         fun ok(composite: ByteArray)
+        /** [msg] empty = the user cancelled. */
         fun fail(msg: String)
+        /** The wrapped key can't be used any more (Keystore key gone / invalidated): master password needed. */
+        fun lost(msg: String) = fail(msg)
     }
 
     private fun cancelled(code: Int) = code == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED ||
         code == BiometricPrompt.BIOMETRIC_ERROR_CANCELED || code == 13 /* ERROR_NEGATIVE_BUTTON */
 
-    /** First run: new random database key, wrapped after one OS authentication. */
-    fun create(activity: Activity, r: Result) {
+    /** Store [composite] (copied) wrapped by a new Keystore key, after one OS authentication. done(error or null; "" = cancelled). */
+    fun wrap(activity: Activity, composite: ByteArray, done: (String?) -> Unit) {
+        val key = composite.copyOf()
         val cipher: Cipher
         try {
             cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, newKey()) }
         } catch (t: Throwable) {
-            clear(); r.fail("キーストアを準備できませんでした: ${t.javaClass.simpleName}"); return
+            key.fill(0); clear(); done("キーストアを準備できませんでした: ${t.javaClass.simpleName}"); return
         }
-        val composite = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        prompt(activity, "KeePass Explorer の準備", "画面ロック (指紋・PIN など) で保護します")
+        prompt(activity, "指紋・画面ロックで開けるようにする", "次回からマスターパスワードの入力を省きます")
             .authenticate(BiometricPrompt.CryptoObject(cipher), CancellationSignal(), activity.mainExecutor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         try {
                             val c = result.cryptoObject.cipher!!
-                            val ct = c.doFinal(composite)
-                            check(prefs.edit().putString("ct", Base64.encodeToString(ct, Base64.NO_WRAP))
-                                .putString("iv", Base64.encodeToString(c.iv, Base64.NO_WRAP)).commit()) { "prefs" }
-                            r.ok(composite)
+                            val ct = c.doFinal(key)
+                            val tmp = java.io.File(file.path + ".tmp")
+                            tmp.writeBytes(c.iv + ct)
+                            check(tmp.renameTo(file)) { "rename" }
+                            done(null)
                         } catch (t: Throwable) {
-                            composite.fill(0); clear(); r.fail("暗号化に失敗しました: ${t.javaClass.simpleName}")
-                        }
+                            clear(); done("暗号化に失敗しました: ${t.javaClass.simpleName}")
+                        } finally { key.fill(0) }
                     }
                     override fun onAuthenticationError(code: Int, msg: CharSequence) {
-                        composite.fill(0); clear(); r.fail(if (cancelled(code)) "" else msg.toString())
+                        key.fill(0); clear(); done(if (cancelled(code)) "" else msg.toString())
                     }
                 })
     }
 
-    /** OS authentication → decrypted database key. */
+    /** OS authentication → decrypted composite key. */
     fun unlock(activity: Activity, r: Result) {
-        val ct: ByteArray; val iv: ByteArray
-        try {
-            ct = Base64.decode(prefs.getString("ct", null), Base64.NO_WRAP)
-            iv = Base64.decode(prefs.getString("iv", null), Base64.NO_WRAP)
-        } catch (t: Throwable) { r.fail("保存された鍵がありません。"); return }
+        val all = try { file.readBytes() } catch (_: Throwable) { null }
+        if (all == null || all.size <= 12) { r.lost("指紋・画面ロック用の鍵がありません。"); return }
+        val iv = all.copyOfRange(0, 12); val ct = all.copyOfRange(12, all.size)
         val cipher: Cipher
         try {
-            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { r.fail("キーストアの鍵が見つかりません。"); return }
+            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { clear(); r.lost("キーストアの鍵が見つかりません (画面ロックの解除など)。"); return }
             cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) }
         } catch (e: KeyPermanentlyInvalidatedException) {
-            r.fail("画面ロックが解除・変更されたため、キーストアの鍵は無効になりました。"); return
+            clear(); r.lost("画面ロックが解除・変更されたため、指紋・画面ロック用の鍵は無効になりました。"); return
         } catch (t: Throwable) {
             r.fail("キーストアエラー: ${t.javaClass.simpleName}"); return
         }

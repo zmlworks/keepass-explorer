@@ -4,6 +4,9 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.text.InputType
+import android.view.View
+import app.keemobile.kotpass.database.modifiers.modifyContent
+import io.github.zmlworks.kpexplorer.db.Tree
 import android.widget.EditText
 import android.widget.Toast
 import app.keemobile.kotpass.database.KeePassDatabase
@@ -16,54 +19,122 @@ import java.io.File
 import java.time.LocalDate
 
 /**
- * Opening the database with the Keystore-held random key (OS screen lock), first-run creation, and the
- * password-protected export (the only place where the user types a password).
+ * Master password (KDBX standard) + optional Keystore-wrapped key for everyday OS-lock unlock, first-run
+ * creation, changing the master password, and the export dialog.
  */
 object Security {
-    /** Decrypt the app database with [composite] (wiped afterwards) on the I/O thread. */
-    fun openStored(a: MainActivity, composite: ByteArray, onError: (String) -> Unit, onOk: () -> Unit) {
+    /** Decrypt the app database with [composite] on the I/O thread. [composite] is wiped unless [keep]. */
+    fun openStored(a: MainActivity, composite: ByteArray, onError: (String) -> Unit, onOk: () -> Unit, keep: Boolean = false) {
         val busy = Dlg.busy(a, "ログオン", "データベースを開いています…")
         Session.io.execute {
             val r = runCatching { Kdbx.open(a.store.read(), composite) }
-            composite.fill(0)
+            if (!keep) composite.fill(0)
             a.runOnUiThread {
                 busy.dismiss()
                 r.onSuccess { db -> opened(a, db); onOk() }
-                 .onFailure { t -> onError(if (t is Kdbx.WrongPasswordException) "鍵が一致しないため、データベースを開けません。" else "データベースを開けませんでした。\n$t") }
+                 .onFailure { t -> onError(if (t is Kdbx.WrongPasswordException) "マスターパスワードが違います。" else "データベースを開けませんでした。\n$t") }
             }
         }
     }
 
-    fun opened(a: MainActivity, db: KeePassDatabase) { Session.open(db) }
+    /** Session start; makes sure Meta.HistoryMaxItems is the app's cap. */
+    fun opened(a: MainActivity, db: KeePassDatabase) {
+        Session.open(db)
+        if (db.content.meta.historyMaxItems != Tree.HISTORY_MAX)
+            Session.update { it.modifyContent { copy(meta = meta.copy(historyMaxItems = Tree.HISTORY_MAX)) } }
+    }
 
-    /** OS prompt → key → open. */
-    fun unlock(a: MainActivity, onError: (String) -> Unit, onOk: () -> Unit) {
+    /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */
+    fun unlock(a: MainActivity, onError: (String) -> Unit, onLost: (String) -> Unit, onOk: () -> Unit) {
         a.vault.unlock(a, object : Vault.Result {
             override fun ok(composite: ByteArray) = openStored(a, composite, onError, onOk)
             override fun fail(msg: String) = onError(msg)
+            override fun lost(msg: String) = onLost(msg)
         })
     }
 
-    /** New empty database (root folder without a name = "/"), encrypted with a fresh random key. */
-    fun newDatabase(composite: ByteArray): KeePassDatabase =
-        Kdbx.create("KeePass Explorer", composite, rootName = "", light = true)
+    /** Master password → open; then (screen lock available) wrap the key again for fingerprint / PIN unlock. */
+    fun unlockWithPassword(a: MainActivity, password: String, onError: (String) -> Unit, onOk: () -> Unit) {
+        val k = Kdbx.compositeKey(password)
+        openStored(a, k, { k.fill(0); onError(it) }, {
+            if (!a.vault.hasStoredKey() && a.vault.isAvailable() && Vault.forceAvailableForTest == null)
+                a.vault.wrap(a, k) { err -> k.fill(0); if (!err.isNullOrEmpty()) toast(a, "指紋・画面ロックの登録に失敗: $err") }
+            else k.fill(0)
+            onOk()
+        }, keep = true)
+    }
 
-    /** First run: OS prompt wraps a new random key; create and write the empty database. */
-    fun firstRun(a: MainActivity, onError: (String) -> Unit, onOk: () -> Unit) {
-        a.vault.create(a, object : Vault.Result {
-            override fun ok(composite: ByteArray) {
-                val busy = Dlg.busy(a, "セットアップ", "データベースを作成しています…")
-                Session.io.execute {
-                    val r = runCatching { newDatabase(composite).also { a.store.write(Kdbx.encodeVerified(it)) } }
-                    composite.fill(0)
-                    a.runOnUiThread {
-                        busy.dismiss()
-                        r.onSuccess { opened(a, it); onOk() }.onFailure { a.vault.clear(); onError("作成できませんでした。\n$it") }
-                    }
-                }
+    /** New empty database (root folder without a name = "/"), standard KDBX 4 with the master password. */
+    fun newDatabase(composite: ByteArray): KeePassDatabase =
+        Kdbx.create("KeePass Explorer", composite, rootName = "")
+
+    /** First run: create db.kdbx with [password]; then offer fingerprint / screen-lock unlock (wrap). */
+    fun firstRun(a: MainActivity, password: String, onError: (String) -> Unit, onOk: () -> Unit) {
+        val composite = Kdbx.compositeKey(password)
+        val busy = Dlg.busy(a, "セットアップ", "データベースを作成しています…")
+        Session.io.execute {
+            val r = runCatching { newDatabase(composite).also { a.store.write(Kdbx.encodeVerified(it, keepSalt = true)) } }
+            a.runOnUiThread {
+                busy.dismiss()
+                r.onSuccess {
+                    opened(a, it)
+                    if (a.vault.isAvailable() && Vault.forceAvailableForTest == null)
+                        a.vault.wrap(a, composite) { err -> composite.fill(0); if (!err.isNullOrEmpty()) toast(a, "指紋・画面ロックの登録に失敗: $err"); onOk() }
+                    else { composite.fill(0); onOk() }
+                }.onFailure { composite.fill(0); onError("作成できませんでした。\n$it") }
             }
-            override fun fail(msg: String) = onError(msg)
-        })
+        }
+    }
+
+    /** Menu: new master password (twice). The file is re-encrypted (new Argon2 salt) and the wrapped key replaced. */
+    fun changeMasterPassword(a: MainActivity): ClassicDialog {
+        val col = W.vbox(a)
+        col.addView(W.text(a, "新しいマスターパスワードを 2 回入力してください。アプリ内に保存済みの日付ファイルは、" +
+            "それぞれ作成時のマスターパスワードのままです。", 14f).apply { setLineSpacing(0f, 1.1f) })
+        val (p1, p2) = passwordPair(a, col)
+        return ClassicDialog(a, "マスターパスワードの変更", col, listOf(
+            ClassicDialog.Btn("変更", true) {
+                val pw = checkPair(a, "マスターパスワードの変更", p1, p2) ?: return@Btn false
+                val k = Kdbx.compositeKey(pw)
+                Session.update { Kdbx.withHeader(Kdbx.withCredentials(it, k), light = false) }
+                val busy = Dlg.busy(a, "マスターパスワードの変更", "暗号化し直しています…")
+                Session.afterSave({ Unit }) { res ->
+                    busy.dismiss()
+                    res.onSuccess {
+                        toast(a, "マスターパスワードを変更しました")
+                        if (a.vault.isAvailable() && Vault.forceAvailableForTest == null)
+                            a.vault.wrap(a, k) { err -> k.fill(0); if (!err.isNullOrEmpty()) toast(a, "指紋・画面ロックの登録に失敗: $err") }
+                        else { a.vault.clear(); k.fill(0) }
+                    }.onFailure { k.fill(0); Dlg.message(a, "マスターパスワードの変更", "保存できませんでした。\n${it.message ?: it}", 'x') }
+                }
+                true
+            },
+            ClassicDialog.Btn("キャンセル"))).also { it.show() }
+    }
+
+    private fun toast(a: MainActivity, s: String) = Toast.makeText(a, s, Toast.LENGTH_LONG).show()
+
+    /** Two password fields + "show" check box. */
+    fun passwordPair(a: MainActivity, col: android.widget.LinearLayout, first: String = "パスワード:", second: String = "パスワードの確認入力:"): Pair<EditText, EditText> {
+        fun f(label: String): EditText {
+            col.addView(W.text(a, label, 14f), W.lp(W.MATCH, W.WRAP, t = 8))
+            return W.field(a, password = true).also { col.addView(it, W.lp(W.MATCH, W.WRAP, t = 3)) }
+        }
+        val p1 = f(first); val p2 = f(second)
+        val show = W.check(a, "パスワードを表示する", false)
+        show.setOnCheckedChangeListener { _, on ->
+            val t = InputType.TYPE_CLASS_TEXT or if (on) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
+            p1.inputType = t; p2.inputType = t
+        }
+        col.addView(show, W.lp(W.MATCH, W.WRAP, t = 6))
+        return p1 to p2
+    }
+
+    /** Password from the pair, or null after telling the user what is wrong. */
+    fun checkPair(a: MainActivity, title: String, p1: EditText, p2: EditText): String? = when {
+        p1.text.isEmpty() -> { Dlg.message(a, title, "パスワードを入力してください。", '!'); null }
+        p1.text.toString() != p2.text.toString() -> { Dlg.message(a, title, "確認用のパスワードが一致しません。", 'x'); null }
+        else -> p1.text.toString()
     }
 
     // ---------------------------------------------------------------- save dialog / export
@@ -90,34 +161,38 @@ object Security {
         }
     }
 
-    /** Password (twice) → SAF "create document" → standard KDBX encrypted with that password. */
+    /**
+     * Export: choose "same master password" (current key, fresh salt) or "a different password" (twice),
+     * then SAF "create document" → standard KDBX 4 that KeePass / KeePassXC open.
+     */
     fun askExportPassword(a: MainActivity, fileName: String, source: () -> KeePassDatabase?): ClassicDialog {
         val col = W.vbox(a)
-        col.addView(W.text(a, "書き出すファイルのマスターパスワードを入力してください。KeePass / KeePassXC などで開くときに必要です。\n" +
-            "忘れると開けなくなります。", 14f).apply { setLineSpacing(0f, 1.1f) })
-        fun f(label: String): EditText {
-            col.addView(W.text(a, label, 14f), W.lp(W.MATCH, W.WRAP, t = 8))
-            return W.field(a, password = true).also { col.addView(it, W.lp(W.MATCH, W.WRAP, t = 3)) }
-        }
-        val p1 = f("パスワード:"); val p2 = f("パスワードの確認入力:")
-        val show = W.check(a, "パスワードを表示する", false)
-        show.setOnCheckedChangeListener { _, on ->
-            val t = InputType.TYPE_CLASS_TEXT or if (on) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
-            p1.inputType = t; p2.inputType = t
-        }
-        col.addView(show, W.lp(W.MATCH, W.WRAP, t = 6))
+        col.addView(W.text(a, "書き出すファイルのパスワードを選んでください。KeePass / KeePassXC などで開くときに必要です。", 14f)
+            .apply { setLineSpacing(0f, 1.1f) })
+        val rg = android.widget.RadioGroup(a)
+        val same = android.widget.RadioButton(a).apply { id = View.generateViewId(); text = "今のマスターパスワードと同じ"; textSize = 15f; setTextColor(W.TEXT) }
+        val other = android.widget.RadioButton(a).apply { id = View.generateViewId(); text = "別のパスワードを入力する"; textSize = 15f; setTextColor(W.TEXT) }
+        rg.addView(same); rg.addView(other)
+        col.addView(rg, W.lp(W.MATCH, W.WRAP, t = 8))
+        val pwBox = W.vbox(a)
+        val (p1, p2) = passwordPair(a, pwBox)
+        col.addView(pwBox, W.lp(W.MATCH, W.WRAP, l = 12))
+        rg.setOnCheckedChangeListener { _, id -> pwBox.visibility = if (id == other.id) View.VISIBLE else View.GONE }
+        same.isChecked = true; pwBox.visibility = View.GONE
         return ClassicDialog(a, "外部に書き出す", col, listOf(
             ClassicDialog.Btn("保存先を選ぶ...", true) {
-                when {
-                    p1.text.isEmpty() -> { Dlg.message(a, "外部に書き出す", "パスワードを入力してください。", '!'); false }
-                    p1.text.toString() != p2.text.toString() -> { Dlg.message(a, "外部に書き出す", "確認用のパスワードが一致しません。", 'x'); false }
-                    else -> { pickAndWrite(a, fileName, p1.text.toString(), source); p1.setText(""); p2.setText(""); true }
+                if (same.isChecked) { pickAndWrite(a, fileName, null, source); true }
+                else {
+                    val pw = checkPair(a, "外部に書き出す", p1, p2) ?: return@Btn false
+                    pickAndWrite(a, fileName, pw, source); p1.setText(""); p2.setText(""); true
                 }
             },
             ClassicDialog.Btn("キャンセル"))).also { it.show() }
     }
 
-    private fun pickAndWrite(a: MainActivity, fileName: String, password: String, source: () -> KeePassDatabase?) {
+    /** [password] null = keep the database's own credentials (same master password). */
+    private fun pickAndWrite(a: MainActivity, fileName: String, password: String?, source: () -> KeePassDatabase?) {
+        Session.flush()
         val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, fileName)
         }
@@ -128,7 +203,8 @@ object Security {
             Session.io.execute {
                 val r = runCatching {
                     val db = source() ?: error("データベースが開かれていません")
-                    val bytes = Kdbx.encodeVerified(Kdbx.exportCopy(db, password))
+                    val out = if (password == null) Kdbx.withHeader(db, light = false) else Kdbx.exportCopy(db, password)
+                    val bytes = Kdbx.encodeVerified(out)
                     a.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
                 }
                 a.runOnUiThread {

@@ -5,7 +5,7 @@ import app.keemobile.kotpass.database.header.KdfParameters
 import app.keemobile.kotpass.database.header.KdfParameters.Aes
 import app.keemobile.kotpass.database.header.KdfParameters.Argon2
 
-internal object BaseKdfProvider : KdfProvider {
+object BaseKdfProvider : KdfProvider {
     override fun transformKey(
         kdfParameters: KdfParameters,
         compositeKey: ByteArray

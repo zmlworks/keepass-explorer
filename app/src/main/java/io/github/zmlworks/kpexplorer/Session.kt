@@ -31,9 +31,12 @@ object Session {
     private var generation = 0L
     private var savedVersion = 0L
     private val saveRunnable = Runnable { flush() }
-    var debounceMs = 600L
+    /** Rapid moves / reorders are coalesced into one save this long after the last change. */
+    var debounceMs = 1500L
 
     val isOpen get() = db != null
+    /** Number of completed file writes (tests: debounce coalescing). */
+    @Volatile var saveCount = 0
 
     /** Result of the last save task on [io] (null = ok). Written and read on the io thread. */
     @Volatile private var lastIoError: Throwable? = null
@@ -74,8 +77,9 @@ object Session {
         notifyListener()
         io.execute {
             try {
-                val bytes = Kdbx.encodeVerified(snap)
+                val bytes = Kdbx.encodeVerified(snap, keepSalt = true)
                 st.write(bytes)
+                saveCount++
                 lastIoError = null
                 main.post {
                     if (gen != generation) return@post
@@ -125,6 +129,7 @@ object Session {
         version = 0; savedVersion = 0
         saveState = SaveState.SAVED
         Clip.clearNowIfOurs()
+        io.execute { Kdbx.KdfCache.clear() }   // after the final save above
         notifyListener()
     }
 

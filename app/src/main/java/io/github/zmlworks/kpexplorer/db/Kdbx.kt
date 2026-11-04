@@ -30,6 +30,34 @@ object Kdbx {
     const val ARGON2_ITERATIONS = 3L
     const val ARGON2_PARALLELISM = 2
 
+    /**
+     * Remembers the Argon2 output for (composite key, KDF parameters) in memory, so that re-saving with the same
+     * salt (see [encode] keepSalt) and verifying the written bytes don't run Argon2 again. Cleared on lock.
+     */
+    object KdfCache : app.keemobile.kotpass.cryptography.format.KdfProvider {
+        private val map = LinkedHashMap<String, ByteArray>()
+        @Volatile var misses = 0
+            private set
+        private fun id(p: KdfParameters, composite: ByteArray): String {
+            val md = MessageDigest.getInstance("SHA-256")
+            md.update(composite)
+            md.update(p.toString().toByteArray())   // data class: variant, salt, memory, iterations, parallelism, …
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+        override fun transformKey(kdfParameters: KdfParameters, compositeKey: ByteArray): ByteArray {
+            val k = id(kdfParameters, compositeKey)
+            synchronized(this) { map[k]?.let { return it.copyOf() } }
+            val out = app.keemobile.kotpass.cryptography.format.BaseKdfProvider.transformKey(kdfParameters, compositeKey)
+            synchronized(this) {
+                misses++
+                if (map.size >= 4) map.remove(map.keys.first())?.fill(0)
+                map[k] = out.copyOf()
+            }
+            return out
+        }
+        fun clear() = synchronized(this) { map.values.forEach { it.fill(0) }; map.clear() }
+    }
+
     class WrongPasswordException(cause: Throwable?) : Exception("wrong password or damaged file", cause)
 
     /** KeePass composite key for a password-only database: SHA-256(SHA-256(UTF-8(NFC(password)))). */
@@ -47,7 +75,7 @@ object Kdbx {
     fun credentials(composite: ByteArray): Credentials = Credentials.fromComposite(composite)
 
     fun open(bytes: ByteArray, composite: ByteArray): KeePassDatabase = try {
-        KeePassDatabase.decode(ByteArrayInputStream(bytes), credentials(composite), cipherProviders = CIPHERS)
+        KeePassDatabase.decode(ByteArrayInputStream(bytes), credentials(composite), cipherProviders = CIPHERS, kdfProvider = KdfCache)
     } catch (e: app.keemobile.kotpass.errors.FormatError.InvalidContent) {
         throw WrongPasswordException(e)
     } catch (e: app.keemobile.kotpass.errors.CryptoError) {
@@ -80,7 +108,7 @@ object Kdbx {
         val now = Instant.now()
         var db: KeePassDatabase = KeePassDatabase.Ver4x.create(
             rootName = rootName,
-            meta = Meta(generator = GENERATOR, name = name, recycleBinEnabled = true, settingsChanged = now),
+            meta = Meta(generator = GENERATOR, name = name, recycleBinEnabled = true, settingsChanged = now, historyMaxItems = Tree.HISTORY_MAX),
             credentials = credentials(composite),
             random = random
         )
@@ -134,16 +162,20 @@ object Kdbx {
         return d.modifyContent { copy(meta = meta.copy(masterKeyChanged = now)) }
     }
 
-    fun encode(db: KeePassDatabase): ByteArray {
+    /**
+     * [keepSalt] = keep the Argon2 salt / parameters of [db]'s header (fresh master seed and IVs every time),
+     * so the cached Argon2 result is reused and a save costs no key derivation. Exports use a fresh salt.
+     */
+    fun encode(db: KeePassDatabase, keepSalt: Boolean = false): ByteArray {
         val bos = ByteArrayOutputStream()
-        db.encode(bos, cipherProviders = CIPHERS)
+        db.encode(bos, cipherProviders = CIPHERS, kdfProvider = KdfCache, keepKdfSalt = keepSalt)
         return bos.toByteArray()
     }
 
     /** Encode and decode again with the same credentials before anything is written to disk. */
-    fun encodeVerified(db: KeePassDatabase): ByteArray {
-        val bytes = encode(db)
-        KeePassDatabase.decode(ByteArrayInputStream(bytes), db.credentials, cipherProviders = CIPHERS)
+    fun encodeVerified(db: KeePassDatabase, keepSalt: Boolean = false): ByteArray {
+        val bytes = encode(db, keepSalt)
+        KeePassDatabase.decode(ByteArrayInputStream(bytes), db.credentials, cipherProviders = CIPHERS, kdfProvider = KdfCache)
         return bytes
     }
 }

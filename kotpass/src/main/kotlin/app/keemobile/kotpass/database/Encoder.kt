@@ -28,8 +28,9 @@ fun KeePassDatabase.encode(
     contentParser: XmlContentParser = DefaultXmlContentParser,
     cipherProviders: List<CipherProvider> = BaseCiphers.entries,
     kdfProvider: KdfProvider = BaseKdfProvider,
-    random: SecureRandom = SecureRandom()
-) = regenerateVectors(random, cipherProviders)
+    random: SecureRandom = SecureRandom(),
+    keepKdfSalt: Boolean = false
+) = regenerateVectors(random, cipherProviders, keepKdfSalt)
     .encodeAsBinary(outputStream, contentParser, cipherProviders, kdfProvider)
 
 private fun KeePassDatabase.encodeAsBinary(

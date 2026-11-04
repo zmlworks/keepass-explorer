@@ -9,7 +9,8 @@ import java.security.SecureRandom
 
 fun KeePassDatabase.regenerateVectors(
     random: SecureRandom = SecureRandom(),
-    cipherProviders: List<CipherProvider>
+    cipherProviders: List<CipherProvider>,
+    keepKdfSalt: Boolean = false
 ): KeePassDatabase {
     val ivLength = cipherProviders
         .firstOrNull { it.uuid == header.cipherId }
@@ -33,7 +34,7 @@ fun KeePassDatabase.regenerateVectors(
                 header = header.copy(
                     masterSeed = random.nextByteString(32),
                     encryptionIV = random.nextByteString(ivLength.toInt()),
-                    kdfParameters = when (header.kdfParameters) {
+                    kdfParameters = if (keepKdfSalt) header.kdfParameters else when (header.kdfParameters) {
                         is KdfParameters.Aes ->
                             header
                                 .kdfParameters

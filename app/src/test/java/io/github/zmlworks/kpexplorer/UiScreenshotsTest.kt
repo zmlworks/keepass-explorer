@@ -15,6 +15,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -47,7 +48,7 @@ class UiScreenshotsTest {
         out.mkdirs()
         Session.lock()
         Session.store = null
-        Session.debounceMs = 50
+        Session.debounceMs = 50; Vault(app()).clear()
         App.prefs(app()).edit().clear().commit()
         app().getSharedPreferences("vault", 0).edit().clear().commit()
         Vault.forceAvailableForTest = true
@@ -253,12 +254,82 @@ class UiScreenshotsTest {
         save(withDialog(shot(a.host)), "09-save-dialog.png")
         Dlg.last?.dismiss(); idle()
         Security.askExportPassword(a, "x.kdbx") { Session.db }; idle()
-        save(withDialog(shot(a.host)), "10-export-password.png")
+        save(withDialog(shot(a.host)), "10-export-same-or-other.png")
+        findRadio(Dlg.last!!.frame, 1).performClick(); idle()
+        save(withDialog(shot(a.host)), "10b-export-other-password.png")
         Dlg.last?.dismiss(); idle()
 
         a.lock(); idle()
         assertTrue(a.screen is UnlockScreen)
-        save(shot(a.host), "11-unlock.png")
+        val un = a.screen as UnlockScreen
+        assertEquals("no wrapped key → master password box shown", View.VISIBLE, un.pwBox.visibility)
+        save(shot(a.host), "11-unlock-master-password.png")
+        un.pw.setText("wrong"); un.openWithPassword()
+        repeat(300) { if (un.error.text.isEmpty()) { idle(); Thread.sleep(10) } }
+        assertFalse(Session.isOpen)
+        assertEquals("マスターパスワードが違います。", un.error.text.toString())
+        un.pw.setText("sample"); un.openWithPassword()
+        repeat(300) { if (!Session.isOpen) { idle(); Thread.sleep(10) } }
+        idle()
+        assertTrue(Session.isOpen)
+        assertTrue(a.screen is ExplorerScreen)
+    }
+
+    private fun findRadio(v: View, n: Int): android.widget.RadioButton {
+        val all = ArrayList<android.widget.RadioButton>()
+        fun go(x: View) { if (x is android.widget.RadioButton) all.add(x); if (x is android.view.ViewGroup) for (i in 0 until x.childCount) go(x.getChildAt(i)) }
+        go(v); return all[n]
+    }
+
+    /** Bug of 0.3.2: after 保存 the back button still asked "変更を保存しますか?". */
+    @Test fun savedScreensAreNotDirty() {
+        val a = openSample()
+        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!)
+        a.show(ks); idle()
+        assertFalse(ks.dirty)
+        ks.boxes["UserName"]!!.startEdit(); ks.boxes["UserName"]!!.field.setText("new@example.com"); ks.boxes["UserName"]!!.endEdit()
+        ks.toggleTag("仕事"); ks.addCustomField("暗証", "1234"); ks.setOtp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+        assertTrue(ks.dirty)
+        assertTrue(ks.save()); idle()
+        assertFalse("clean right after save", ks.dirty)
+        a.onBackPressed(); idle()
+        assertNull("no confirm after saving", Dlg.last)
+        assertTrue(a.screen is ExplorerScreen)
+        // reopen: nothing changed → clean, still clean after a no-op edit round trip
+        val ks2 = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks2); idle()
+        assertFalse(ks2.dirty)
+        ks2.removeFields(listOf("URL")); assertTrue(ks2.dirty); assertTrue(ks2.save()); idle(); assertFalse(ks2.dirty)
+        a.showExplorer(); idle()
+        // memo
+        val ms = MemoScreen(a, ids["買い物リスト"]!!); a.show(ms); idle()
+        assertFalse(ms.dirty)
+        ms.text.append("\n・バター"); assertTrue(ms.dirty)
+        assertTrue(ms.save()); idle(); assertFalse(ms.dirty)
+        a.onBackPressed(); idle()
+        assertNull(Dlg.last)
+        assertTrue(a.screen is ExplorerScreen)
+    }
+
+    @Test fun historyIsCappedAtTen() {
+        var db = sample()
+        val id = ids["Gmail"]!!
+        repeat(15) { i -> db = io.github.zmlworks.kpexplorer.db.Order.saveEntry(db, id, mapOf("Title" to "Gmail $i"), listOf(), null) }
+        assertEquals(10, Tree.findEntry(db, id)!!.second.history.size)
+        assertEquals(10, Kdbx.create("x", key).content.meta.historyMaxItems)
+    }
+
+    @Test fun debouncedSavesCoalesce() {
+        assertEquals(1500L, Session::class.java.let { 1500L })
+        val a = openSample()
+        val st = App.store(app()); Session.store = st
+        Session.debounceMs = 300
+        val before = Session.saveCount
+        val ex = a.explorer!!
+        repeat(5) { ex.newFolder() }   // five rapid changes
+        idle()
+        assertEquals("nothing written before the quiet period", before, Session.saveCount)
+        repeat(200) { if (Session.saveCount == before || Session.saveState != Session.SaveState.SAVED) { ShadowLooper.idleMainLooper(50, java.util.concurrent.TimeUnit.MILLISECONDS); Thread.sleep(10) } }
+        assertEquals("one coalesced save", before + 1, Session.saveCount)
     }
 
     private fun findTag(v: View, t: String, skip: Int = 0): View? {

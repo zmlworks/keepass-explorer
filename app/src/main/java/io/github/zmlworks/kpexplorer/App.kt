@@ -16,7 +16,7 @@ object App {
     fun prefs(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /** Bumped when a prototype update drops the previous internal data (no migration while in prototype stage). */
-    const val DATA_VERSION = 4
+    const val DATA_VERSION = 5
 
     /**
      * Prototype policy: if the internal data was written by an older version, delete it (database, settings,
@@ -30,6 +30,7 @@ object App {
         Session.lock()
         File(ctx.filesDir, "db").deleteRecursively()
         File(ctx.filesDir, "backups").deleteRecursively()
+        File(ctx.filesDir, "wrapped.bin").delete()
         runCatching { ctx.getExternalFilesDir("backups")?.deleteRecursively() }
         Session.store = null
         for (n in listOf("settings", "vault", "pin")) ctx.getSharedPreferences(n, Context.MODE_PRIVATE).edit().clear().commit()

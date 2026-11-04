@@ -13,7 +13,7 @@ import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
-/** Windows 2000-style "logon" box: the OS screen lock (fingerprint or device PIN) is the only way in. */
+/** Windows 2000-style "logon" box: fingerprint / OS screen lock (wrapped key), or the master password. */
 class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     override val desktop = true
     private val ctx = a
@@ -21,6 +21,11 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     override val view: View get() = root
     val error: TextView = W.text(ctx, "", 14f, color = 0xFFC00000.toInt())
     private var autoPrompted = false
+    private val info = W.text(ctx, "指紋、またはこの端末の画面ロック (PIN・パターン・パスワード) でロックを解除します。" +
+        "マスターパスワードでも開けます。", 14f).apply { setLineSpacing(0f, 1.15f) }
+    val pw = W.field(ctx, password = true).apply { isSingleLine = true }
+    val pwBox = W.vbox(ctx)
+    private val bio = W.button(ctx, "指紋・画面ロック(U)", true) { unlock() }
 
     init {
         val content = W.vbox(ctx)
@@ -29,15 +34,23 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         val inner = W.vbox(ctx, 12)
         val top = W.hbox(ctx).apply { gravity = Gravity.TOP }
         top.addView(W.icon(ctx, Px.keyfile32), W.lp(W.WRAP, W.WRAP, r = 12))
-        top.addView(W.text(ctx, "ロックを解除するには、指紋、またはこの端末の画面ロック (PIN・パターン・パスワード) を使ってください。", 14f).apply {
-            setLineSpacing(0f, 1.15f)
-        }, W.lp(0, W.WRAP, 1f))
+        top.addView(info, W.lp(0, W.WRAP, 1f))
         inner.addView(top)
+        pwBox.addView(W.text(ctx, "マスターパスワード:", 14f), W.lp(W.MATCH, W.WRAP))
+        pwBox.addView(pw, W.lp(W.MATCH, W.WRAP, t = 3))
+        pwBox.addView(W.button(ctx, "開く(O)", true) { openWithPassword() }.apply { minWidth = W.dp(96) },
+            W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.END })
+        inner.addView(pwBox, W.lp(W.MATCH, W.WRAP, t = 8))
         inner.addView(error, W.lp(W.MATCH, W.WRAP, t = 10))
         val btns = W.hbox(ctx).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
-        btns.addView(W.button(ctx, "ロック解除(U)", true) { unlock() }, W.lp(W.WRAP, W.WRAP))
+        btns.addView(bio, W.lp(W.WRAP, W.WRAP))
         btns.addView(W.button(ctx, "終了") { a.finish() }, W.lp(W.WRAP, W.WRAP, l = 6))
         inner.addView(btns, W.lp(W.MATCH, W.WRAP, t = 8))
+        val alt = W.hbox(ctx).apply { gravity = Gravity.END }
+        alt.addView(W.button(ctx, "マスターパスワードで開く...") { showPassword(null) }, W.lp(W.WRAP, W.WRAP))
+        inner.addView(alt, W.lp(W.MATCH, W.WRAP, t = 6))
+        if (!a.vault.hasStoredKey()) showPassword("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。")
+        else pwBox.visibility = View.GONE
         content.addView(inner)
         val cap = W.titleBar(ctx, "KeePass Explorer へログオン", Px.key16, onClose = null)
         root = Desktop.frame(ctx, W.window(ctx, cap, content))
@@ -70,15 +83,30 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         Session.takeLockSaveError()?.let {
             Dlg.message(ctx, "保存エラー", "ロックする直前の変更を保存できませんでした。最後の変更は失われた可能性があります。\n$it", 'x')
         }
-        if (!autoPrompted && Vault.forceAvailableForTest == null) {
+        if (!autoPrompted && Vault.forceAvailableForTest == null && a.vault.hasStoredKey()) {
             autoPrompted = true
             root.post { unlock() }
         }
     }
 
+    /** Show the master-password box ([why] = reason, e.g. the Keystore key is gone). */
+    fun showPassword(why: String?) {
+        pwBox.visibility = View.VISIBLE
+        if (why != null) error.text = why
+        pw.requestFocus()
+    }
+
+    fun openWithPassword() {
+        val p = pw.text.toString()
+        if (p.isEmpty()) { error.text = "マスターパスワードを入力してください。"; return }
+        pw.setText("")
+        error.text = ""
+        Security.unlockWithPassword(a, p, onError = { error.text = it }) { a.showExplorer() }
+    }
+
     fun unlock() {
         error.text = ""
-        if (!a.vault.hasStoredKey()) { error.text = "鍵が見つかりません。アプリのデータを削除して、セットアップからやり直してください。"; return }
-        Security.unlock(a, onError = { error.text = it }) { a.showExplorer() }
+        if (!a.vault.hasStoredKey()) { showPassword("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。"); return }
+        Security.unlock(a, onError = { error.text = it }, onLost = { showPassword("$it\nマスターパスワードで開くと、もう一度登録します。") }) { a.showExplorer() }
     }
 }

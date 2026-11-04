@@ -168,7 +168,7 @@ object Order {
         val same = old.fields.keys == newFields.keys && old.fields.all { (k, v) -> newFields[k]?.content == v.content } &&
             old.tags == nt && old.customData[CD_FIELDS]?.value == cd[CD_FIELDS]?.value
         if (same) return db
-        val max = db.content.meta.historyMaxItems
+        val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
         var hist = old.history + old.copy(history = listOf())
         if (max >= 0) hist = hist.takeLast(max)
         val t = (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)

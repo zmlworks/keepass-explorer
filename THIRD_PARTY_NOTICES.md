@@ -34,3 +34,6 @@ system fonts.
 
 "Windows" is a trademark of Microsoft Corporation; this project is not affiliated with Microsoft. "KeePass" is the
 password manager by Dominik Reichl; this is an independent app that reads and writes the KeePass (KDBX) format.
+
+
+Modifications to vendored kotpass (KeePass Explorer 0.3.3): BaseKdfProvider made public; added `keepKdfSalt` option to encoding to keep KDF salt/parameters.

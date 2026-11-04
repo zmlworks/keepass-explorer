@@ -720,6 +720,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             Menus.Item("アプリ内に保存 (日付.kdbx)") { Security.internalBackup(a) },
             Menus.Item("外部に書き出す (パスワード付き)...") { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } },
             Menus.Item("保存したファイルの一覧...") { a.show(BackupScreen(a)) },
+            Menus.Item("マスターパスワードの変更...") { Security.changeMasterPassword(a) },
             Menus.Item("ごみ箱を空にする", bin != null && (bin.groups.isNotEmpty() || bin.entries.isNotEmpty())) { askEmptyBin() },
             Menus.sep(),
             Menus.Item("画面を保護 (スクリーンショット禁止)", checked = p.getBoolean("secure", true)) {

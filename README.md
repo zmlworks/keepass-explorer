@@ -85,6 +85,20 @@ JDK 17、Android SDK (platform 35, build-tools 35.0.0)。
 画像は `KPX_SCREENS_DIR` に出力)。手元の .kdbx で試す場合は `KCK_KDBX_FIXTURES` に properties ファイルを指定 (`FixturesTest`; リポジトリには入れない)。
 `CompatSampleTest` は `app/build/compat/kpx-sample.kdbx` (パスワード `kpx-sample`) を書き出すので、他の KeePass 実装で開いて確認できます。
 
+## セキュリティ (0.3.3〜)
+
+- データ (`db.kdbx`) は標準の KDBX 4 で、**マスターパスワード** (Argon2id) で暗号化されます。KeePass / KeePassXC でもそのまま開けます。
+- 初回セットアップでマスターパスワードを 2 回入力します。パスワード自体は保存しません。
+- パスワードから作った 32 バイトの鍵は、認証必須の Android Keystore (AES-GCM) 鍵で包んで `wrapped.bin` に保存し、普段は指紋・画面ロックで開きます。
+- 画面ロックの変更などで Keystore の鍵が無効になったときは、マスターパスワードで開くと自動で包み直します。ロック画面には常に「マスターパスワードで開く...」があります。
+- メニュー「マスターパスワードの変更...」で変更できます。
+- 外部に書き出すときは「今のマスターパスワードと同じ」か「別のパスワード」(2 回入力) を選べます。
+- 保存は最後の変更から約 1.5 秒後にまとめて行い、アプリを離れる・ロック・書き出しの前にも保存します。保存時は KDF の salt を保持して導出結果をメモリ上でのみ再利用し (ロック時に破棄)、毎回の Argon2 計算を避けます。マスターシードと IV は毎回新しくなります。
+- 履歴 (History) は KeePass 標準どおり `db.kdbx` 内の各エントリーに保存され、1 エントリーあたり最大 10 件です。
+
+### 同梱 kotpass への変更
+`BaseKdfProvider` を public にし、エンコード時に KDF の salt/パラメーターを保持する `keepKdfSalt` オプションを追加しています (MIT ライセンスのまま)。
+
 ## ライセンス
 
 MIT © 2026 zmlworks。同梱ライブラリ (kotpass ほか) は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) と [LICENSES/](LICENSES/) を参照。

@@ -64,8 +64,17 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     val values = LinkedHashMap<String, String>()
     var tags = ""
     var layout: MutableList<Pair<String, Boolean>> = Order.DEFAULT_LAYOUT.map { it to true }.toMutableList()
-    var dirty = false
-        private set
+    /**
+     * Unsaved changes = current state differs from the state last loaded / saved. Computed (not a flag), so
+     * re-building the views after 保存 (which re-sets every field's text) can't make the screen look dirty again.
+     * Assigning false takes a new baseline; assigning true is ignored (any real change already shows).
+     */
+    var dirty: Boolean
+        get() = snapshot() != baseline
+        set(v) { if (!v) baseline = snapshot() }
+    private var baseline: Any? = null
+    private fun snapshot(): Any = Triple(LinkedHashMap(values).filterValues { true }.toSortedMap(),
+        Tree.parseTags(tags), layout.toList())
     private val editors = HashMap<String, EditText>()
     /** Framed field boxes, by layout key (tests / Pass toggle). */
     val boxes = LinkedHashMap<String, io.github.zmlworks.kpexplorer.ui.FieldBox>()
@@ -97,6 +106,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         sv.addView(body)
         root.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
+        dirty = false
     }
 
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }

@@ -18,8 +18,11 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
     override val view: View get() = root
     val title = W.field(ctx, "タイトル").apply { textSize = 17f }
     val text = Parts.RuledText(ctx, editable = true)
-    var dirty = false
-        private set
+    /** Unsaved = title / text differ from what was loaded or last saved (see [KeyScreen.dirty]). */
+    var dirty: Boolean
+        get() = (title.text.toString() to text.text.toString()) != baseline
+        set(v) { if (!v) baseline = title.text.toString() to text.text.toString() }
+    private var baseline: Pair<String, String>? = null
 
     init {
         val e = Session.db?.let { Tree.findEntry(it, entryId)?.second }
@@ -32,9 +35,10 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
         val w = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) { dirty = true }
+            override fun afterTextChanged(s: Editable?) {}
         }
         title.addTextChangedListener(w); text.addTextChangedListener(w)
+        dirty = false
     }
 
     fun save(): Boolean {
