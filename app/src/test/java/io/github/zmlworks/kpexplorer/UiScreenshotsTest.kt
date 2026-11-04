@@ -2,6 +2,7 @@ package io.github.zmlworks.kpexplorer
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.view.MotionEvent
 import android.view.View
 import app.keemobile.kotpass.database.KeePassDatabase
 import io.github.zmlworks.kpexplorer.db.Kdbx
@@ -140,7 +141,12 @@ class UiScreenshotsTest {
         // tap: file selects, tap again opens; folder opens on one tap
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertEquals(ids["Wi-Fi (自宅)"], ex.selection)
+        val pv = findTag(a.host, "pass") as android.widget.TextView
+        assertEquals("******", pv.transformationMethod.getTransformation(pv.text, pv).toString())
         save(shot(a.host), "02-main-selected.png")
+        pv.performClick()
+        assertEquals(null, pv.transformationMethod)
+        pv.performClick()
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertTrue(a.screen is KeyScreen)
         a.showExplorer(); idle()
@@ -151,6 +157,17 @@ class UiScreenshotsTest {
         val row = ex.rows.first { it.uuid == ids["メール"] }
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
+        ex.navigate(ids["プロジェクトA"]!!); idle()
+        assertEquals(" (2,0)", (findTag(a.host, "count", 1) as android.widget.TextView).text.toString())
+        save(shot(a.host), "03b-path-counts.png")
+        ex.searchTags.clear(); ex.searchTags.add("メール"); ex.searchTags.add("web")
+        ex.askSearch(); idle()
+        save(withDialog(shot(a.host)), "03c-search-tags.png")
+        Dlg.last?.dismiss(); idle()
+        ex.searchFor(ex.searchQuery("", listOf("メール", "web"))); idle()
+        assertEquals(setOf("Gmail", "Yahoo!メール"), ex.rows.map { ex.label(it) }.toSet())
+        save(shot(a.host), "03d-search-result.png")
+        ex.searchFor(""); idle()
         ex.navigate(ids["メール"]!!); idle()
         ex.toggleView(); idle()
         assertFalse(ex.iconMode)
@@ -167,6 +184,18 @@ class UiScreenshotsTest {
         assertTrue(ks.dirty)
         assertTrue(ks.save())
         idle()
+        assertFalse(ks.passShown)
+        ks.togglePass(); assertTrue(ks.passShown); ks.togglePass()
+        // swipe on User box = copy
+        val ub = ks.boxes["UserName"]!!
+        fun ev(act: Int, x: Float) = MotionEvent.obtain(0, 0, act, x, 20f, 0)
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 120f))
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 400f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 400f))
+        val cm = a.getSystemService(android.content.ClipboardManager::class.java)
+        assertEquals("taro.yamada@gmail.com", cm.primaryClip!!.getItemAt(0).text.toString())
+        assertFalse(ub.editing)
+        ub.startEdit(); assertTrue(ub.editing); ub.endEdit()
+        ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
         save(shot(a.host), "05-key-top.png")
         ks.scroll.scrollTo(0, 100000)
         save(shot(a.host), "05b-key-bottom.png")
@@ -230,6 +259,16 @@ class UiScreenshotsTest {
         a.lock(); idle()
         assertTrue(a.screen is UnlockScreen)
         save(shot(a.host), "11-unlock.png")
+    }
+
+    private fun findTag(v: View, t: String, skip: Int = 0): View? {
+        var n = skip
+        fun go(x: View): View? {
+            if (x.tag == t) { if (n == 0) return x; n-- }
+            if (x is android.view.ViewGroup) for (i in 0 until x.childCount) go(x.getChildAt(i))?.let { return it }
+            return null
+        }
+        return go(v)
     }
 
     private fun findRuled(v: View): io.github.zmlworks.kpexplorer.ui.Parts.RuledText? {

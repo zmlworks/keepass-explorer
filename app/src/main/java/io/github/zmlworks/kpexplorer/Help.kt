@@ -9,7 +9,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.3.1"
+    const val VERSION = "0.3.2"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)
@@ -42,6 +42,8 @@ object Help {
             "・一覧のスクロールは、何もない所か右端のスクロールバーの帯をなぞります。動かさずに長押しするとメニュー。\n" +
             "・ロック解除は端末の画面ロック (指紋・顔・PIN など) を使います。\n" +
             "・ツールバーの「保存」: アプリ内に日付.kdbx で保存、または パスワードを付けて外部に書き出し (KeePass / KeePassXC で開けます)。\n" +
+            "・鍵の画面: 欄を横にスワイプでコピー、長押しで編集、パスワード欄はタップで表示／非表示 (最初は ******)。\n" +
+            "・検索: 文字とタグ (複数選ぶとすべてを持つもの) で絞り込めます。\n" +
             "・並び順はフォルダーごとに保存されます (KDBX の CustomData)。\n" +
             "・鍵の画面の「≡」から、カスタム欄の追加、欄の表示・順番、ワンタイムパスワード (TOTP) を設定できます。\n" +
             "・フォルダー操作は自動保存、鍵とメモは「保存」で保存します。", 'i')

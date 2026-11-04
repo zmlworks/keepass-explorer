@@ -27,12 +27,16 @@ object Parts {
         path.forEachIndexed { i, g ->
             val name = if (i == 0) "/" else g.name.ifEmpty { "(名前なし)" }
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = g.uuid; minimumHeight = W.dp(26) }
-            row.setPadding(if (i == 0) 0 else W.dp(10) + W.dp(18) * (i - 1), 0, 0, 0)
+            row.setPadding(W.dp(20) * i, 0, 0, 0)   // every level one step further right
             if (i > 0) row.addView(W.text(ctx, "└", 15f), W.lp(W.WRAP, W.WRAP))
             row.addView(W.icon(ctx, Px.folder16, maxOf(1, W.iconScale() - 2)).apply { setPadding(W.dp(2), 0, W.dp(3), 0) }, W.lp(W.WRAP, W.WRAP))
             row.addView(W.text(ctx, name, 15f, bold = i == path.size - 1).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END },
+                W.lp(W.WRAP, W.WRAP))
+            // (subfolders, files) directly inside this folder
+            row.addView(W.text(ctx, " (${g.groups.size},${g.entries.size})", 13f, color = W.SHADOW).apply { isSingleLine = true; tag = "count" },
                 W.lp(0, W.WRAP, 1f))
             if (onTap != null) { row.isClickable = true; row.background = W.Bevel(W.Style.NONE); row.setOnClickListener { onTap(g) } }
+            row.setPadding(W.dp(20) * i, 0, 0, 0)   // (again: setting a background resets the padding)
             box.addView(row, W.lp(W.MATCH, W.WRAP))
             lines?.add(row)
         }

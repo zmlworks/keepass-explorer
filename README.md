@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.3.1 試作版)
+# KeePass Explorer (v0.3.2 試作版)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -36,6 +36,16 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.3.2 の変更
+
+- メイン画面の紺色のタイトルバー (_ □ ×) を削除し、画面全体を使うように (システムバー・キーボードの分は余白で避けます)。
+- ツールバーを 上へ・表示 ｜ フォルダ・鍵・メモ ｜ 保存・メニュー・検索 の順に (縦線で区切り)。「戻る」ボタンは削除 (端末の戻るで上の階層へ)。
+- 鍵の画面の各欄 (Title / User / Pass / URL / Tag / OTP / カスタム) を独立した枠に。横にスワイプでコピー (パスワード等は機密扱い・45 秒で消去)、
+  長押しでその場で編集、Pass はタップで表示／非表示。OTP は長押しで設定。
+- パスワードは最初 `******` 表示 (鍵の画面・メイン画面のプレビューとも)。タップで表示。
+- 「└」のパス表示を階層ごとに右へずらし、フォルダー名の右に (フォルダー数,ファイル数) を表示。
+- 検索: 文字検索に加えて、使用済みタグを複数選んで「すべて持つもの」に絞り込むタグ検索。結果の件数と条件を上に表示。
 
 ## アプリ 0.3.1 の変更
 

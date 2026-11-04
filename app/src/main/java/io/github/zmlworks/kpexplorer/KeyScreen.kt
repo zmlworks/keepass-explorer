@@ -67,6 +67,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     var dirty = false
         private set
     private val editors = HashMap<String, EditText>()
+    /** Framed field boxes, by layout key (tests / Pass toggle). */
+    val boxes = LinkedHashMap<String, io.github.zmlworks.kpexplorer.ui.FieldBox>()
+    var passShown = false
+        private set
     private var otpView: KeyFields.OtpView? = null
     private lateinit var bar: Parts.AppBar
     private val body = W.vbox(ctx, 8)
@@ -98,7 +102,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
 
     private fun build() {
-        body.removeAllViews(); editors.clear(); otpView = null
+        body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null
         val d = Session.db ?: return
         val path = Tree.path(Tree.root(d), parent)
         body.addView(Parts.pathTree(ctx, path), W.lp(W.MATCH, W.WRAP))
@@ -164,14 +168,18 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
     }
 
-    /** "Label: [input] [コピー]" on one line; Memo (multi) keeps its label above a multi-line box. */
+
+    private fun copyName(k: String) = when (k) {
+        Order.F_TITLE -> "タイトル"; Order.F_USER -> "ユーザー名"; Order.F_PASS -> "パスワード"; Order.F_URL -> "URL"
+        Order.F_TAGS -> "タグ"; else -> k
+    }
+
+    /**
+     * Single-line fields are independent framed boxes ("Label: value"): swipe sideways = copy, long press = edit
+     * in place, tap on Pass = show / hide (masked as ****** by default). Memo keeps a plain multi-line box.
+     */
     private fun fieldRow(k: String, value: String, multi: Boolean, set: (String) -> Unit) {
-        if (multi) body.addView(labelView(k), W.lp(W.MATCH, W.WRAP, t = 6))
-        val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        if (!multi) row.addView(labelView(k), W.lp(W.dp(62), W.WRAP, r = 4))
         val f = W.field(ctx, multi = multi)
-        if (multi) f.minLines = 5 else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
-        if (k == Order.F_PASS) f.typeface = android.graphics.Typeface.MONOSPACE
         f.setText(value)
         f.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
@@ -179,26 +187,40 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             override fun afterTextChanged(s: Editable?) { set(s.toString()); dirty = true }
         })
         editors[k] = f
-        row.addView(f, W.lp(0, W.WRAP, 1f))
-        when (k) {
-            Order.F_USER -> row.addView(small("コピー") { copy("ユーザー名", f.text.toString(), false) }, W.lp(W.WRAP, W.WRAP, l = 4))
-            Order.F_PASS -> row.addView(small("コピー") { copy("パスワード", f.text.toString(), true) }, W.lp(W.WRAP, W.WRAP, l = 4))
-            Order.F_TITLE, Order.F_TAGS, Order.F_NOTES, Order.F_URL -> {}
-            else -> row.addView(small("コピー") { copy(k, f.text.toString(), true) }, W.lp(W.WRAP, W.WRAP, l = 4))
+        if (multi) {
+            body.addView(labelView(k), W.lp(W.MATCH, W.WRAP, t = 6))
+            f.minLines = 5
+            body.addView(f, W.lp(W.MATCH, W.WRAP, t = 2, b = 4))
+            return
         }
-        body.addView(row, W.lp(W.MATCH, W.WRAP, t = 2, b = 4))
+        f.isSingleLine = true; f.setHorizontallyScrolling(true)
+        val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER
+        val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.label(k), f,
+            onSwipe = { copy(copyName(k), f.text.toString(), sensitive) })
+        if (k == Order.F_PASS) {
+            f.typeface = android.graphics.Typeface.MONOSPACE
+            io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, !passShown)
+            box.onTap = { togglePass() }
+            box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false) }
+        }
+        boxes[k] = box
+        body.addView(box, W.lp(W.MATCH, W.WRAP, t = 2, b = 4))
+    }
+
+    fun togglePass() {
+        passShown = !passShown
+        editors[Order.F_PASS]?.let { io.github.zmlworks.kpexplorer.ui.FieldBox.mask(it, !passShown) }
     }
 
     private fun otpRow() {
-        val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        row.addView(labelView(Order.F_OTP), W.lp(W.dp(62), W.WRAP, r = 4))
         val o = KeyFields.OtpView(ctx) { values[Order.OTP] }.apply {
             background = W.Bevel(W.Style.FIELD); setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
         }
         otpView = o
-        row.addView(o, W.lp(0, W.WRAP, 1f))
-        row.addView(small("コピー") { o.current()?.let { copy("ワンタイムパスワード", it, true) } }, W.lp(W.WRAP, W.WRAP, l = 4))
-        body.addView(row, W.lp(W.MATCH, W.WRAP, t = 2, b = 4))
+        val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.label(Order.F_OTP), W.field(ctx), view = o,
+            onSwipe = { o.current()?.let { copy("ワンタイムパスワード", it, true) } }, onLongPress = { setupOtp() })
+        boxes[Order.F_OTP] = box
+        body.addView(box, W.lp(W.MATCH, W.WRAP, t = 2, b = 4))
     }
 
     private fun copy(label: String, s: String, sensitive: Boolean) {

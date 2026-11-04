@@ -93,11 +93,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     private fun build() {
         caption = W.titleBar(ctx, "", Px.key16, onMin = { a.moveTaskToBack(true) }, onClose = { a.lock() })
-        root.addView(caption.bar, W.lp())
+        // no caption bar (full window); the caption object only keeps the window title for accessibility / tests
 
         val tb = W.hbox(ctx).apply { setPadding(W.dp(1), W.dp(2), W.dp(1), W.dp(2)) }
         val dm = ctx.resources.displayMetrics
-        val bw = maxOf(W.dp(40), (dm.widthPixels - W.dp(4)) / 9)
+        val bw = maxOf(W.dp(40), (dm.widthPixels - W.dp(24)) / 8)
         fun tool(key: String, bmp: Bitmap, label: String, f: () -> Unit) {
             val v = W.vbox(ctx).apply {
                 gravity = Gravity.CENTER
@@ -110,15 +110,17 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             tools[key] = v
             tb.addView(v, W.lp(bw, W.dp(50)))
         }
-        tool("back", Px.back16, "戻る") { goBack() }
+        fun sep() = tb.addView(View(ctx).apply { background = W.Bevel(W.Style.THIN_SUNKEN) }, W.lp(2 * W.px + W.px, W.dp(40), l = 3, r = 3))
         tool("up", Px.up16, "上へ") { goUp() }
         tool("view", if (iconMode) Ico.viewDetails16 else Ico.viewIcons16, "表示") { toggleView() }
+        sep()
         tool("newFolder", Px.newFolder16, "フォルダ") { newFolder() }
         tool("newKey", Ico.newKey16, "鍵") { newKey() }
         tool("newMemo", Ico.newMemo16, "メモ") { newMemo() }
+        sep()
         tool("save", Px.floppy16, "保存") { Security.saveDialog(a) }
-        tool("find", Px.find16, "検索") { askSearch() }
         tool("menu", Ico.menu16, "メニュー") { Menus.dropDown(tools["menu"]!!, mainMenu()) }
+        tool("find", Px.find16, "検索") { askSearch() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         root.addView(W.hsep(ctx))
 
@@ -171,7 +173,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (q != null) {
             rows = Tree.search(d, q).map { Order.Node.E(it.second) }
             caption.title.text = "検索結果 - KeePass Explorer"
-            pathBox.addView(W.text(ctx, "検索: $q", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
+            val ws = q.split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val tg = ws.filter { it.startsWith("#") && it.length > 1 }.map { it.substring(1) }
+            val tx = ws.filterNot { it.startsWith("#") && it.length > 1 }
+            val desc = listOfNotNull(tx.takeIf { it.isNotEmpty() }?.let { "文字: ${it.joinToString(" ")}" },
+                tg.takeIf { it.isNotEmpty() }?.let { "タグ: ${it.joinToString(" + ")}" }).joinToString("  ")
+            pathBox.addView(W.text(ctx, "検索結果 ${rows.size} 件  $desc", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
         } else {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
@@ -282,7 +289,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             when (k) {
                 Order.F_TAGS -> kv(k, tv(Tree.formatTags(e.tags)))
                 Order.F_OTP -> Order.otpUri(e)?.let { u -> kv("ワンタイム:", KeyFields.OtpView(ctx) { u }.apply { textSize = 15f }) }
-                Order.F_PASS -> kv(k, tv(Tree.password(e), mono = true))
+                Order.F_PASS -> kv(k, tv(Tree.password(e), mono = true).apply {
+                    // masked by default; tap = show / hide
+                    setTextIsSelectable(false); var shown = false
+                    io.github.zmlworks.kpexplorer.ui.FieldBox.mask(this, true); tag = "pass"
+                    isClickable = true; setOnClickListener { shown = !shown; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(this, !shown) }
+                })
                 else -> kv(k, tv(Order.string(e, k)))
             }
         }
@@ -646,20 +658,42 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun searchFor(q: String) { search = q.trim().ifEmpty { null }; selection = null; refresh() }
 
-    /** Free text (title / user / URL / memo / tag) plus one-tap search by an already-used tag ("#tag"). */
+    /** Tags currently ticked in the search dialog (kept between searches). */
+    val searchTags = LinkedHashSet<String>()
+
+    /** Builds the query: free words AND every ticked tag ("#tag" = exact tag). */
+    fun searchQuery(text: String, tags: Collection<String>): String =
+        (listOf(text.trim()) + tags.map { "#$it" }).filter { it.isNotEmpty() }.joinToString(" ")
+
+    /**
+     * Search dialog with two parts: free text (title / user / URL / memo / tag), and a tag filter —
+     * toggle any used tags; results must carry all ticked tags (AND). Either part may be empty.
+     */
     fun askSearch(): ClassicDialog {
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "探す文字列 (タイトル・ユーザー名・URL・メモ・タグ。#タグ で完全一致):", 14f))
-        val f = W.field(ctx).apply { setText(search ?: "") }
-        col.addView(f, W.lp(W.MATCH, W.WRAP, t = 6))
+        val words = (search ?: "").split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (search != null) { searchTags.clear(); words.filter { it.startsWith("#") }.forEach { searchTags.add(it.substring(1)) } }
+        col.addView(W.text(ctx, "文字で検索 (タイトル・ユーザー名・URL・メモ・タグ):", 14f, true))
+        val f = W.field(ctx).apply { setText(words.filterNot { it.startsWith("#") }.joinToString(" ")); isSingleLine = true }
+        col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
         val tags = Tree.allTags(db())
-        var dlg: ClassicDialog? = null
         if (tags.isNotEmpty()) {
-            col.addView(W.text(ctx, "タグで検索:", 14f, true), W.lp(W.MATCH, W.WRAP, t = 10))
-            col.addView(Parts.tagChips(ctx, tags, emptySet()) { t -> dlg?.dismiss(); searchFor("#$t") }, W.lp(W.MATCH, W.WRAP, t = 4))
+            col.addView(W.text(ctx, "タグで絞り込み (選んだタグをすべて持つもの):", 14f, true), W.lp(W.MATCH, W.WRAP, t = 12))
+            val holder = FrameLayout(ctx)
+            val count = W.text(ctx, "", 13f, color = W.SHADOW)
+            fun render() {
+                holder.removeAllViews()
+                holder.addView(Parts.tagChips(ctx, tags, searchTags) { t -> if (!searchTags.remove(t)) searchTags.add(t); render() })
+                val n = if (searchTags.isEmpty()) null else Tree.search(db(), searchQuery("", searchTags)).size
+                count.text = if (n == null) "タグ未選択" else "選択: ${searchTags.joinToString(" ")} → $n 件"
+            }
+            render()
+            col.addView(holder, W.lp(W.MATCH, W.WRAP, t = 4))
+            col.addView(count, W.lp(W.MATCH, W.WRAP, t = 4))
         }
-        dlg = ClassicDialog(ctx, "検索", col, listOf(
-            ClassicDialog.Btn("検索開始", true) { searchFor(f.text.toString()); true },
+        val dlg = ClassicDialog(ctx, "検索", col, listOf(
+            ClassicDialog.Btn("検索開始", true) { searchFor(searchQuery(f.text.toString(), searchTags)); true },
+            ClassicDialog.Btn("クリア") { searchTags.clear(); searchFor(""); true },
             ClassicDialog.Btn("キャンセル")), scroll = true)
         dlg.show()
         return dlg
