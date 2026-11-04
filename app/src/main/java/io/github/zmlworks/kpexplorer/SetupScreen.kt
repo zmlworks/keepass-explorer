@@ -153,7 +153,7 @@ class SetupScreen(private val a: MainActivity) : MainActivity.Screen {
         val busy = Dlg.busy(ctx, "セットアップ", "データベースを作成しています…")
         Session.io.execute {
             val r = runCatching {
-                val db = Kdbx.create(name, key)
+                val db = Kdbx.create(name, key, rootName = "メイン")
                 a.store.write(Kdbx.encodeVerified(db))
                 db
             }
@@ -198,7 +198,8 @@ class SetupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     private fun finishSetup() {
-        if (bio.isChecked && bio.isEnabled) Security.enroll(a) { a.showExplorer() } else a.showExplorer()
+        val pin = { Security.setupPin(a, firstRun = true) { a.showExplorer() } }
+        if (bio.isChecked && bio.isEnabled) Security.enroll(a) { pin() } else pin()
     }
 
     override fun onBack(): Boolean { if (page > 0) { show(0); return true }; return false }

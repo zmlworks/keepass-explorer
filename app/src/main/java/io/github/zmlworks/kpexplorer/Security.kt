@@ -100,6 +100,9 @@ object Security {
                             busy.dismiss()
                             r.onSuccess {
                                 old?.fill(0)
+                                val hadPin = a.pins.hasPin()
+                                a.pins.clear()   // the PIN blob wraps the old master key
+                                if (hadPin) Toast.makeText(a, "PIN は解除されました。メニューから設定し直してください。", Toast.LENGTH_LONG).show()
                                 val hadBio = a.vault.hasStoredKey()
                                 Dlg.message(a, "マスターパスワードの変更", "マスターパスワードを変更しました。" +
                                     if (hadBio) "\n続けて指紋認証を登録し直します。" else "") {
@@ -119,5 +122,45 @@ object Security {
                 }
             },
             ClassicDialog.Btn("キャンセル"))).show()
+    }
+
+    /** Ask for a new PIN (twice) and store the composite key under it. [firstRun] offers "あとで". */
+    fun setupPin(a: MainActivity, firstRun: Boolean = false, done: () -> Unit) {
+        val col = W.vbox(a)
+        col.addView(W.text(a, (if (firstRun) "ロック解除用の PIN を設定します (指紋認証が使えないときにも使えます)。\n" else "") +
+            "4〜12 桁の数字。${io.github.zmlworks.kpexplorer.sec.PinVault.MAX_ATTEMPTS} 回間違えると PIN は無効になり、マスターパスワードが必要になります。", 14f)
+            .apply { setLineSpacing(0f, 1.1f) })
+        fun f(label: String): EditText {
+            col.addView(W.text(a, label, 14f), W.lp(W.MATCH, W.WRAP, t = 8))
+            return W.field(a, password = true).also {
+                it.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                col.addView(it, W.lp(W.MATCH, W.WRAP, t = 3))
+            }
+        }
+        val p1 = f("PIN:"); val p2 = f("PIN の確認入力:")
+        ClassicDialog(a, "PIN の設定", col, listOf(
+            ClassicDialog.Btn("OK", true) {
+                val pin = p1.text.toString()
+                when {
+                    !io.github.zmlworks.kpexplorer.sec.PinVault.valid(pin) -> { Dlg.message(a, "PIN", "PIN は 4〜12 桁の数字で入力してください。", '!'); false }
+                    pin != p2.text.toString() -> { Dlg.message(a, "PIN", "確認用の PIN が一致しません。", 'x'); false }
+                    else -> {
+                        val c = Session.compositeCopy()
+                        if (c == null) { done(); return@Btn true }
+                        val busy = Dlg.busy(a, "PIN の設定", "PIN を登録しています…")
+                        Session.io.execute {
+                            val r = runCatching { a.pins.setPin(pin, c) }
+                            c.fill(0)
+                            a.runOnUiThread {
+                                busy.dismiss()
+                                r.onSuccess { Toast.makeText(a, "PIN を設定しました", Toast.LENGTH_SHORT).show(); done() }
+                                 .onFailure { Dlg.message(a, "PIN", "PIN を設定できませんでした。\n$it", 'x') { done() } }
+                            }
+                        }
+                        true
+                    }
+                }
+            },
+            ClassicDialog.Btn(if (firstRun) "あとで" else "キャンセル") { done(); true })).show()
     }
 }

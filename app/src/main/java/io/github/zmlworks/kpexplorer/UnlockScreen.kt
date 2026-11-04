@@ -22,6 +22,9 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     private val root: View
     override val view: View get() = root
     val password = W.field(ctx, password = true)
+    val pin = W.field(ctx, password = true).apply {
+        inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+    }
     private val error: TextView = W.text(ctx, "", 14f, color = 0xFFC00000.toInt())
     private var autoPrompted = false
     private val options = W.vbox(ctx)
@@ -33,7 +36,7 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         val inner = W.vbox(ctx, 12)
         val top = W.hbox(ctx).apply { gravity = Gravity.TOP }
         top.addView(W.icon(ctx, Px.keyfile32), W.lp(W.WRAP, W.WRAP, r = 12))
-        top.addView(W.text(ctx, "データベースのロックを解除するには、指紋認証を使うか、マスターパスワードを入力してください。", 14f).apply {
+        top.addView(W.text(ctx, if (a.pins.hasPin()) "ロックを解除するには、指紋認証を使うか、PIN またはマスターパスワードを入力してください。" else "データベースのロックを解除するには、指紋認証を使うか、マスターパスワードを入力してください。", 14f).apply {
             setLineSpacing(0f, 1.15f)
         }, W.lp(0, W.WRAP, 1f))
         inner.addView(top)
@@ -47,6 +50,13 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         row("データベース(D):", W.text(ctx, dbName, 15f).apply {
             background = W.Bevel(W.Style.SUNKEN, W.FACE); setPadding(W.dp(6), W.dp(8), W.dp(6), W.dp(8)); isSingleLine = true
         })
+        if (a.pins.hasPin()) {
+            row("PIN(N):", pin)
+            pin.imeOptions = EditorInfo.IME_ACTION_DONE
+            pin.setOnEditorActionListener { _, id, ev ->
+                if (id == EditorInfo.IME_ACTION_DONE || ev?.keyCode == KeyEvent.KEYCODE_ENTER) { submit(); true } else false
+            }
+        }
         row("パスワード(P):", password)
         password.imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         password.setOnEditorActionListener { _, id, ev ->
@@ -106,7 +116,8 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun submit() {
-        if (password.text.isEmpty()) { error.text = "パスワードを入力してください。"; return }
+        if (pin.text.isNotEmpty() && password.text.isEmpty()) { submitPin(); return }
+        if (password.text.isEmpty()) { error.text = if (a.pins.hasPin()) "PIN かパスワードを入力してください。" else "パスワードを入力してください。"; return }
         val key = io.github.zmlworks.kpexplorer.db.Kdbx.compositeKey(password.text)
         error.text = ""
         Security.openStored(a, key, onError = { msg -> error.text = msg; password.selectAll() }) {
@@ -142,6 +153,29 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
                     App.prefs(ctx).edit().remove("dbName").remove("lastGroup").apply()
                     Dlg.message(ctx, "データベースの置き換え", "バックアップ ${f.name} を作成しました。\nバックアップはアプリの backups フォルダーに残ります。") { a.route() }
                 }.onFailure { Dlg.message(ctx, "データベースの置き換え", "バックアップできなかったため中止しました。\n${it.message ?: it}", 'x') }
+            }
+        }
+    }
+
+    private fun submitPin() {
+        val p = pin.text.toString()
+        pin.setText("")
+        error.text = ""
+        val busy = Dlg.busy(ctx, "ログオン", "PIN を確認しています…")
+        Session.io.execute {
+            val r = a.pins.unlock(p)
+            a.runOnUiThread {
+                busy.dismiss()
+                when (r) {
+                    is io.github.zmlworks.kpexplorer.sec.PinVault.Unlock.Ok ->
+                        Security.openStored(a, r.composite, onError = { msg -> error.text = msg }) { a.showExplorer() }
+                    is io.github.zmlworks.kpexplorer.sec.PinVault.Unlock.Wrong -> error.text = "PIN が違います。あと ${r.left} 回間違えると PIN は無効になります。"
+                    io.github.zmlworks.kpexplorer.sec.PinVault.Unlock.Wiped -> {
+                        error.text = "PIN を規定回数間違えたため、PIN は無効になりました。マスターパスワードで解除してください。"
+                        pin.isEnabled = false
+                    }
+                    io.github.zmlworks.kpexplorer.sec.PinVault.Unlock.NoPin -> error.text = "PIN が設定されていません。"
+                }
             }
         }
     }

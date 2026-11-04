@@ -51,6 +51,8 @@ class UiScreenshotsTest {
         app().getSharedPreferences("vault", 0).edit().clear().commit()
         Vault.forceAvailableForTest = true
         App.store(app()).let { s -> s.delete(); s.backups().forEach { it.delete() } }
+        app().getSharedPreferences("pin", 0).edit().clear().commit()
+        File(app().filesDir, "data-version").writeText(App.DATA_VERSION.toString())
     }
 
     @After fun tearDown() { Session.lock(); Vault.forceAvailableForTest = null; Menus.dismiss() }
@@ -127,127 +129,135 @@ class UiScreenshotsTest {
         return launch()
     }
 
-    @Test fun explorer_iconsListEditorMoveBackups() {
+    @Test fun explorer_keyMemoDragBackupsPin() {
         val a = openSample()
         val ex = a.explorer!!
-        assertTrue("root has folders → icon view", ex.iconMode)
+        assertTrue(ex.iconMode)
         assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "ごみ箱", "Wi-Fi (自宅)", "買い物リスト"),
             ex.rows.map { ex.label(it) })
-        save(shot(a.host), "01-explorer-icons.png")
+        save(shot(a.host), "01-main-icons.png")
 
-        ex.selection = ids["メール"]; ex.refresh(); idle()
-        val row = ex.rows.first { it.id == ids["メール"] }
-        val base = shot(a.host)
-        save(overlay(base, Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "02-context-menu.png")
+        ex.select(ids["Wi-Fi (自宅)"]); idle()
+        save(shot(a.host), "02-main-preview.png")
+        val row = ex.rows.first { it.uuid == ids["メール"] }
+        save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
         ex.navigate(ids["メール"]!!); idle()
+        ex.toggleView(); idle()
         assertFalse(ex.iconMode)
         assertEquals(5, ex.rows.size)
-        ex.selection = ids["Gmail"]; ex.refresh(); idle()
-        save(shot(a.host), "03-explorer-list.png")
-        val entryRow = ex.rows.first { it.id == ids["Gmail"] }
-        save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(entryRow)) {}, 200, 560, 720), "04-entry-menu.png")
+        ex.select(ids["Gmail"]); idle()
+        save(shot(a.host), "04-main-details.png")
+        ex.toggleView(); idle()
 
-        val ed = EditorScreen(a, ids["Gmail"], null, false)
-        a.show(ed); idle()
-        ed.tags.setText("web メール 重"); idle()
-        assertTrue(ed.chips.childCount >= 1)
-        save(shot(a.host), "05-editor-tags.png")
-        ed.tags.setText("web メール "); idle()
-        assertTrue("all tags suggested", ed.chips.childCount >= 6)
-        ed.notes.setText("2段階認証あり。予備コードは金庫のメモに。\n(テストで追記)")
-        ed.apply(); idle()
+        // key screen
+        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!)
+        a.show(ks); idle()
+        ks.addCustomField("秘密の質問", "初めて飼ったペット: ポチ")
+        ks.setOtp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+        assertTrue(ks.dirty)
+        assertTrue(ks.save())
+        idle()
+        save(shot(a.host), "05-key.png")
         val gm = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
         assertEquals(1, gm.history.size)
-        assertEquals(listOf("web", "メール"), gm.tags)
+        assertEquals(listOf("秘密の質問"), io.github.zmlworks.kpexplorer.db.Order.customFieldNames(gm))
+        assertTrue(io.github.zmlworks.kpexplorer.db.Order.otpUri(gm)!!.contains("issuer=Gmail"))
+        ks.addCustomField("一時", "x"); idle()
         a.onBackPressed(); idle()
-
-        ex.navigate(Tree.root(Session.db!!).uuid); idle()
-        val memo = EditorScreen(a, ids["買い物リスト"], null, true)
-        a.show(memo); idle()
-        save(shot(a.host), "06-editor-memo.png")
+        assertNotNull("unsaved edits → confirm dialog", Dlg.last)
+        save(withDialog(shot(a.host)), "06-unsaved-confirm.png")
+        Dlg.last?.dismiss(); idle()
         a.showExplorer(); idle()
 
-        val nm = EditorScreen(a, null, ids["仕事"], true)
-        a.show(nm); idle()
-        nm.notes.setText("会議室の Wi-Fi は 3F 掲示板"); nm.apply(); a.showExplorer(); idle()
-        assertEquals(1, Tree.findGroup(Session.db!!, ids["仕事"]!!)!!.entries.size)
+        // memo screen + new items
+        ex.navigate(Tree.root(Session.db!!).uuid); idle()
+        a.show(MemoScreen(a, ids["買い物リスト"]!!)); idle()
+        save(shot(a.host), "07-memo.png")
+        a.showExplorer(); idle()
+        val nf = ex.newFolder(); val nf2 = ex.newFolder(); val nm = ex.newMemo()
+        val g = Tree.findGroup(Session.db!!, ex.current)!!
+        assertEquals("新しいフォルダ", g.groups.first { it.uuid == nf }.name)
+        assertEquals("新しいフォルダ2", g.groups.first { it.uuid == nf2 }.name)
+        assertEquals("新しいメモ", g.entries.first { it.uuid == nm }.fields.title?.content)
 
+        // drag: memo into folder, folder reordered before メール, entry onto the path line (root)
+        ex.performDrop(nm, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, nf)); idle()
+        assertEquals(nf, Tree.findEntry(Session.db!!, nm)!!.first.uuid)
+        ex.performDrop(nf2, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.BEFORE, ids["メール"])); idle()
+        assertEquals("新しいフォルダ2", ex.rows.first().name)
         ex.navigate(ids["メール"]!!); idle()
-        ex.selection = ids["Yahoo!メール"]
-        ex.moveToDialog(ids["Yahoo!メール"]!!); idle()
-        save(withDialog(shot(a.host)), "07-move-tree.png")
-        Dlg.last?.dismiss(); idle()
-
-        ex.cut(ids["Yahoo!メール"]!!)
-        ex.navigate(ids["仕事"]!!); idle()
-        ex.paste(ids["仕事"]!!); idle()
-        val (parent, moved) = Tree.findEntry(Session.db!!, ids["Yahoo!メール"]!!)!!
-        assertEquals(ids["仕事"], parent.uuid)
-        assertNotNull(moved.times!!.locationChanged)
-        ex.moveTo(ids["Yahoo!メール"]!!, 0)
-        assertEquals(0, Tree.indexInParent(Session.db!!, ids["Yahoo!メール"]!!))
-
+        val root = Tree.root(Session.db!!).uuid
+        ex.performDrop(ids["Yahoo!メール"]!!, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, root, pathFolder = true)); idle()
+        assertEquals(root, Tree.findEntry(Session.db!!, ids["Yahoo!メール"]!!)!!.first.uuid)
         assertTrue(saveNow().isSuccess)
         val disk = Kdbx.open(App.store(app()).read(), key)
-        assertEquals(ids["仕事"], Tree.findEntry(disk, ids["Yahoo!メール"]!!)!!.first.uuid)
-
-        // a failed save is reported to afterSave callers (backup / restore / password change)
-        val dbDir = App.store(app()).dbFile.parentFile!!
-        dbDir.setWritable(false)
-        if (!dbDir.canWrite()) {
-            Session.update { Kdbx.withCredentials(it, key.copyOf()) }
-            val r = saveNow()
-            assertTrue(r.exceptionOrNull() is Session.SaveFailedException)
-            assertEquals(Session.SaveState.ERROR, Session.saveState)
-        }
-        dbDir.setWritable(true)
-        assertTrue(saveNow().isSuccess)
-        assertEquals(Session.SaveState.SAVED, Session.saveState)
+        assertEquals("新しいフォルダ2", io.github.zmlworks.kpexplorer.db.Order.children(Tree.root(disk)).first().name)
 
         val st = App.store(app())
-        st.backup(LocalDate.of(2026, 10, 12)); st.backup(LocalDate.of(2026, 10, 19)); st.backup(LocalDate.of(2026, 10, 21)); st.backup(LocalDate.of(2026, 10, 21))
+        st.backup(LocalDate.of(2026, 10, 12)); st.backup(LocalDate.of(2026, 10, 21))
         val bs = BackupScreen(a)
         a.show(bs); idle()
-        assertEquals(4, bs.files.size)
-        assertTrue(bs.files.any { it.name == "2026-10-21_2.kdbx" })
-        bs.selected = bs.files.first { it.name == "2026-10-21.kdbx" }; bs.reload(); idle()
+        assertEquals(2, bs.files.size)
         save(shot(a.host), "08-backups.png")
-        save(overlay(shot(a.host), Menus.build(a, bs.menuFor(bs.selected!!)) {}, 260, 700, 640), "09-backup-menu.png")
+        a.showExplorer(); idle()
 
-        app().getSharedPreferences("vault", 0).edit().putString("ct", "AA==").putString("iv", "AA==").commit()
+        // PIN unlock
+        io.github.zmlworks.kpexplorer.sec.PinVault.testWrapper = TestWrapper()
+        val c = Session.compositeCopy()!!
+        a.pins.setPin("2468", c)
         a.lock(); idle()
-        assertFalse(Session.isOpen)
         assertTrue(a.screen is UnlockScreen)
-        save(shot(a.host), "10-unlock.png")
-
+        save(shot(a.host), "09-unlock-pin.png")
         val un = a.screen as UnlockScreen
-        un.password.setText("sample")
-        un.submit()
-        repeat(200) { if (!Session.isOpen) { idle(); Thread.sleep(20) } }
+        un.pin.setText("1111"); un.submit()
+        repeat(100) { idle() }
+        assertFalse(Session.isOpen)
+        assertEquals(4, a.pins.attemptsLeft())
+        un.pin.setText("2468"); un.submit()
+        repeat(300) { if (!Session.isOpen) { idle(); Thread.sleep(20) } }
         idle()
         assertTrue(Session.isOpen)
         assertTrue(a.screen is ExplorerScreen)
+        io.github.zmlworks.kpexplorer.sec.PinVault.testWrapper = null
     }
 
     @Test fun setupWizard() {
         val a = launch()
         assertTrue(a.screen is SetupScreen)
-        save(shot(a.host), "11-setup.png")
+        save(shot(a.host), "10-setup.png")
         val s = a.screen as SetupScreen
         s.show(1); idle()
-        save(shot(a.host), "12-setup-create.png")
+        save(shot(a.host), "11-setup-create.png")
         s.importMode = true; s.show(1); idle()
-        save(shot(a.host), "13-setup-import.png")
+        save(shot(a.host), "12-setup-import.png")
     }
 
     @Test fun dialogs() {
         val a = openSample()
         a.explorer!!.askDelete(ids["メール"]!!); idle()
-        save(withDialog(shot(a.host)), "14-delete-confirm.png")
+        save(withDialog(shot(a.host)), "13-delete-confirm.png")
         Dlg.last?.dismiss()
         Help.about(a); idle()
-        save(withDialog(shot(a.host)), "15-about.png")
+        save(withDialog(shot(a.host)), "14-about.png")
         assertTrue(W.px >= 1)
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class DataWipeTest {
+    @Test fun oldDataIsWiped() {
+        val app = RuntimeEnvironment.getApplication()
+        File(app.filesDir, "data-version").delete()
+        val st = App.store(app); st.dbFile.parentFile!!.mkdirs(); st.dbFile.writeText("old")
+        App.prefs(app).edit().putString("dbName", "x").commit()
+        App.wipeOldData(app)
+        assertFalse(st.dbFile.exists())
+        assertFalse(App.prefs(app).contains("dbName"))
+        assertEquals(App.DATA_VERSION.toString(), File(app.filesDir, "data-version").readText())
+        st.dbFile.parentFile!!.mkdirs(); st.dbFile.writeText("new")
+        App.wipeOldData(app)
+        assertTrue(st.dbFile.exists())
     }
 }

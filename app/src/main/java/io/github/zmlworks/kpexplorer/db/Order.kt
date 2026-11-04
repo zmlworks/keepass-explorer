@@ -1,0 +1,177 @@
+package io.github.zmlworks.kpexplorer.db
+
+import app.keemobile.kotpass.constants.BasicField
+import app.keemobile.kotpass.constants.PredefinedIcon
+import app.keemobile.kotpass.cryptography.EncryptedValue
+import app.keemobile.kotpass.database.KeePassDatabase
+import app.keemobile.kotpass.models.CustomDataValue
+import app.keemobile.kotpass.models.Entry
+import app.keemobile.kotpass.models.EntryFields
+import app.keemobile.kotpass.models.EntryValue
+import app.keemobile.kotpass.models.Group
+import app.keemobile.kotpass.models.TimeData
+import java.time.Instant
+import java.util.UUID
+
+/**
+ * 0.3.0 model on top of plain KDBX (stays readable by KeePass / KeePassXC):
+ *  - kinds: folder (group), key (entry), memo (entry with CustomData KPExplorer.Kind=memo)
+ *  - mixed folder/key/memo order per folder: Group CustomData "KPExplorer.Order" = UUIDs (desktop.ini-like,
+ *    one per folder, travels with the folder). Unlisted items follow in KDBX order (groups, then entries).
+ *  - per-key field layout: Entry CustomData "KPExplorer.Fields" = field names in display order,
+ *    hidden ones prefixed with '-'.
+ */
+object Order {
+    const val CD_ORDER = "KPExplorer.Order"
+    const val CD_KIND = "KPExplorer.Kind"
+    const val CD_FIELDS = "KPExplorer.Fields"
+    const val OTP = "otp"
+
+    /** Field keys of the key screen; custom string fields use their own name. */
+    const val F_TITLE = "Title"; const val F_USER = "UserName"; const val F_PASS = "Password"
+    const val F_URL = "URL"; const val F_TAGS = "@Tags"; const val F_OTP = "@OTP"; const val F_NOTES = "Notes"
+    val DEFAULT_LAYOUT = listOf(F_TITLE, F_USER, F_PASS, F_URL, F_TAGS, F_OTP, F_NOTES)
+    val STANDARD = setOf("Title", "UserName", "Password", "URL", "Notes")
+
+    enum class Kind { FOLDER, KEY, MEMO }
+
+    sealed class Node {
+        abstract val uuid: UUID
+        abstract val kind: Kind
+        abstract val name: String
+        data class F(val g: Group) : Node() { override val uuid get() = g.uuid; override val kind get() = Kind.FOLDER; override val name get() = g.name }
+        data class E(val e: Entry) : Node() {
+            override val uuid get() = e.uuid
+            override val kind get() = if (isMemo(e)) Kind.MEMO else Kind.KEY
+            override val name get() = Tree.title(e)
+        }
+    }
+
+    fun isMemo(e: Entry): Boolean = when (e.customData[CD_KIND]?.value) {
+        "memo" -> true
+        "key" -> false
+        else -> e.icon == PredefinedIcon.Notepad && Tree.password(e).isEmpty() && Tree.userName(e).isEmpty()
+    }
+
+    fun storedOrder(g: Group): List<UUID> =
+        g.customData[CD_ORDER]?.value.orEmpty().split(',').mapNotNull { s -> s.trim().takeIf { it.isNotEmpty() }?.let { runCatching { UUID.fromString(it) }.getOrNull() } }
+
+    /** Children of [g] in display order. */
+    fun children(g: Group): List<Node> {
+        val all = LinkedHashMap<UUID, Node>()
+        g.groups.forEach { all[it.uuid] = Node.F(it) }
+        g.entries.forEach { all[it.uuid] = Node.E(it) }
+        val out = ArrayList<Node>(all.size)
+        for (id in storedOrder(g)) all.remove(id)?.let { out.add(it) }
+        out.addAll(all.values)
+        return out
+    }
+
+    private fun withOrder(g: Group, ids: List<UUID>, now: Instant): Group =
+        g.copy(customData = g.customData + (CD_ORDER to CustomDataValue(ids.joinToString(","), now)))
+
+    /**
+     * Move [id] into folder [target] at display position [index] (null = end). Works within the same folder
+     * (reorder) and across folders. Throws [Tree.TreeException] for a folder into itself/descendant.
+     */
+    fun moveTo(db: KeePassDatabase, id: UUID, target: UUID, index: Int? = null, now: Instant = Instant.now()): KeePassDatabase {
+        val root = Tree.root(db)
+        val from = Tree.parentOf(root, id) ?: throw Tree.TreeException("item not found")
+        var d = if (from.uuid == target) db else Tree.move(db, id, target, now = now)
+        val tg = Tree.findGroup(d, target) ?: throw Tree.TreeException("target not found")
+        val ids = children(tg).map { it.uuid }.filter { it != id }.toMutableList()
+        // index counts positions in the list without the moved item
+        ids.add((index ?: ids.size).coerceIn(0, ids.size), id)
+        d = Tree.modifyGroup(d, target) { withOrder(it, ids, now) }
+        if (from.uuid != target) {
+            val fg = Tree.findGroup(d, from.uuid)
+            if (fg != null && fg.customData.containsKey(CD_ORDER))
+                d = Tree.modifyGroup(d, from.uuid) { withOrder(it, storedOrder(it).filter { x -> x != id }, now) }
+        }
+        return d
+    }
+
+    /** Insert a new child at the end of the display order. */
+    fun appendGroup(db: KeePassDatabase, parent: UUID, g: Group): KeePassDatabase =
+        moveTo(Tree.addGroup(db, parent, g), g.uuid, parent)
+
+    fun appendEntry(db: KeePassDatabase, parent: UUID, e: Entry): KeePassDatabase =
+        moveTo(Tree.addEntry(db, parent, e), e.uuid, parent)
+
+    fun uniqueChildName(g: Group, base: String): String {
+        val names = children(g).map { it.name }.toSet()
+        if (base !in names) return base
+        var i = 2
+        while ("$base$i" in names) i++
+        return "$base$i"
+    }
+
+    fun newMemo(title: String, now: Instant = Instant.now()): Entry =
+        Entry(uuid = UUID.randomUUID(), icon = PredefinedIcon.Notepad, times = TimeData.create(now),
+            fields = EntryFields.createDefault() + (BasicField.Title() to EntryValue.Plain(title)),
+            customData = mapOf(CD_KIND to CustomDataValue("memo", now)))
+
+    fun newKey(now: Instant = Instant.now()): Entry =
+        Entry(uuid = UUID.randomUUID(), icon = PredefinedIcon.Key, times = TimeData.create(now),
+            fields = EntryFields.createDefault(), customData = mapOf(CD_KIND to CustomDataValue("key", now)))
+
+    // ---------------------------------------------------------------- fields
+
+    fun customFieldNames(e: Entry): List<String> = e.fields.keys.filter { it !in STANDARD && it != OTP && !it.startsWith("TimeOtp-") && !it.startsWith("TOTP ") }
+
+    /** (key, visible) for every displayable field, in the stored order; new custom fields are appended. */
+    fun layout(e: Entry): List<Pair<String, Boolean>> {
+        val stored = e.customData[CD_FIELDS]?.value?.split('\n')?.filter { it.isNotEmpty() }
+        val base = stored?.map { if (it.startsWith("-")) it.substring(1) to false else it to true } ?: DEFAULT_LAYOUT.map { it to true }
+        val known = base.map { it.first }.toSet()
+        val extra = (DEFAULT_LAYOUT + customFieldNames(e)).filter { it !in known }.map { it to true }
+        val customs = customFieldNames(e).toSet()
+        return (base + extra).filter { (k, _) -> k in DEFAULT_LAYOUT || k in customs }
+    }
+
+    fun encodeLayout(l: List<Pair<String, Boolean>>): String = l.joinToString("\n") { (k, v) -> if (v) k else "-$k" }
+
+    fun string(e: Entry, key: String): String = e.fields[key]?.content.orEmpty()
+
+    fun otpUri(e: Entry): String? {
+        string(e, OTP).takeIf { it.isNotBlank() }?.let { return it }
+        val b32 = string(e, "TimeOtp-Secret-Base32").takeIf { it.isNotBlank() } ?: return null
+        return "otpauth://totp/?secret=$b32"
+    }
+
+    /**
+     * Rewrite an entry's editable content in place (history + mtime like [Tree.updateEntry]).
+     * [values] maps field names (standard + custom + "otp") to text; missing customs are removed.
+     */
+    fun saveEntry(db: KeePassDatabase, id: UUID, values: Map<String, String>, tags: List<String>, layout: List<Pair<String, Boolean>>?,
+                  now: Instant = Instant.now()): KeePassDatabase {
+        val (parent, old) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
+        val protect = setOf("Password", OTP)
+        val keep = old.fields.filterKeys { k -> k in STANDARD || k.startsWith("TimeOtp-") || k.startsWith("TOTP ") }
+        val m = LinkedHashMap<String, EntryValue>()
+        keep.forEach { (k, v) -> m[k] = v }
+        for ((k, v) in values) m[k] = if (k in protect) EntryValue.Encrypted(EncryptedValue.fromString(v)) else EntryValue.Plain(v)
+        if (values[OTP].isNullOrEmpty()) m.remove(OTP)
+        val newFields = EntryFields(m)
+        val cd = if (layout != null) old.customData + (CD_FIELDS to CustomDataValue(encodeLayout(layout), now)) else old.customData
+        val nt = Tree.normalizeTags(tags)
+        val same = old.fields.keys == newFields.keys && old.fields.all { (k, v) -> newFields[k]?.content == v.content } &&
+            old.tags == nt && old.customData[CD_FIELDS]?.value == cd[CD_FIELDS]?.value
+        if (same) return db
+        val max = db.content.meta.historyMaxItems
+        var hist = old.history + old.copy(history = listOf())
+        if (max >= 0) hist = hist.takeLast(max)
+        val t = (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
+        val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t)
+        return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
+    }
+
+    fun renameEntry(db: KeePassDatabase, id: UUID, title: String): KeePassDatabase {
+        val (_, e) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
+        val vals = HashMap<String, String>()
+        e.fields.forEach { (k, v) -> vals[k] = v.content }
+        vals["Title"] = title
+        return saveEntry(db, id, vals, e.tags, null)
+    }
+
+}

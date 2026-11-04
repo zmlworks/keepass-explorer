@@ -12,6 +12,7 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import io.github.zmlworks.kpexplorer.db.Store
+import io.github.zmlworks.kpexplorer.sec.PinVault
 import io.github.zmlworks.kpexplorer.sec.Vault
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.Menus
@@ -30,6 +31,7 @@ class MainActivity : Activity() {
 
     lateinit var store: Store
     lateinit var vault: Vault
+    lateinit var pins: PinVault
     lateinit var host: FrameLayout
     var screen: Screen? = null
         private set
@@ -41,8 +43,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         W.init(this)
+        App.wipeOldData(this)
         store = App.store(this)
         vault = Vault(this)
+        pins = PinVault(this)
         applySecure()
         host = FrameLayout(this)
         host.setOnApplyWindowInsetsListener { v, ins ->
@@ -82,11 +86,12 @@ class MainActivity : Activity() {
         screen?.onPause()
         screen = s
         host.removeAllViews()
-        host.setBackgroundColor(if (s.desktop) W.DESKTOP else W.FACE)
+        // the system status bar area (host padding) shows the classic navy title colour
+        host.setBackgroundColor(if (s.desktop) W.DESKTOP else W.NAVY)
         host.addView(s.view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         if (Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.setSystemBarsAppearance(
-                if (s.desktop) 0 else WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                0,
                 WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS)
         }
         s.onShown()
