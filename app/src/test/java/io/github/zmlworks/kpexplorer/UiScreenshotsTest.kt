@@ -134,7 +134,7 @@ class UiScreenshotsTest {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
-        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "ごみ箱", "Wi-Fi (自宅)", "買い物リスト"),
+        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Wi-Fi (自宅)", "買い物リスト"),
             ex.rows.map { ex.label(it) })
         assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
         save(shot(a.host), "01-main-no-selection.png")
@@ -161,14 +161,32 @@ class UiScreenshotsTest {
         ex.navigate(ids["プロジェクトA"]!!); idle()
         assertEquals(" (2,0)", (findTag(a.host, "count", 1) as android.widget.TextView).text.toString())
         save(shot(a.host), "03b-path-counts.png")
-        ex.searchTags.clear(); ex.searchTags.add("メール"); ex.searchTags.add("web")
-        ex.askSearch(); idle()
-        save(withDialog(shot(a.host)), "03c-search-tags.png")
-        Dlg.last?.dismiss(); idle()
-        ex.searchFor(ex.searchQuery("", listOf("メール", "web"))); idle()
+        // live search: inline panel, results update on every keystroke (150 ms) and tag toggle — no button
+        ex.searchTags.clear()
+        ex.openSearch(); idle()
+        assertEquals(View.VISIBLE, ex.searchPanel.visibility)
+        assertTrue(ex.rows.isEmpty())
+        ex.searchField.setText("g")
+        ShadowLooper.idleMainLooper(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        val afterG = ex.rows.map { ex.label(it) }.toSet()
+        assertTrue(afterG.contains("Gmail"))
+        ex.searchField.setText("gmail")
+        ShadowLooper.idleMainLooper(60, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertEquals("debounced: not yet", afterG, ex.rows.map { ex.label(it) }.toSet())
+        ShadowLooper.idleMainLooper(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertEquals(setOf("Gmail"), ex.rows.map { ex.label(it) }.toSet())
+        save(shot(a.host), "03c-search-live-text.png")
+        ex.searchField.setText(""); ShadowLooper.idleMainLooper(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        ex.searchTags.add("メール"); ex.applyLiveSearch(); idle()
+        val mailOnly = ex.rows.size
+        ex.searchTags.add("web"); ex.applyLiveSearch(); idle()
         assertEquals(setOf("Gmail", "Yahoo!メール"), ex.rows.map { ex.label(it) }.toSet())
-        save(shot(a.host), "03d-search-result.png")
-        ex.searchFor(""); idle()
+        assertTrue(mailOnly >= ex.rows.size)
+        ex.closeSearch(); ex.openSearch(); idle()   // tags kept, panel rebuilt with chips pressed
+        assertEquals(setOf("Gmail", "Yahoo!メール"), ex.rows.map { ex.label(it) }.toSet())
+        save(shot(a.host), "03d-search-live-tags.png")
+        ex.searchTags.clear(); ex.closeSearch(); idle()
+        assertEquals(View.GONE, ex.searchPanel.visibility)
         ex.navigate(ids["メール"]!!); idle()
         ex.toggleView(); idle()
         assertFalse(ex.iconMode)
@@ -308,6 +326,35 @@ class UiScreenshotsTest {
         a.onBackPressed(); idle()
         assertNull(Dlg.last)
         assertTrue(a.screen is ExplorerScreen)
+    }
+
+    @Test fun keyFieldMenuAndPermanentDelete() {
+        val a = openSample()
+        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
+        val labels = { m: List<io.github.zmlworks.kpexplorer.ui.Menus.Item> -> m.map { it.label } }
+        assertTrue(labels(ks.fieldMenu("Title")).containsAll(listOf("コピー", "編集", "上へ移動", "下へ移動", "削除")))
+        assertFalse(ks.fieldMenu("Title").first { it.label == "削除" }.enabled)
+        val order0 = ks.layout.map { it.first }
+        val iu = order0.indexOf("UserName")
+        ks.moveField("UserName", -1)
+        assertEquals(iu - 1, ks.layout.indexOfFirst { it.first == "UserName" })
+        ks.moveField("UserName", 1)
+        assertEquals(order0, ks.layout.map { it.first })
+        ks.fieldMenu("URL").first { it.label == "削除" }.action()
+        assertTrue(ks.layout.none { it.first == "URL" })
+        assertNotNull(ks.addButton)
+        assertTrue(ks.boxes["Password"]!!.trailing != null)
+        ks.boxes["Password"]!!.trailing!!.performClick(); assertTrue(ks.passShown)
+        ks.dirty = false; a.showExplorer(); idle()
+        val before = Session.db!!.content.deletedObjects.size
+        a.explorer!!.navigate(ids["メール"]!!); idle()
+        a.explorer!!.askDelete(ids["Gmail"]!!); idle()
+        fun find(v: View, t: String): View? { if (v is android.widget.TextView && v.text.toString() == t) return v
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i), t)?.let { return it }; return null }
+        find(Dlg.last!!.frame, "はい")!!.performClick(); idle()
+        assertNull(Tree.findEntry(Session.db!!, ids["Gmail"]!!))
+        assertEquals(before + 1, Session.db!!.content.deletedObjects.size)
+        assertTrue(Tree.root(Session.db!!).groups.none { it.name == "ごみ箱" })
     }
 
     @Test fun historyIsCappedAtTen() {

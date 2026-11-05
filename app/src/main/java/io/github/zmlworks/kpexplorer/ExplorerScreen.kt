@@ -66,6 +66,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     lateinit var caption: W.Caption
         private set
     private val pathBox = FrameLayout(ctx)
+    /** Inline search panel (text + tag toggles); results are the list below, updated live. */
+    val searchPanel = W.vbox(ctx, 6).apply { background = W.Bevel(W.Style.RAISED) }
+    lateinit var searchField: android.widget.EditText
+        private set
+    private val searchTagHolder = FrameLayout(ctx)
+    private val liveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val liveRun = Runnable { applyLiveSearch() }
     private val pathLines = ArrayList<View>()
     private val content = FrameLayout(ctx)
     private val preview = W.vbox(ctx, 8)
@@ -75,6 +82,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val tools = HashMap<String, View>()
     private var listView: AbsListView? = null
     private val ghost = ImageView(ctx).apply { visibility = View.GONE; alpha = 0.75f }
+
+    companion object { const val LIVE_MS = 150L }
 
     var rows: List<Order.Node> = emptyList()
         private set
@@ -120,10 +129,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         sep()
         tool("save", Px.floppy16, "保存") { Security.saveDialog(a) }
         tool("menu", Ico.menu16, "メニュー") { Menus.dropDown(tools["menu"]!!, mainMenu()) }
-        tool("find", Px.find16, "検索") { askSearch() }
+        tool("find", Px.find16, "検索") { if (search == null) openSearch() else closeSearch() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         root.addView(W.hsep(ctx))
 
+        searchPanel.visibility = View.GONE
+        root.addView(searchPanel, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, t = 2))
         pathBox.background = W.Bevel(W.Style.FIELD)
         root.addView(pathBox, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, t = 2, b = 2))
 
@@ -178,13 +189,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val tx = ws.filterNot { it.startsWith("#") && it.length > 1 }
             val desc = listOfNotNull(tx.takeIf { it.isNotEmpty() }?.let { "文字: ${it.joinToString(" ")}" },
                 tg.takeIf { it.isNotEmpty() }?.let { "タグ: ${it.joinToString(" + ")}" }).joinToString("  ")
-            pathBox.addView(W.text(ctx, "検索結果 ${rows.size} 件  $desc", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
+            pathBox.addView(W.text(ctx, if (q.isEmpty()) "文字を入力するか、タグを選んでください" else "検索結果 ${rows.size} 件  $desc", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
         } else {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
             pathBox.addView(Parts.pathTree(ctx, path, onTap = { navigate(it.uuid) }, lines = pathLines))
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
+        searchPanel.visibility = if (q != null) View.VISIBLE else View.GONE
         if (selection != null && rows.none { it.uuid == selection }) selection = null
         if (cut != null && Tree.parentOf(Tree.root(d), cut!!) == null) cut = null
         content.removeAllViews()
@@ -226,11 +238,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun label(r: Order.Node): String = r.name.ifEmpty { if (r is Order.Node.F) "(名前なし)" else "(無題)" }
 
-    private fun isBin(r: Order.Node) = r is Order.Node.F && r.uuid == Tree.recycleBinId(db())
+    private fun isBin(@Suppress("UNUSED_PARAMETER") r: Order.Node) = false
 
     fun bmpFor(r: Order.Node, large: Boolean): Bitmap {
         val b = when {
-            isBin(r) -> if (large) Px.bin32 else Px.bin16
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
             r.kind == Order.Kind.MEMO -> if (large) Ico.notepad32 else Ico.notepad16
             else -> if (large) Ico.bigKey32 else Ico.key16
@@ -448,7 +459,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun empty(v: View): View {
         val f = FrameLayout(ctx)
         f.addView(v)
-        f.addView(W.text(ctx, if (search != null) "見つかりませんでした。" else "このフォルダーは空です。", 14f, color = W.SHADOW).apply {
+        f.addView(W.text(ctx, if (search != null) (if (search!!.isEmpty()) "" else "見つかりませんでした。") else "このフォルダーは空です。", 14f, color = W.SHADOW).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(40) })
         return f
@@ -656,9 +667,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         refresh()
     }
 
-    fun searchFor(q: String) { search = q.trim().ifEmpty { null }; selection = null; refresh() }
+    /** Sets the live query ("" = search mode with no criteria yet; results list stays empty). */
+    fun searchFor(q: String) { search = q.trim(); selection = null; refresh() }
 
-    /** Tags currently ticked in the search dialog (kept between searches). */
+    /** Tags currently toggled on in the search panel (kept between searches). */
     val searchTags = LinkedHashSet<String>()
 
     /** Builds the query: free words AND every ticked tag ("#tag" = exact tag). */
@@ -666,37 +678,50 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         (listOf(text.trim()) + tags.map { "#$it" }).filter { it.isNotEmpty() }.joinToString(" ")
 
     /**
-     * Search dialog with two parts: free text (title / user / URL / memo / tag), and a tag filter —
-     * toggle any used tags; results must carry all ticked tags (AND). Either part may be empty.
+     * Opens the inline search panel at the top: a text field and tag toggles. Results appear in the list
+     * directly below on every keystroke (150 ms debounce) or tag toggle — no search button.
      */
-    fun askSearch(): ClassicDialog {
-        val col = W.vbox(ctx)
-        val words = (search ?: "").split(Regex("\\s+")).filter { it.isNotEmpty() }
-        if (search != null) { searchTags.clear(); words.filter { it.startsWith("#") }.forEach { searchTags.add(it.substring(1)) } }
-        col.addView(W.text(ctx, "文字で検索 (タイトル・ユーザー名・URL・メモ・タグ):", 14f, true))
-        val f = W.field(ctx).apply { setText(words.filterNot { it.startsWith("#") }.joinToString(" ")); isSingleLine = true }
-        col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
+    fun openSearch() {
+        searchPanel.removeAllViews()
+        searchPanel.setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(6))
+        val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        row.addView(ImageView(ctx).apply { setImageDrawable(Px.drawable(ctx, Px.find16, maxOf(1, W.iconScale() - 1))) }, W.lp(W.WRAP, W.WRAP, r = 4))
+        searchField = W.field(ctx).apply { isSingleLine = true; hint = "文字で検索 (名前・ユーザー名・URL・メモ)" }
+        row.addView(searchField, W.lp(0, W.WRAP, 1f))
+        row.addView(W.button(ctx, "クリア") { searchTags.clear(); searchField.setText(""); renderSearchTags(); applyLiveSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
+        row.addView(W.button(ctx, "閉じる") { closeSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
+        searchPanel.addView(row)
+        searchField.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable?) { liveHandler.removeCallbacks(liveRun); liveHandler.postDelayed(liveRun, LIVE_MS) }
+        })
+        searchPanel.addView(searchTagHolder, W.lp(W.MATCH, W.WRAP, t = 4))
+        renderSearchTags()
+        searchFor(searchQuery("", searchTags))
+        searchField.requestFocus()
+    }
+
+    private fun renderSearchTags() {
+        searchTagHolder.removeAllViews()
         val tags = Tree.allTags(db())
-        if (tags.isNotEmpty()) {
-            col.addView(W.text(ctx, "タグで絞り込み (選んだタグをすべて持つもの):", 14f, true), W.lp(W.MATCH, W.WRAP, t = 12))
-            val holder = FrameLayout(ctx)
-            val count = W.text(ctx, "", 13f, color = W.SHADOW)
-            fun render() {
-                holder.removeAllViews()
-                holder.addView(Parts.tagChips(ctx, tags, searchTags) { t -> if (!searchTags.remove(t)) searchTags.add(t); render() })
-                val n = if (searchTags.isEmpty()) null else Tree.search(db(), searchQuery("", searchTags)).size
-                count.text = if (n == null) "タグ未選択" else "選択: ${searchTags.joinToString(" ")} → $n 件"
-            }
-            render()
-            col.addView(holder, W.lp(W.MATCH, W.WRAP, t = 4))
-            col.addView(count, W.lp(W.MATCH, W.WRAP, t = 4))
-        }
-        val dlg = ClassicDialog(ctx, "検索", col, listOf(
-            ClassicDialog.Btn("検索開始", true) { searchFor(searchQuery(f.text.toString(), searchTags)); true },
-            ClassicDialog.Btn("クリア") { searchTags.clear(); searchFor(""); true },
-            ClassicDialog.Btn("キャンセル")), scroll = true)
-        dlg.show()
-        return dlg
+        if (tags.isEmpty()) return
+        searchTagHolder.addView(Parts.tagChips(ctx, tags, searchTags) { t ->
+            if (!searchTags.remove(t)) searchTags.add(t)
+            renderSearchTags(); applyLiveSearch()
+        })
+    }
+
+    /** Re-runs the search with the panel's current text + tags (called live). */
+    fun applyLiveSearch() {
+        liveHandler.removeCallbacks(liveRun)
+        if (search == null) return
+        searchFor(searchQuery(if (::searchField.isInitialized) searchField.text.toString() else "", searchTags))
+    }
+
+    fun closeSearch() {
+        liveHandler.removeCallbacks(liveRun)
+        search = null; refresh()
     }
 
     fun saveNow() {
@@ -713,7 +738,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun mainMenu(): List<Menus.Item> {
         val p = App.prefs(ctx)
         val lockMin = a.autoLockMinutes()
-        val bin = Tree.recycleBinId(db())?.let { Tree.findGroup(db(), it) }
         return listOf(
             Menus.Item("ロック") { a.lock() },
             Menus.sep(),
@@ -721,7 +745,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             Menus.Item("外部に書き出す (パスワード付き)...") { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } },
             Menus.Item("保存したファイルの一覧...") { a.show(BackupScreen(a)) },
             Menus.Item("マスターパスワードの変更...") { Security.changeMasterPassword(a) },
-            Menus.Item("ごみ箱を空にする", bin != null && (bin.groups.isNotEmpty() || bin.entries.isNotEmpty())) { askEmptyBin() },
             Menus.sep(),
             Menus.Item("画面を保護 (スクリーンショット禁止)", checked = p.getBoolean("secure", true)) {
                 p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
@@ -759,7 +782,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item("前へ移動", !inSearch && idx > 0) { moveIndex(r.uuid, idx - 1) })
         out.add(Menus.Item("後ろへ移動", !inSearch && idx in 0 until rows.size - 1) { moveIndex(r.uuid, idx + 1) })
         out.add(Menus.sep())
-        if (bin) out.add(Menus.Item("ごみ箱を空にする") { askEmptyBin() })
         out.add(Menus.Item("削除") { askDelete(r.uuid) })
         return out
     }
@@ -820,7 +842,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveToDialog(id: UUID) {
         val d = db()
         var target: UUID? = null
-        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id),
+        val tree = FolderTree(ctx, Tree.root(d), null, null, disabled = setOf(id),
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)
@@ -838,19 +860,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun askDelete(id: UUID) {
         val d = db()
         val r = rows.firstOrNull { it.uuid == id } ?: return
-        val toBin = d.content.meta.recycleBinEnabled && !Tree.isInRecycleBin(d, id)
         val what = if (r is Order.Node.F) "フォルダー「${label(r)}」とその内容" else "「${label(r)}」"
-        val msg = if (toBin) "$what をごみ箱に移動しますか?" else "$what を完全に削除しますか?\nこの操作は元に戻せません。"
-        Dlg.confirm(ctx, "削除の確認", msg, if (toBin) '?' else '!') {
+        Dlg.confirm(ctx, "削除の確認", "$what を完全に削除しますか?\nこの操作は元に戻せません。", '!') {
             Session.update { Tree.delete(it, id).first }
             if (cut == id) cut = null
             selection = null; refresh()
-        }
-    }
-
-    private fun askEmptyBin() {
-        Dlg.confirm(ctx, "ごみ箱を空にする", "ごみ箱の中身をすべて完全に削除しますか?\nこの操作は元に戻せません。", '!') {
-            Session.update { Tree.emptyRecycleBin(it) }; refresh()
         }
     }
 

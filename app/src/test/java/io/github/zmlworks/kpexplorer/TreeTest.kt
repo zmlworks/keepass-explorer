@@ -49,7 +49,7 @@ class TreeTest {
         assertEquals("", Tree.password(memo)); assertEquals("", Tree.userName(memo))
         assertEquals("牛乳\n卵", Tree.notes(memo))
         assertTrue(db is KeePassDatabase.Ver4x)
-        assertTrue(db.content.meta.recycleBinEnabled)
+        assertFalse(db.content.meta.recycleBinEnabled)
     }
 
     @Test fun wrongPassword_isReported() {
@@ -111,26 +111,19 @@ class TreeTest {
         assertEquals(listOf("Yahoo", "Gmail"), Tree.findGroup(rt, g["mail"]!!)!!.entries.map { Tree.title(it) })
     }
 
-    @Test fun delete_goesToRecycleBin_thenPermanentWithDeletedObjects() {
+    @Test fun delete_isPermanentWithDeletedObjects_noRecycleBin() {
         val (db0, g, e) = sample()
         val (db1, toBin) = Tree.delete(db0, g["mail"]!!)
-        assertTrue(toBin)
-        val bin = Tree.recycleBinId(db1)
-        assertNotNull(bin)
-        assertTrue(Tree.isInRecycleBin(db1, e["gmail"]!!))
-        assertTrue(db1.content.deletedObjects.isEmpty())
-        val (db2, toBin2) = Tree.delete(db1, g["mail"]!!)
-        assertFalse(toBin2)
-        val ids = db2.content.deletedObjects.map { it.id }.toSet()
-        assertEquals(setOf(g["mail"], e["gmail"], e["yahoo"]), ids)
-        assertNull(Tree.findEntry(db2, e["gmail"]!!))
-        // empty bin keeps earlier DeletedObjects
-        val (db3, _) = Tree.delete(db2, e["memo"]!!)
-        val db4 = Tree.emptyRecycleBin(db3)
-        assertEquals(4, db4.content.deletedObjects.size)
-        val rt = roundTrip(db4)
+        assertFalse(toBin)
+        assertNull(Tree.recycleBinId(db1))
+        assertEquals(setOf(g["mail"], e["gmail"], e["yahoo"]), db1.content.deletedObjects.map { it.id }.toSet())
+        assertNull(Tree.findEntry(db1, e["gmail"]!!))
+        assertTrue(Tree.root(db1).groups.none { it.name == "ごみ箱" })
+        val (db2, _) = Tree.delete(db1, e["memo"]!!)
+        val rt = roundTrip(db2)
         assertEquals(4, rt.content.deletedObjects.size)
-        assertNotNull(Tree.findGroup(rt, Tree.recycleBinId(rt)!!))
+        assertFalse(rt.content.meta.recycleBinEnabled)
+        assertNull(Tree.recycleBinId(rt))
     }
 
     @Test fun tags_parseAndSuggest() {
@@ -138,7 +131,7 @@ class TreeTest {
         assertEquals(listOf("x", "y"), Tree.parseTags("x;y,"))
         val (db, _, e) = sample()
         assertEquals(listOf("mail", "memo", "web"), Tree.allTags(db))
-        // tags in the recycle bin are not suggested
+        // tags of deleted entries disappear
         val (db2, _) = Tree.delete(db, e["memo"]!!)
         assertEquals(listOf("mail", "web"), Tree.allTags(db2))
         assertEquals(listOf("Gmail"), Tree.search(db, "#web").map { Tree.title(it.second) })

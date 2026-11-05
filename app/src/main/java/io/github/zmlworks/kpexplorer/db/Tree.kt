@@ -292,32 +292,9 @@ object Tree {
         g.groups.forEach { addAll(allIds(it)) }
     }
 
-    /**
-     * Delete like KeePass: if the Recycle Bin is enabled and the item is not already inside it, move it there
-     * (creating the bin when needed). Otherwise remove it permanently and record DeletedObjects.
-     * @return the new database and whether it went to the recycle bin
-     */
-    fun delete(db: KeePassDatabase, id: UUID, binName: String = "ごみ箱", now: Instant = Instant.now()): Pair<KeePassDatabase, Boolean> {
-        val r = root(db)
-        if (id == r.uuid) throw TreeException("cannot delete the root")
-        val meta = db.content.meta
-        val bin = recycleBinId(db)
-        if (meta.recycleBinEnabled && id != bin && !isInRecycleBin(db, id)) {
-            var d = db
-            var binId = bin
-            if (binId == null || findGroup(d, binId) == null) {
-                val g = Group(uuid = UUID.randomUUID(), name = binName, icon = PredefinedIcon.TrashBin,
-                    enableAutoType = GroupOverride.Disabled, enableSearching = GroupOverride.Disabled,
-                    times = TimeData.create(now))
-                binId = g.uuid
-                d = addGroup(d, r.uuid, g).modifyContent {
-                    copy(meta = meta.copy(recycleBinUuid = g.uuid, recycleBinChanged = now))
-                }
-            }
-            return move(d, id, binId, now = now) to true
-        }
-        return deletePermanently(db, id, now) to false
-    }
+    /** Delete permanently (no recycle bin) and record DeletedObjects. @return the new database and false. */
+    fun delete(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): Pair<KeePassDatabase, Boolean> =
+        deletePermanently(db, id, now) to false
 
     fun deletePermanently(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
         val r = root(db)
@@ -336,14 +313,6 @@ object Tree {
                 meta = if (bin != null && bin == id) meta.copy(recycleBinUuid = ZERO, recycleBinChanged = now) else meta
             )
         }
-    }
-
-    /** Empty the recycle bin: every child is deleted permanently. */
-    fun emptyRecycleBin(db: KeePassDatabase, now: Instant = Instant.now()): KeePassDatabase {
-        val bin = recycleBinId(db)?.let { findGroup(db, it) } ?: return db
-        var d = db
-        (bin.groups.map { it.uuid } + bin.entries.map { it.uuid }).forEach { d = deletePermanently(d, it, now) }
-        return d
     }
 
     // ---------------------------------------------------------------- tags & search

@@ -102,13 +102,13 @@ object Kdbx {
         return "$ver / $cipher / $kdf"
     }
 
-    /** New KDBX 4 database: AES-256, Argon2id, recycle bin on. */
+    /** New KDBX 4 database: AES-256, Argon2id, no recycle bin. */
     fun create(name: String, composite: ByteArray, rootName: String = name, light: Boolean = false): KeePassDatabase {
         val random = SecureRandom()
         val now = Instant.now()
         var db: KeePassDatabase = KeePassDatabase.Ver4x.create(
             rootName = rootName,
-            meta = Meta(generator = GENERATOR, name = name, recycleBinEnabled = true, settingsChanged = now, historyMaxItems = Tree.HISTORY_MAX),
+            meta = Meta(generator = GENERATOR, name = name, recycleBinEnabled = false, settingsChanged = now, historyMaxItems = Tree.HISTORY_MAX),
             credentials = credentials(composite),
             random = random
         )

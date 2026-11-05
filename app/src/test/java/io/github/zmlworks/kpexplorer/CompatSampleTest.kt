@@ -23,8 +23,7 @@ class CompatSampleTest {
         db = Tree.move(db, e2.uuid, b.uuid)          // LocationChanged + PreviousParentGroup
         db = Tree.reorder(db, b.uuid, 0)             // B before A
         db = Tree.updateEntry(db, e1.uuid, Tree.fieldsOf(Tree.findEntry(db, e1.uuid)!!.second).copy(password = "pass1-new"))
-        db = Tree.delete(db, e3.uuid).first          // → recycle bin
-        db = Tree.delete(db, e3.uuid).first          // → permanent, DeletedObjects
+        db = Tree.delete(db, e3.uuid).first          // permanent (no recycle bin), DeletedObjects
         db = Tree.setExpanded(db, a.uuid, false)
         db = Tree.setViewMode(db, b.uuid, "list")
         val out = File("build/compat").apply { mkdirs() }

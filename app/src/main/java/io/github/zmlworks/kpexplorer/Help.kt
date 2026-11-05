@@ -9,7 +9,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.3.3"
+    const val VERSION = "0.3.4"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)
@@ -43,7 +43,7 @@ object Help {
             "・ロック解除は指紋・画面ロック (PIN など)、またはマスターパスワード。メニューからマスターパスワードを変更できます。\n" +
             "・ツールバーの「保存」: アプリ内に日付.kdbx で保存、または パスワードを付けて外部に書き出し (同じマスターパスワードか別のパスワード。KeePass / KeePassXC で開けます)。\n" +
             "・鍵の画面: 欄を横にスワイプでコピー、長押しで編集、パスワード欄はタップで表示／非表示 (最初は ******)。\n" +
-            "・検索: 文字とタグ (複数選ぶとすべてを持つもの) で絞り込めます。\n" +
+            "・検索: 上の欄に文字を入力するかタグを押すと、すぐ下に結果が出ます (タグは複数でAND)。\n・削除は確認のうえ完全に削除します (ごみ箱はありません)。\n" +
             "・並び順はフォルダーごとに保存されます (KDBX の CustomData)。\n" +
             "・鍵の画面の「≡」から、カスタム欄の追加、欄の表示・順番、ワンタイムパスワード (TOTP) を設定できます。\n" +
             "・フォルダー操作は自動保存、鍵とメモは「保存」で保存します。", 'i')
@@ -58,6 +58,6 @@ object Help {
             "エントリ: ${Tree.countEntries(d.content.group)} 個\n" +
             "ファイル: ${a.store.dbFile.name} (${size / 1024} KB)\n" +
             "作成元: ${d.content.meta.generator}\n" +
-            "ごみ箱: ${if (d.content.meta.recycleBinEnabled) "有効" else "無効"}", 'i')
+            "削除: 確認のうえ完全に削除 (ごみ箱なし)", 'i')
     }
 }

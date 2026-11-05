@@ -21,26 +21,34 @@ object Stars : PasswordTransformationMethod() {
 }
 
 /**
- * One key field as its own raised classic frame: "Label:" + value well.
+ * One key field as a classic sunken well (KeePassDX-like layout, Win 98 look):
+ * [leading glyph] [small label over the value] [optional trailing action, e.g. eye / open link].
  *  - horizontal swipe = [onSwipe] (copy), with a short flash;
  *  - long press = edit in place (keyboard), leaving the field (focus lost / IME done) ends editing;
  *  - tap = [onTap] (Pass: show / hide).
- * While not editing the frame takes all touches; vertical moves are left to the parent ScrollView.
+ * While not editing the frame takes all touches (except on the trailing button); vertical moves go to the ScrollView.
  */
 class FieldBox(ctx: Context, label: String, val field: EditText, private val view: View? = null,
                var onSwipe: (() -> Unit)? = null, var onTap: (() -> Unit)? = null,
-               var onLongPress: (() -> Unit)? = null) : LinearLayout(ctx) {
+               var onLongPress: (() -> Unit)? = null, icon: android.graphics.drawable.Drawable? = null,
+               val trailing: View? = null) : LinearLayout(ctx) {
     var editing = false
         private set
-    val labelView: TextView = W.text(ctx, label, 14f, true).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }
-    private val frameBg = W.Bevel(W.Style.RAISED)
+    val labelView: TextView = W.text(ctx, label, 11f, false, W.NAVY).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }
+    private val frameBg = W.Bevel(W.Style.FIELD, W.WINDOW)
 
     init {
         orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         background = frameBg
-        setPadding(W.dp(8), W.dp(5), W.dp(5), W.dp(5))
-        addView(labelView, W.lp(W.dp(58), W.WRAP, r = 4))
-        addView(view ?: field, W.lp(0, W.WRAP, 1f))
+        setPadding(W.dp(6), W.dp(4), W.dp(4), W.dp(4))
+        if (icon != null) addView(android.widget.ImageView(ctx).apply { setImageDrawable(icon) }, W.lp(W.dp(22), W.dp(22), r = 8))
+        val col = LinearLayout(ctx).apply { orientation = VERTICAL }
+        col.addView(labelView, W.lp(W.MATCH, W.WRAP))
+        col.addView(view ?: field, W.lp(W.MATCH, W.WRAP))
+        addView(col, W.lp(0, W.WRAP, 1f))
+        if (trailing != null) addView(trailing, W.lp(W.dp(36), W.dp(36), l = 4))
+        field.background = null
+        field.setPadding(0, W.dp(1), 0, W.dp(1))
         setEditable(false)
         field.setOnFocusChangeListener { _, has -> if (!has && editing) endEdit() }
         field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { endEdit(); true } else false }
@@ -55,7 +63,7 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
     fun startEdit() {
         if (view != null) { onLongPress?.invoke(); return }
         editing = true; setEditable(true)
-        frameBg.fill = W.LIGHT; invalidate()
+        frameBg.fill = W.INFO; invalidate()
         onLongPress?.invoke()
         field.requestFocus(); field.setSelection(field.text.length)
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(field, 0)
@@ -66,13 +74,13 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
         editing = false
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
         field.clearFocus(); setEditable(false)
-        frameBg.fill = W.FACE; invalidate()
+        frameBg.fill = W.WINDOW; invalidate()
     }
 
     /** Short highlight after a copy. */
     fun flash() {
         frameBg.fill = W.NAVY; labelView.setTextColor(W.HILITE); invalidate()
-        postDelayed({ frameBg.fill = if (editing) W.LIGHT else W.FACE; labelView.setTextColor(W.TEXT); invalidate() }, 250)
+        postDelayed({ frameBg.fill = if (editing) W.INFO else W.WINDOW; labelView.setTextColor(W.NAVY); invalidate() }, 250)
     }
 
     private val swipeMin = W.dp(48)
@@ -89,7 +97,14 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
     })
     private var x0 = 0f; private var y0 = 0f; private var swiped = false
 
-    override fun onInterceptTouchEvent(e: MotionEvent): Boolean = !editing
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+        if (editing) return false
+        val t = trailing
+        if (t != null && e.actionMasked == MotionEvent.ACTION_DOWN && e.x >= t.left && e.x <= t.right) { onTrail = true; return false }
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) onTrail = false
+        return !onTrail
+    }
+    private var onTrail = false
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (editing) return super.onTouchEvent(e)
         when (e.actionMasked) {

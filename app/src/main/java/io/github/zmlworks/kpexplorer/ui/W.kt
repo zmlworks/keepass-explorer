@@ -119,7 +119,7 @@ object W {
                     else { frame(c, b, 1, HILITE, DARK); frame(c, b, 2, LIGHT, SHADOW) }
                 }
                 Style.SUNKEN, Style.FIELD -> {
-                    rect(c, b.left, b.top, b.right, b.bottom, if (style == Style.FIELD) WINDOW else fill)
+                    rect(c, b.left, b.top, b.right, b.bottom, if (style == Style.FIELD && fill == FACE) WINDOW else fill)
                     frame(c, b, 0, SHADOW, HILITE); frame(c, b, 1, DARK, LIGHT)
                 }
                 Style.THIN_RAISED -> { rect(c, b.left, b.top, b.right, b.bottom, fill); frame(c, b, 0, HILITE, SHADOW) }
