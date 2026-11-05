@@ -35,7 +35,7 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
     var editing = false
         private set
     val labelView: TextView = W.text(ctx, label, 11f, false, W.NAVY).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }
-    private val frameBg = W.Bevel(W.Style.FIELD, W.WINDOW)
+    private val frameBg = W.Bevel(W.Style.FIELD, FILL)
 
     init {
         orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -63,7 +63,7 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
     fun startEdit() {
         if (view != null) { onLongPress?.invoke(); return }
         editing = true; setEditable(true)
-        frameBg.fill = W.INFO; invalidate()
+        frameBg.fill = W.WINDOW; invalidate()
         onLongPress?.invoke()
         field.requestFocus(); field.setSelection(field.text.length)
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(field, 0)
@@ -74,52 +74,69 @@ class FieldBox(ctx: Context, label: String, val field: EditText, private val vie
         editing = false
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
         field.clearFocus(); setEditable(false)
-        frameBg.fill = W.WINDOW; invalidate()
+        frameBg.fill = FILL; invalidate()
     }
 
     /** Short highlight after a copy. */
     fun flash() {
         frameBg.fill = W.NAVY; labelView.setTextColor(W.HILITE); invalidate()
-        postDelayed({ frameBg.fill = if (editing) W.INFO else W.WINDOW; labelView.setTextColor(W.NAVY); invalidate() }, 250)
+        postDelayed({ frameBg.fill = if (editing) W.WINDOW else FILL; labelView.setTextColor(W.NAVY); invalidate() }, 250)
     }
 
-    private val swipeMin = W.dp(48)
+    /** Copy needs a long swipe: 40 % of the width, at most 120 dp (at least 72 dp). */
+    fun copyThreshold(): Float = maxOf(W.dp(72).toFloat(), minOf(width * 0.4f, W.dp(120).toFloat()))
+    private val slop = W.dp(10)
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
         override fun onSingleTapUp(e: MotionEvent): Boolean { onTap?.invoke(); return true }
-        override fun onLongPress(e: MotionEvent) { startEdit() }
-        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-            val s = e1 ?: return false
-            val mx = e2.x - s.x; val my = e2.y - s.y
-            if (abs(mx) > abs(my) * 1.5f) parent?.requestDisallowInterceptTouchEvent(true)
-            return false
-        }
+        override fun onLongPress(e: MotionEvent) { if (!sliding) startEdit() }
     })
-    private var x0 = 0f; private var y0 = 0f; private var swiped = false
+    private var x0 = 0f; private var y0 = 0f
+    /** True while the box follows the finger sideways. */
+    var sliding = false
+        private set
 
-    override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
-        if (editing) return false
-        val t = trailing
-        if (t != null && e.actionMasked == MotionEvent.ACTION_DOWN && e.x >= t.left && e.x <= t.right) { onTrail = true; return false }
-        if (e.actionMasked == MotionEvent.ACTION_DOWN) onTrail = false
-        return !onTrail
-    }
-    private var onTrail = false
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean = !editing
+
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (editing) return super.onTouchEvent(e)
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; swiped = false }
-            MotionEvent.ACTION_MOVE -> if (!swiped && abs(e.x - x0) > swipeMin && abs(e.x - x0) > 2 * abs(e.y - y0)) {
-                swiped = true; onSwipe?.invoke(); flash()
-                val c = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }; gd.onTouchEvent(c); c.recycle()
+            MotionEvent.ACTION_DOWN -> { x0 = e.rawX; y0 = e.rawY; sliding = false; animate().cancel() }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = e.rawX - x0; val dy = e.rawY - y0
+                if (!sliding && abs(dx) > slop && abs(dx) > 1.5f * abs(dy)) {
+                    sliding = true; parent?.requestDisallowInterceptTouchEvent(true)
+                    val c = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }; gd.onTouchEvent(c); c.recycle()
+                }
+                if (sliding) { slideTo(dx); return true }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (sliding) {
+                val dx = e.rawX - x0
+                sliding = false
+                if (e.actionMasked == MotionEvent.ACTION_UP && abs(dx) >= copyThreshold()) { onSwipe?.invoke(); flash() }
+                springBack()
                 return true
             }
         }
-        if (swiped) return true
         return gd.onTouchEvent(e)
     }
 
+    /** Box offset while sliding (also used by tests / mocks); past the threshold the frame turns navy. */
+    fun slideTo(dx: Float) {
+        translationX = dx
+        val past = abs(dx) >= copyThreshold()
+        frameBg.fill = if (past) W.NAVY else FILL; labelView.setTextColor(if (past) W.HILITE else W.NAVY); invalidate()
+    }
+
+    fun springBack() {
+        animate().translationX(0f).setDuration(160).withEndAction {
+            if (!editing) { frameBg.fill = FILL; labelView.setTextColor(W.NAVY); invalidate() }
+        }.start()
+    }
+
     companion object {
+        /** Field well fill: classic tooltip cream (#FFFFE1), black text stays high-contrast. */
+        const val FILL = 0xFFFFFFE1.toInt()
         fun mask(t: TextView, hidden: Boolean) { t.transformationMethod = if (hidden) Stars else null as TransformationMethod? }
     }
 }

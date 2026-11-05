@@ -77,8 +77,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         get() = snapshot() != baseline
         set(v) { if (!v) baseline = snapshot() }
     private var baseline: Any? = null
-    private fun snapshot(): Any = Triple(LinkedHashMap(values).filterValues { true }.toSortedMap(),
-        Tree.parseTags(tags), layout.toList())
+    private fun snapshot(): Any = listOf(LinkedHashMap(values).toSortedMap(),
+        Tree.parseTags(tags), layout.toList(), iconId, multi.toSortedSet())
+    /** Chosen icon id ([EntryIcon]); null = default key. */
+    var iconId: String? = null
+    /** Custom fields shown multi-line (memo-like). */
+    val multi = LinkedHashSet<String>()
+    /** Existing-tag buttons are hidden until the Tag field is long-pressed. */
+    var tagsShown = false
+        private set
     private val editors = HashMap<String, EditText>()
     /** Framed field boxes, by layout key (tests / Pass toggle). */
     val boxes = LinkedHashMap<String, io.github.zmlworks.kpexplorer.ui.FieldBox>()
@@ -100,6 +107,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             e.fields.forEach { (k, v) -> values[k] = v.content }
             tags = Tree.formatTags(e.tags)
             layout = Order.layout(e).toMutableList()
+            iconId = io.github.zmlworks.kpexplorer.db.EntryIcon.of(e)?.id
+            multi.addAll(Order.multiline(e))
         } else listOf("Title", "UserName", "Password", "URL", "Notes").forEach { values[it] = "" }
         bar = Parts.appBar(ctx, titleText(), onBack = { onBack() })
         bar.bar.addView(ImageView(ctx).apply {
@@ -128,15 +137,18 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val d = Session.db ?: return
         val path = Tree.path(Tree.root(d), parent)
         val head = W.hbox(ctx).apply { gravity = Gravity.TOP }
-        val tile = android.widget.FrameLayout(ctx).apply { background = W.Bevel(W.Style.RAISED) }
-        tile.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.KEY)) },
+        val tile = android.widget.FrameLayout(ctx).apply {
+            background = W.Bevel(W.Style.RAISED); contentDescription = "アイコン (長押しで変更)"
+            isLongClickable = true; setOnLongClickListener { pickIcon(); true }
+        }
+        tile.addView(ImageView(ctx).apply { setImageDrawable(Glyph(io.github.zmlworks.kpexplorer.db.EntryIcon.def(iconId)?.glyph ?: Glyph.Kind.KEY)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
+        iconTile = tile
         head.addView(tile, W.lp(W.dp(84), W.dp(84), r = 10, t = 4))
         val info = W.vbox(ctx)
-        info.addView(W.text(ctx, "フォルダー:", 11f, false, W.NAVY), W.lp(W.MATCH, W.WRAP))
         info.addView(Parts.pathTree(ctx, path).apply { setPadding(0, 0, 0, W.dp(2)) }, W.lp(W.MATCH, W.WRAP))
-        info.addView(W.text(ctx, "Last Modified:", 11f, false, W.NAVY), W.lp(W.MATCH, W.WRAP, t = 2))
-        info.addView(W.text(ctx, entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-", 15f).also { lastMod = it }, W.lp(W.MATCH, W.WRAP))
+        info.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"), 13f).apply {
+            isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }.also { lastMod = it }, W.lp(W.MATCH, W.WRAP, t = 2))
         head.addView(info, W.lp(0, W.WRAP, 1f))
         body.addView(head, W.lp(W.MATCH, W.WRAP, b = 10))
         for ((k, vis) in layout) {
@@ -145,7 +157,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 Order.F_OTP -> if (!values[Order.OTP].isNullOrBlank()) otpRow()
                 Order.F_TAGS -> { fieldRow(k, tags, false) { tags = it; renderChips() }; tagPicker() }
                 Order.F_NOTES -> fieldRow(k, values["Notes"].orEmpty(), true) { values["Notes"] = it }
-                else -> fieldRow(k, values[k].orEmpty(), false) { values[k] = it; if (k == "Title") bar.title.text = titleText() }
+                else -> fieldRow(k, values[k].orEmpty(), k in multi) { values[k] = it; if (k == "Title") bar.title.text = titleText() }
             }
         }
         // 「欄を追加」 (custom field), centered flat button with a ⊕ glyph
@@ -154,23 +166,39 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             contentDescription = "欄を追加"; setPadding(W.dp(12), W.dp(6), W.dp(12), W.dp(6)); setOnClickListener { addCustom() }
         }
         add.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.PLUS)) }, W.lp(W.dp(22), W.dp(22), r = 6))
-        add.addView(W.text(ctx, "欄を追加", 14f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
+        add.addView(W.text(ctx, "欄を追加", 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         addButton = add
         body.addView(add, W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.CENTER_HORIZONTAL })
         // 戻る / 保存 at the very bottom
         body.addView(View(ctx), W.lp(W.MATCH, 0, 1f))
-        body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10, b = 8))
-        val foot = W.hbox(ctx).apply { gravity = Gravity.CENTER }
-        foot.addView(W.button(ctx, "← 戻る") { onBack() }.apply { minWidth = W.dp(110) }, W.lp(W.WRAP, W.WRAP))
-        val sv = W.hbox(ctx).apply {
-            gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true; contentDescription = "保存"
-            minimumWidth = W.dp(110); setPadding(W.dp(14), W.dp(6), W.dp(14), W.dp(6)); setOnClickListener { save() }
-        }
-        sv.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.FLOPPY)) }, W.lp(W.dp(20), W.dp(20), r = 6))
-        sv.addView(W.text(ctx, "保存", 15f, true), W.lp(W.WRAP, W.WRAP))
-        foot.addView(sv, W.lp(W.WRAP, W.WRAP, l = 12))
-        body.addView(foot, W.lp(W.MATCH, W.WRAP, b = 6))
+        body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10))
+        body.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp(W.MATCH, W.WRAP))
     }
+
+    var iconTile: View? = null
+        private set
+
+    /** Icon picker (long-press the big tile): grid of the self-drawn icons; tap one to choose. */
+    fun pickIcon(): ClassicDialog {
+        val grid = io.github.zmlworks.kpexplorer.ui.FlowLayout(ctx)
+        lateinit var dlg: ClassicDialog
+        for (d in io.github.zmlworks.kpexplorer.db.EntryIcon.ALL) {
+            val cell = W.vbox(ctx).apply {
+                gravity = Gravity.CENTER; isClickable = true; contentDescription = d.label
+                background = W.Bevel(if ((iconId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
+                setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(4))
+                setOnClickListener { setIcon(d.id); dlg.dismiss() }
+            }
+            cell.addView(ImageView(ctx).apply { setImageDrawable(Glyph(d.glyph)) }, W.lp(W.dp(36), W.dp(36)))
+            cell.addView(W.text(ctx, d.label, 11f).apply { isSingleLine = true; gravity = Gravity.CENTER }, W.lp(W.MATCH, W.WRAP, t = 2))
+            grid.addView(cell, android.view.ViewGroup.MarginLayoutParams(W.dp(72), W.dp(72)).apply { setMargins(W.dp(2), W.dp(2), W.dp(2), W.dp(2)) })
+        }
+        dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
+        dlg.show()
+        return dlg
+    }
+
+    fun setIcon(id: String) { iconId = if (id == "key") null else id; build() }
 
     private var lastMod: TextView? = null
     var addButton: View? = null
@@ -181,41 +209,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Order.F_URL -> Glyph.Kind.URL; Order.F_TAGS -> Glyph.Kind.TAG; Order.F_OTP -> Glyph.Kind.OTP
         Order.F_NOTES -> Glyph.Kind.MEMO; else -> Glyph.Kind.CUSTOM
     })
-
-    private fun glyphButton(kind: Glyph.Kind, desc: String, f: () -> Unit) = ImageView(ctx).apply {
-        setImageDrawable(Glyph(kind)); background = W.Bevel(W.Style.FLAT_TOOL)
-        setPadding(W.dp(6), W.dp(6), W.dp(6), W.dp(6)); contentDescription = desc; tooltipText = desc
-        isClickable = true; setOnClickListener { f() }
-    }
-
-    /** Box + its ⋮ button side by side. */
-    private fun addRow(k: String, box: View) {
-        val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        row.addView(box, W.lp(0, W.WRAP, 1f))
-        row.addView(glyphButton(Glyph.Kind.MORE, "${KeyFields.name(k)}のメニュー") { }.also { b ->
-            b.setOnClickListener { Menus.dropDown(b, fieldMenu(k)) } }, W.lp(W.dp(32), W.dp(40), l = 2))
-        body.addView(row, W.lp(W.MATCH, W.WRAP, t = 3, b = 3))
-    }
-
-    /** Per-field ⋮ menu: copy, edit, move up / down, delete (not Title). */
-    fun fieldMenu(k: String): List<Menus.Item> {
-        val i = layout.indexOfFirst { it.first == k }
-        val out = ArrayList<Menus.Item>()
-        val value = when (k) { Order.F_TAGS -> tags; Order.F_NOTES -> values["Notes"].orEmpty(); Order.F_OTP -> otpView?.current().orEmpty(); else -> values[k].orEmpty() }
-        out.add(Menus.Item("コピー", value.isNotEmpty()) { copy(copyName(k), value, k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES) ; boxes[k]?.flash() })
-        out.add(Menus.Item("編集") { if (k == Order.F_OTP) setupOtp() else boxes[k]?.startEdit() })
-        if (k == Order.F_PASS) {
-            out.add(Menus.Item(if (passShown) "隠す" else "表示") { togglePass() })
-            out.add(Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) })
-        }
-        if (k == Order.F_URL) out.add(Menus.Item("開く", value.isNotBlank()) { openUrl(value) })
-        out.add(Menus.sep())
-        out.add(Menus.Item("上へ移動", i > 0) { moveField(k, -1) })
-        out.add(Menus.Item("下へ移動", i in 0 until layout.size - 1) { moveField(k, 1) })
-        out.add(Menus.sep())
-        out.add(Menus.Item("削除", k != Order.F_TITLE) { removeFields(listOf(k)); build() })
-        return out
-    }
 
     /** Moves field [k] one visible step up (-1) or down (+1) in the per-key layout. */
     fun moveField(k: String, dir: Int) {
@@ -228,7 +221,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         build()
     }
 
-    private fun openUrl(u: String) {
+    fun openUrl(u: String) {
+        if (u.isBlank()) return
         val uri = android.net.Uri.parse(if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(u)) u else "https://$u")
         runCatching { a.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
             .onFailure { Toast.makeText(ctx, "開けませんでした", Toast.LENGTH_SHORT).show() }
@@ -237,7 +231,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /** Already-used tags as toggle buttons under the Tag row (tap = add / remove). */
     private fun tagPicker() {
         if (allTags.isEmpty()) return
-        val holder = android.widget.FrameLayout(ctx)
+        val holder = android.widget.FrameLayout(ctx).apply { visibility = if (tagsShown) View.VISIBLE else View.GONE }
         chips = holder
         body.addView(holder, W.lp(W.MATCH, W.WRAP, l = 4, b = 4))
         renderChips()
@@ -260,6 +254,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             allTags.filter { it.startsWith(partial, true) } + allTags.filter { !it.startsWith(partial, true) && it.contains(partial, true) }
         h.addView(Parts.tagChips(ctx, list, have.toSet()) { t -> toggleTag(t) })
     }
+
+    /** Long-press on the Tag field: show the existing-tag buttons (most used first). */
+    fun showTagButtons() { tagsShown = true; chips?.visibility = View.VISIBLE; renderChips() }
 
     fun toggleTag(t: String) {
         val (have, _) = tagState()
@@ -298,30 +295,22 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         if (multi) { f.minLines = 4; f.gravity = Gravity.TOP or Gravity.START } else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
         f.textSize = 16f
         val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES
-        val trailing: View? = when (k) {
-            Order.F_PASS -> glyphButton(if (passShown) Glyph.Kind.EYE_OFF else Glyph.Kind.EYE, "表示 / 隠す") { togglePass() }.also { eye = it }
-            Order.F_URL -> glyphButton(Glyph.Kind.OPEN, "開く") { openUrl(f.text.toString()) }
-            else -> null
-        }
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(k), f,
-            onSwipe = { copy(copyName(k), f.text.toString(), sensitive) }, icon = glyphFor(k), trailing = trailing)
+            onSwipe = { copy(copyName(k), f.text.toString(), sensitive) }, icon = glyphFor(k))
+        if (k == Order.F_TAGS) box.onLongPress = { showTagButtons() }
         if (k == Order.F_PASS) {
             f.typeface = android.graphics.Typeface.MONOSPACE
             io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, !passShown)
             box.onTap = { togglePass() }
-            box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false); updateEye() }
+            box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false) }
         }
         boxes[k] = box
-        addRow(k, box)
+        body.addView(box, W.lp(W.MATCH, W.WRAP, t = 3, b = 3))
     }
-
-    private var eye: ImageView? = null
-    private fun updateEye() { eye?.setImageDrawable(Glyph(if (passShown) Glyph.Kind.EYE_OFF else Glyph.Kind.EYE)) }
 
     fun togglePass() {
         passShown = !passShown
         editors[Order.F_PASS]?.let { io.github.zmlworks.kpexplorer.ui.FieldBox.mask(it, !passShown) }
-        updateEye()
     }
 
     private fun otpRow() {
@@ -330,7 +319,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(Order.F_OTP), W.field(ctx), view = o,
             onSwipe = { o.current()?.let { copy("ワンタイムパスワード", it, true) } }, onLongPress = { setupOtp() }, icon = glyphFor(Order.F_OTP))
         boxes[Order.F_OTP] = box
-        addRow(Order.F_OTP, box)
+        body.addView(box, W.lp(W.MATCH, W.WRAP, t = 3, b = 3))
     }
 
     private fun copy(label: String, s: String, sensitive: Boolean) {
@@ -353,6 +342,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Menus.Item("「${KeyFields.label(k).removeSuffix(":")}」欄を戻す") { restoreField(k) }
     } + listOf(
         Menus.Item("欄の編集 (表示・順番・削除)...") { editLayout() },
+        Menus.Item("URL をブラウザで開く", values["URL"].orEmpty().isNotBlank()) { openUrl(values["URL"].orEmpty()) },
+        Menus.Item("アイコンの変更...") { pickIcon() },
         Menus.Item(if (values[Order.OTP].isNullOrBlank()) "ワンタイムパスワードを設定..." else "ワンタイムパスワードの設定を変更...") { setupOtp() },
         Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) ?: run {
             values["Password"] = generate(); if (layout.none { it.first == Order.F_PASS }) layout.add(minOf(1, layout.size), Order.F_PASS to true)
@@ -361,18 +352,35 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Menus.Item("この鍵を削除", entryId != null) { askDelete() }
     )
 
-    fun addCustom() {
-        Dlg.prompt(ctx, "カスタム欄を追加", "欄の名前 (例: 暗証番号、秘密の質問):", "") { n ->
-            val name = n.trim()
-            when {
-                name.isEmpty() -> false
-                name in Order.STANDARD || name == Order.OTP || values.containsKey(name) || name.startsWith("@") || name.startsWith("-") -> {
-                    Dlg.message(ctx, "カスタム欄", "その名前は使えません。", '!'); false
+    /** 「欄を追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
+    fun addCustom(): ClassicDialog {
+        val col = W.vbox(ctx)
+        col.addView(W.text(ctx, "欄の名前 (例: 暗証番号、秘密の質問):", 14f))
+        val f = W.field(ctx).apply { isSingleLine = true }
+        col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
+        col.addView(W.text(ctx, "種類:", 14f), W.lp(W.MATCH, W.WRAP, t = 10))
+        val rg = android.widget.RadioGroup(ctx)
+        val r1 = W.radio(ctx, "1 行 (ID・番号など)").apply { id = View.generateViewId() }
+        val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
+        rg.addView(r1); rg.addView(r2); rg.check(r1.id)
+        col.addView(rg)
+        val dlg = ClassicDialog(ctx, "欄を追加", col, listOf(
+            ClassicDialog.Btn("追加", true) {
+                val name = f.text.toString().trim()
+                when {
+                    name.isEmpty() -> false
+                    name in Order.STANDARD || name == Order.OTP || values.containsKey(name) || name.startsWith("@") || name.startsWith("-") -> {
+                        Dlg.message(ctx, "欄を追加", "その名前は使えません。", '!'); false
+                    }
+                    else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }
-                else -> { addCustomField(name); true }
-            }
-        }
+            },
+            ClassicDialog.Btn("キャンセル")))
+        dlg.show()
+        nameField = f; multiRadio = r2
+        return dlg
     }
+    var nameField: EditText? = null; var multiRadio: android.widget.RadioButton? = null
 
     /** Put a deleted standard field back (empty), before Memo. */
     fun restoreField(k: String) {
@@ -380,8 +388,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         layout.add(at, k to true); dirty = true; build()
     }
 
-    fun addCustomField(name: String, value: String = "") {
+    fun addCustomField(name: String, value: String = "", multiline: Boolean = false) {
         values[name] = value
+        if (multiline) multi.add(name)
         layout.add(name to true)
         dirty = true
         build()
@@ -425,7 +434,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             Order.F_TAGS -> tags = ""
             Order.F_OTP -> values.remove(Order.OTP)
             in Order.STANDARD -> values[k] = ""
-            else -> values.remove(k)
+            else -> { values.remove(k); multi.remove(k) }
         }
         layout.removeAll { it.first in keys && it.first != Order.F_TITLE }
         dirty = true
@@ -471,7 +480,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 Session.update { Order.appendEntry(it, parent, e) }
                 id = e.uuid; entryId = id
             }
-            Session.update { Order.saveEntry(it, id, vals, tagList, layout.toList()) }
+            val ic = io.github.zmlworks.kpexplorer.db.EntryIcon.def(iconId)
+            Session.update { Order.saveEntry(it, id, vals, tagList, layout.toList(),
+                cdSet = mapOf(io.github.zmlworks.kpexplorer.db.EntryIcon.CD to iconId,
+                    Order.CD_MULTI to multi.filter { it in vals }.joinToString("\n")),
+                icon = ic?.std ?: app.keemobile.kotpass.constants.PredefinedIcon.Key) }
             Session.flush()
         } catch (t: Throwable) {
             Dlg.message(ctx, "保存", "保存できませんでした。\n$t", 'x'); return false

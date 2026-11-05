@@ -11,7 +11,7 @@ import io.github.zmlworks.kpexplorer.ui.Parts
 import io.github.zmlworks.kpexplorer.ui.W
 import java.util.UUID
 
-/** Memo window: only the title (in the bar) and a ruled notebook page. */
+/** Memo window: title (in the bar), a ruled notebook page, and 戻る / 保存 at the bottom. */
 class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainActivity.Screen {
     private val ctx = a
     private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
@@ -32,6 +32,8 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
         bar.bar.addView(Parts.barButton(ctx, "保存", "保存") { save() }, W.lp(W.WRAP, W.dp(38), l = 4))
         root.addView(bar.bar, W.lp())
         root.addView(text, W.lp(W.MATCH, 0, 1f))
+        root.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px))
+        root.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp())
         val w = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}

@@ -159,8 +159,27 @@ class UiScreenshotsTest {
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
         ex.navigate(ids["プロジェクトA"]!!); idle()
-        assertEquals(" (2,0)", (findTag(a.host, "count", 1) as android.widget.TextView).text.toString())
+        // Registry Editor-like folder tree: ancestors of the current folder expanded, current highlighted
+        val ft = ex.folderTree!!
+        assertEquals(ids["プロジェクトA"], ft.current)
+        assertTrue(ft.rows.any { it.tag == ids["プロジェクトA"] })
         save(shot(a.host), "03b-path-counts.png")
+        // expand another folder with +, select it with one tap, jump with the second tap
+        val mail = ids["メール"]!!
+        val shownBefore = ft.rows.size
+        ft.toggle(ids["仕事"]!!)   // collapse
+        assertEquals(shownBefore - 2, ft.rows.size)
+        assertFalse(Tree.findGroup(Session.db!!, ids["仕事"]!!)!!.expanded)
+        ft.toggle(ids["仕事"]!!)   // expand again (IsExpanded saved)
+        assertEquals(shownBefore, ft.rows.size)
+        assertTrue(Tree.findGroup(Session.db!!, ids["仕事"]!!)!!.expanded)
+        ft.tap(mail); idle()
+        assertEquals(mail, ft.selected)
+        assertEquals("first tap only selects", ids["プロジェクトA"], ex.current)
+        save(shot(a.host), "03e-main-expanded-tree.png")
+        ft.tap(mail); idle()
+        assertEquals("second tap jumps", mail, ex.current)
+        ex.navigate(ids["プロジェクトA"]!!); idle()
         // live search: inline panel, results update on every keystroke (150 ms) and tag toggle — no button
         ex.searchTags.clear()
         ex.openSearch(); idle()
@@ -208,19 +227,54 @@ class UiScreenshotsTest {
         // swipe on User box = copy
         val ub = ks.boxes["UserName"]!!
         fun ev(act: Int, x: Float) = MotionEvent.obtain(0, 0, act, x, 20f, 0)
-        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 120f))
-        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 400f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 400f))
         val cm = a.getSystemService(android.content.ClipboardManager::class.java)
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("x", "before"))
+        val th = ub.copyThreshold()
+        // short slide: box follows the finger, springs back, no copy
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 20f + th / 2))
+        assertTrue(ub.sliding); assertEquals(th / 2, ub.translationX, 1f)
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 20f + th / 2))
+        ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertEquals("before", cm.primaryClip!!.getItemAt(0).text.toString())
+        assertEquals(0f, ub.translationX, 0.5f)
+        // long slide past the threshold: copies
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 60f))
+        ub.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, 30f + th)); ub.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 30f + th))
         assertEquals("taro.yamada@gmail.com", cm.primaryClip!!.getItemAt(0).text.toString())
+        ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
         assertFalse(ub.editing)
         ub.startEdit(); assertTrue(ub.editing); ub.endEdit()
         ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
         save(shot(a.host), "05-key-top.png")
         ks.scroll.scrollTo(0, 100000)
         save(shot(a.host), "05b-key-bottom.png")
+        ks.scroll.scrollTo(0, 0)
+        // mid-slide mock (past the threshold → navy)
+        ks.boxes["Password"]!!.slideTo(ks.boxes["Password"]!!.copyThreshold() + 10f)
+        save(shot(a.host), "05c-key-swipe-mid.png")
+        ks.boxes["Password"]!!.slideTo(0f); ks.boxes["Password"]!!.springBack(); idle()
+        // existing tags hidden until the Tag field is long-pressed
+        assertFalse(ks.tagsShown)
+        ks.boxes["@Tags"]!!.startEdit(); idle()
+        assertTrue(ks.tagsShown)
+        ks.boxes["@Tags"]!!.endEdit()
+        save(shot(a.host), "05d-key-tags-shown.png")
+        // icon picker
+        ks.pickIcon(); idle()
+        save(withDialog(shot(a.host)), "05e-icon-picker.png")
+        Dlg.last?.dismiss(); idle()
+        ks.setIcon("mail"); assertTrue(ks.dirty); assertTrue(ks.save()); idle()
+        val gmi = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
+        assertEquals("mail", gmi.customData["KPExplorer.Icon"]?.value)
+        assertEquals(app.keemobile.kotpass.constants.PredefinedIcon.Email, gmi.icon)
+        // add-field dialog with 1 行 / 複数行
+        ks.addCustom(); idle()
+        ks.nameField!!.setText("備考"); ks.multiRadio!!.isChecked = true
+        save(withDialog(shot(a.host)), "05f-add-field.png")
+        Dlg.last?.dismiss(); idle()
         ks.toggleTag("仕事"); assertTrue(ks.dirty)
         val gm = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
-        assertEquals(1, gm.history.size)
+        assertEquals(2, gm.history.size)
         assertEquals(listOf("秘密の質問"), io.github.zmlworks.kpexplorer.db.Order.customFieldNames(gm))
         assertTrue(io.github.zmlworks.kpexplorer.db.Order.otpUri(gm)!!.contains("issuer=Gmail"))
         ks.addCustomField("一時", "x"); idle()
@@ -234,6 +288,7 @@ class UiScreenshotsTest {
         ex.navigate(Tree.root(Session.db!!).uuid); idle()
         a.show(MemoScreen(a, ids["買い物リスト"]!!)); idle()
         save(shot(a.host), "07-memo.png")
+        assertNotNull(findDesc(a.host, "保存")); assertNotNull(findDesc(a.host, "戻る"))
         val rt = findRuled(a.host)!!
         val l = rt.layout
         for (i in 0 until rt.lineCount) assertEquals(rt.getLineBounds(i, android.graphics.Rect()) + W.dp(4), rt.ruleYs[i])
@@ -330,21 +385,32 @@ class UiScreenshotsTest {
 
     @Test fun keyFieldMenuAndPermanentDelete() {
         val a = openSample()
-        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
-        val labels = { m: List<io.github.zmlworks.kpexplorer.ui.Menus.Item> -> m.map { it.label } }
-        assertTrue(labels(ks.fieldMenu("Title")).containsAll(listOf("コピー", "編集", "上へ移動", "下へ移動", "削除")))
-        assertFalse(ks.fieldMenu("Title").first { it.label == "削除" }.enabled)
+        var ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
+        assertTrue(ks.menu().map { it.label }.containsAll(listOf("欄の編集 (表示・順番・削除)...", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更...")))
         val order0 = ks.layout.map { it.first }
         val iu = order0.indexOf("UserName")
         ks.moveField("UserName", -1)
         assertEquals(iu - 1, ks.layout.indexOfFirst { it.first == "UserName" })
         ks.moveField("UserName", 1)
         assertEquals(order0, ks.layout.map { it.first })
-        ks.fieldMenu("URL").first { it.label == "削除" }.action()
-        assertTrue(ks.layout.none { it.first == "URL" })
+        ks.removeFields(listOf("URL")); assertTrue(ks.layout.none { it.first == "URL" })
         assertNotNull(ks.addButton)
-        assertTrue(ks.boxes["Password"]!!.trailing != null)
-        ks.boxes["Password"]!!.trailing!!.performClick(); assertTrue(ks.passShown)
+        ks.boxes["Password"]!!.onTap!!.invoke(); assertTrue(ks.passShown)
+        // multi-line custom field: stored flag, shown multi-line after reopen
+        ks.addCustomField("備考", "1行目\n2行目", multiline = true)
+        assertTrue(ks.save()); idle()
+        val ent = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
+        assertEquals(setOf("備考"), io.github.zmlworks.kpexplorer.db.Order.multiline(ent))
+        val ks2 = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks2); idle()
+        assertFalse(ks2.boxes["備考"]!!.field.isSingleLine())
+        ks = ks2
+        // explorer uses the chosen icon
+        ks.setIcon("wifi"); assertTrue(ks.save()); idle()
+        a.showExplorer(); a.explorer!!.navigate(ids["メール"]!!); idle()
+        val node = a.explorer!!.rows.first { it.uuid == ids["Gmail"] }
+        a.explorer!!.selection = null
+        assertTrue(a.explorer!!.bmpFor(node, true).sameAs(io.github.zmlworks.kpexplorer.ui.Glyph.bitmap(io.github.zmlworks.kpexplorer.ui.Glyph.Kind.WIFI, 32)))
+        a.show(ks); idle()
         ks.dirty = false; a.showExplorer(); idle()
         val before = Session.db!!.content.deletedObjects.size
         a.explorer!!.navigate(ids["メール"]!!); idle()
@@ -377,6 +443,12 @@ class UiScreenshotsTest {
         assertEquals("nothing written before the quiet period", before, Session.saveCount)
         repeat(200) { if (Session.saveCount == before || Session.saveState != Session.SaveState.SAVED) { ShadowLooper.idleMainLooper(50, java.util.concurrent.TimeUnit.MILLISECONDS); Thread.sleep(10) } }
         assertEquals("one coalesced save", before + 1, Session.saveCount)
+    }
+
+    private fun findDesc(v: View, d: String): View? {
+        if (v.contentDescription?.toString() == d) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findDesc(v.getChildAt(i), d)?.let { return it }
+        return null
     }
 
     private fun findTag(v: View, t: String, skip: Int = 0): View? {

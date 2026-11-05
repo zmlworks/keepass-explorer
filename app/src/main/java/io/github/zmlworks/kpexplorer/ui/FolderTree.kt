@@ -24,18 +24,34 @@ class FolderTree(
     private val binId: UUID?,
     private val disabled: Set<UUID> = emptySet(),
     private val onToggle: (UUID, Boolean) -> Unit,
-    private val onSelect: (UUID) -> Unit
+    private val onSelect: (UUID) -> Unit,
+    /** Main-screen mode (Registry Editor-like): "(subfolders,files)" counts, current folder bold on a band. */
+    private val showCounts: Boolean = false,
+    var current: UUID? = null,
+    /** Tap on the already-selected node (= select + tap, double tap) → jump there. */
+    private val onJump: ((UUID) -> Unit)? = null,
+    private val rowDp: Int = 38
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
 
     private val expanded = HashMap<UUID, Boolean>()
 
+    /** One view per visible node, tagged with the group uuid (drop targets). */
+    val rows = ArrayList<View>()
+
     init {
+        current?.let { cur -> pathTo(root, cur)?.dropLast(1)?.forEach { expanded[it.uuid] = true } }
         orientation = VERTICAL
         setBackgroundColor(W.WINDOW)
         setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4))
         rebuild()
+    }
+
+    private fun pathTo(g: Group, id: UUID): List<Group>? {
+        if (g.uuid == id) return listOf(g)
+        for (c in g.groups) pathTo(c, id)?.let { return listOf(g) + it }
+        return null
     }
 
     fun isExpanded(g: Group) = g.uuid == root.uuid || (expanded[g.uuid] ?: g.expanded)
@@ -52,8 +68,21 @@ class FolderTree(
     }
 
     fun rebuild() {
-        removeAllViews()
-        for (n in flatten()) addView(Row(context, n), LayoutParams(W.MATCH, W.dp(38)))
+        removeAllViews(); rows.clear()
+        for (n in flatten()) {
+            val v = Row(context, n).apply { tag = n.g.uuid }
+            rows.add(v)
+            addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
+        }
+    }
+
+    @SuppressLint("ViewConstructor")
+    /** Tap the node of [id] (tests). */
+    fun tap(id: UUID) { rows.firstOrNull { it.tag == id }?.let { (it as Row).tapLabel() } }
+    /** Tap the +/− box of [id] (tests). */
+    fun toggle(id: UUID) {
+        val v = rows.firstOrNull { it.tag == id } as? Row ?: return
+        val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, (v.n.depth * W.dp(22)).toFloat(), v.height / 2f, 0); v.onTouchEvent(e); e.recycle()
     }
 
     @SuppressLint("ViewConstructor")
@@ -66,6 +95,9 @@ class FolderTree(
             else -> Px.folder16
         }
         val hasKids = n.g.groups.isNotEmpty()
+
+        /** Test hook: same as a tap on the label. */
+        fun tapLabel() { val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, width - 1f, height / 2f, 0); onTouchEvent(e); e.recycle() }
 
         private fun dotV(c: Canvas, x: Int, y0: Int, y1: Int) {
             val q = Paint().apply { color = W.SHADOW }
@@ -104,7 +136,9 @@ class FolderTree(
             val sel = n.g.uuid == selected
             val bmp = if (sel) Px.selected(icon) else icon
             c.drawBitmap(bmp, null, Rect(ix, iy, ix + icon.width * sc, iy + icon.height * sc), Paint())
-            val label = n.g.name.ifEmpty { "(名前なし)" }
+            val label = if (n.depth == 0 && n.g.name.isEmpty()) "/" else n.g.name.ifEmpty { "(名前なし)" }
+            val isCur = showCounts && n.g.uuid == current
+            p.isFakeBoldText = isCur
             val tx = ix + icon.width * sc + W.dp(5)
             val tw = p.measureText(label)
             val dis = n.g.uuid in disabled
@@ -112,8 +146,18 @@ class FolderTree(
                 val q = Paint().apply { color = W.NAVY }
                 c.drawRect(tx - W.dp(2).toFloat(), cy - W.dp(11).toFloat(), tx + tw + W.dp(3), cy + W.dp(11).toFloat(), q)
             }
+            if (isCur && !sel) {
+                val q = Paint().apply { color = W.LIGHT }
+                c.drawRect(tx - W.dp(2).toFloat(), cy - W.dp(11).toFloat(), tx + tw + W.dp(3), cy + W.dp(11).toFloat(), q)
+                q.color = W.NAVY; q.style = Paint.Style.STROKE; q.strokeWidth = W.px.toFloat(); q.pathEffect = android.graphics.DashPathEffect(floatArrayOf(W.px.toFloat(), W.px.toFloat()), 0f)
+                c.drawRect(tx - W.dp(2).toFloat(), cy - W.dp(11).toFloat(), tx + tw + W.dp(3), cy + W.dp(11).toFloat(), q)
+            }
             p.color = when { sel -> W.HILITE; dis -> W.SHADOW; else -> W.TEXT }
             c.drawText(label, tx.toFloat(), cy + W.dp(5).toFloat(), p)
+            if (showCounts) {
+                val cp = Paint(p).apply { color = W.SHADOW; isFakeBoldText = false; textSize = W.dp(13).toFloat() }
+                c.drawText(" (${n.g.groups.size},${n.g.entries.size})", tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
+            }
         }
 
         @SuppressLint("ClickableViewAccessibility")
@@ -127,6 +171,7 @@ class FolderTree(
                 onToggle(n.g.uuid, now)
                 rebuild()
             } else if (n.g.uuid !in disabled) {
+                if (selected == n.g.uuid && onJump != null) { onJump.invoke(n.g.uuid); return true }
                 selected = n.g.uuid
                 onSelect(n.g.uuid)
                 for (i in 0 until this@FolderTree.childCount) this@FolderTree.getChildAt(i).invalidate()

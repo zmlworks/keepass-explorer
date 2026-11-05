@@ -26,6 +26,10 @@ object Order {
     const val CD_KIND = "KPExplorer.Kind"
     const val CD_FIELDS = "KPExplorer.Fields"
     const val OTP = "otp"
+    /** Entry CustomData: custom field names shown as multi-line (memo-like), one per line. */
+    const val CD_MULTI = "KPExplorer.Multiline"
+
+    fun multiline(e: Entry): Set<String> = e.customData[CD_MULTI]?.value.orEmpty().split('\n').filter { it.isNotEmpty() }.toSet()
 
     /** Field keys of the key screen; custom string fields use their own name. */
     const val F_TITLE = "Title"; const val F_USER = "UserName"; const val F_PASS = "Password"
@@ -154,7 +158,7 @@ object Order {
      * [values] maps field names (standard + custom + "otp") to text; missing customs are removed.
      */
     fun saveEntry(db: KeePassDatabase, id: UUID, values: Map<String, String>, tags: List<String>, layout: List<Pair<String, Boolean>>?,
-                  now: Instant = Instant.now()): KeePassDatabase {
+                  now: Instant = Instant.now(), cdSet: Map<String, String?> = emptyMap(), icon: PredefinedIcon? = null): KeePassDatabase {
         val (parent, old) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
         val protect = setOf("Password", OTP)
         val keep = old.fields.filterKeys { k -> k in STANDARD || k.startsWith("TimeOtp-") || k.startsWith("TOTP ") }
@@ -163,16 +167,18 @@ object Order {
         for ((k, v) in values) m[k] = if (k in protect) EntryValue.Encrypted(EncryptedValue.fromString(v)) else EntryValue.Plain(v)
         if (values[OTP].isNullOrEmpty()) m.remove(OTP)
         val newFields = EntryFields(m)
-        val cd = if (layout != null) old.customData + (CD_FIELDS to CustomDataValue(encodeLayout(layout), now)) else old.customData
+        var cd = if (layout != null) old.customData + (CD_FIELDS to CustomDataValue(encodeLayout(layout), now)) else old.customData
+        for ((k, v) in cdSet) cd = if (v.isNullOrEmpty()) cd - k else if (cd[k]?.value == v) cd else cd + (k to CustomDataValue(v, now))
+        val newIcon = icon ?: old.icon
         val nt = Tree.normalizeTags(tags)
         val same = old.fields.keys == newFields.keys && old.fields.all { (k, v) -> newFields[k]?.content == v.content } &&
-            old.tags == nt && old.customData[CD_FIELDS]?.value == cd[CD_FIELDS]?.value
+            old.tags == nt && old.customData.mapValues { it.value.value } == cd.mapValues { it.value.value } && old.icon == newIcon
         if (same) return db
         val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
         var hist = old.history + old.copy(history = listOf())
         if (max >= 0) hist = hist.takeLast(max)
         val t = (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
-        val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t)
+        val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t, icon = newIcon)
         return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
     }
 

@@ -193,7 +193,18 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         } else {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
-            pathBox.addView(Parts.pathTree(ctx, path, onTap = { navigate(it.uuid) }, lines = pathLines))
+            val tree = FolderTree(ctx, Tree.root(d), g.uuid, null,
+                onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
+                onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32)
+            folderTree = tree
+            pathLines.addAll(tree.rows)
+            tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
+                override fun onChildViewAdded(p: View?, c: View?) { pathLines.clear(); pathLines.addAll(tree.rows) }
+                override fun onChildViewRemoved(p: View?, c: View?) {}
+            })
+            pathBox.addView(MaxScroll(ctx, (ctx.resources.displayMetrics.heightPixels * 0.3f).toInt()).apply {
+                W.classicScrollbars(this); addView(tree) })
+            post { folderTree?.rows?.firstOrNull { it.tag == g.uuid }?.let { v -> (pathBox.getChildAt(0) as? ScrollView)?.scrollTo(0, maxOf(0, v.top - W.dp(32))) } }
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
         searchPanel.visibility = if (q != null) View.VISIBLE else View.GONE
@@ -240,8 +251,19 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     private fun isBin(@Suppress("UNUSED_PARAMETER") r: Order.Node) = false
 
+    var folderTree: FolderTree? = null
+        private set
+    private fun post(f: () -> Unit) { pathBox.post(f) }
+
+    /** ScrollView with a maximum height (folder tree pane). */
+    class MaxScroll(ctx: android.content.Context, private val maxH: Int) : ScrollView(ctx) {
+        override fun onMeasure(w: Int, h: Int) = super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(maxH, View.MeasureSpec.AT_MOST))
+    }
+
     fun bmpFor(r: Order.Node, large: Boolean): Bitmap {
+        val ic = (r as? Order.Node.E)?.takeIf { it.kind == Order.Kind.KEY }?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }
         val b = when {
+            ic != null -> io.github.zmlworks.kpexplorer.ui.Glyph.bitmap(ic.glyph, if (large) 32 else 16)
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
             r.kind == Order.Kind.MEMO -> if (large) Ico.notepad32 else Ico.notepad16
             else -> if (large) Ico.bigKey32 else Ico.key16

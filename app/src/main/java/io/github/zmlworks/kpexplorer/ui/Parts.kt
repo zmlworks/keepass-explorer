@@ -43,6 +43,23 @@ object Parts {
         return box
     }
 
+    /** Bottom 戻る / 保存 bar (key and memo screens): tall buttons, 17 sp text, floppy glyph on 保存. */
+    fun footer(ctx: Context, onBack: () -> Unit, onSave: () -> Unit): LinearLayout {
+        val foot = W.hbox(ctx).apply { gravity = Gravity.CENTER; setPadding(W.dp(6), W.dp(8), W.dp(6), W.dp(8)) }
+        foot.addView(W.text(ctx, "← 戻る", 17f, true).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true; contentDescription = "戻る"
+            setOnClickListener { onBack() }
+        }, W.lp(0, W.dp(56), 1f, r = 6))
+        val sv = W.hbox(ctx).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true; contentDescription = "保存"
+            setOnClickListener { onSave() }
+        }
+        sv.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.FLOPPY)) }, W.lp(W.dp(24), W.dp(24), r = 8))
+        sv.addView(W.text(ctx, "保存", 17f, true), W.lp(W.WRAP, W.WRAP))
+        foot.addView(sv, W.lp(0, W.dp(56), 1f, l = 6))
+        return foot
+    }
+
     class AppBar(val bar: LinearLayout, val title: TextView)
 
     /** Navy gradient bar: big "←" back button, title, optional right-side tool buttons. */
