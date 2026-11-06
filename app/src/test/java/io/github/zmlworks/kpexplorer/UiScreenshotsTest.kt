@@ -354,6 +354,63 @@ class UiScreenshotsTest {
         go(v); return all[n]
     }
 
+    @Test fun newKeyCreationScreen() {
+        val a = openSample()
+        val ex = a.explorer!!
+        ex.navigate(ids["メール"]!!); idle()
+        ex.newKey(); idle()
+        assertTrue(a.screen is NewKeyScreen)
+        val nk = a.screen as NewKeyScreen
+        assertFalse(nk.dirty)
+        // empty → cancel silently
+        a.onBackPressed(); idle()
+        assertNull(Dlg.last)
+        assertTrue(a.screen is ExplorerScreen)
+
+        ex.newKey(); idle()
+        val n = a.screen as NewKeyScreen
+        assertNotNull(n.genButton)
+        assertNotNull(n.eyeButton)
+        assertNotNull(n.addButton)
+        // plain editable fields (no FieldBox swipe)
+        n.editors["Title"]!!.setText("新しいアカウント")
+        n.editors["UserName"]!!.setText("user@example.com")
+        assertTrue(n.dirty)
+        n.genButton!!.performClick(); idle()
+        assertTrue(n.passShown)
+        assertTrue(n.values["Password"]!!.length >= 16)
+        n.toggleTag("メール"); idle()
+        assertTrue(Tree.parseTags(n.tags).contains("メール"))
+        n.setIcon("mail"); idle()
+        assertEquals("mail", n.iconId)
+        save(shot(a.host), "15-new-key.png")
+        n.scroll.scrollTo(0, 100000)
+        save(shot(a.host), "15b-new-key-bottom.png")
+        n.scroll.scrollTo(0, 0)
+        // tag chips visible on create screen
+        save(shot(a.host), "15c-new-key-filled.png")
+        assertTrue(n.create()); idle()
+        assertTrue("after create → view screen", a.screen is KeyScreen)
+        val ks = a.screen as KeyScreen
+        assertEquals("新しいアカウント", ks.values["Title"])
+        assertEquals("user@example.com", ks.values["UserName"])
+        assertTrue(ks.values["Password"]!!.isNotEmpty())
+        assertTrue(Tree.parseTags(ks.tags).contains("メール"))
+        assertEquals("mail", ks.iconId)
+        // existing entry still uses view screen gestures
+        assertNotNull(ks.boxes["UserName"])
+        a.showExplorer(); idle()
+        // unsaved input → confirm
+        ex.newKey(); idle()
+        val n2 = a.screen as NewKeyScreen
+        n2.editors["Title"]!!.setText("下書き")
+        a.onBackPressed(); idle()
+        assertNotNull(Dlg.last)
+        save(withDialog(shot(a.host)), "15d-new-key-unsaved.png")
+        Dlg.last?.dismiss(); idle()
+        a.showExplorer(); idle()
+    }
+
     /** Bug of 0.3.2: after 保存 the back button still asked "変更を保存しますか?". */
     @Test fun savedScreensAreNotDirty() {
         val a = openSample()

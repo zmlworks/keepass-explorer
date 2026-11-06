@@ -836,7 +836,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return e.uuid
     }
 
-    fun newKey() = a.show(KeyScreen(a, null, current))
+    fun newKey() = a.show(NewKeyScreen(a, current))
 
     fun rename(r: Order.Node) {
         Dlg.prompt(ctx, "名前の変更", "新しい名前:", r.name) { n ->
