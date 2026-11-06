@@ -16,14 +16,10 @@ import io.github.zmlworks.kpexplorer.db.Order
 /**
  * Drag-to-reorder field arrangement (鍵「欄の編集」).
  *
- * Root causes fixed vs 0.3.11:
- * 1. [render] during MOVE destroyed the handle that owned the touch stream → drag stopped after one step.
- * 2. Zone flag [inHidden] was closed over at row creation → wrong after crossing 「非表示」.
- * 3. [requestDisallowInterceptTouchEvent] only on the ScrollView → dialog/parents could steal moves.
- *
- * Fix: handle ACTION_DOWN starts the drag; this view's [dispatchTouchEvent] then steals MOVE/UP so
- * list rebuilds are safe. Non-handle touches scroll normally. Title is omitted here and always
- * prepended visible in [snapshot].
+ * Handle is RIGHTMOST; custom delete × sits immediately LEFT of the handle.
+ * Body (label) scrolls; only the handle starts a drag. Title omitted; always
+ * prepended visible in [snapshot]. Missing standard fields appear under the
+ * boundary so they can be restored by dragging up (replaces old menu 「欄を戻す」).
  */
 class FieldArrangeEditor(
     private val ctx: Context,
@@ -36,7 +32,8 @@ class FieldArrangeEditor(
 
     private val list = LinearLayout(ctx).apply { orientation = VERTICAL }
     val scroll: ScrollView = ScrollView(ctx).apply {
-        W.classicScrollbars(this); isFillViewport = true
+        W.thickScrollbars(this, 28)
+        isFillViewport = true
         overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
     }
     private val stage = FrameLayout(ctx)
@@ -70,14 +67,12 @@ class FieldArrangeEditor(
     init {
         orientation = VERTICAL
         load(initial)
-        addView(W.text(ctx,
-            "左の ☰ だけをドラッグして並べ替え（行の本文はスクロール用）。「非表示」線より下＝隠す (内容は残ります)。タイトルはこの一覧に出ず、常に先頭表示のままです。カスタム欄の × で欄削除。",
-            13f).apply { setLineSpacing(0f, 1.1f) }, W.lp(W.MATCH, W.WRAP, b = 8))
+        // Ghost: label … ×(spacer) handle on the right (mirrors rows)
+        ghost.addView(ghostLabel, W.lp(0, W.WRAP, 1f))
         ghost.addView(ImageView(ctx).apply {
             setImageDrawable(Glyph(Glyph.Kind.MORE, W.SHADOW))
             scaleType = ImageView.ScaleType.CENTER
-        }, W.lp(W.dp(40), W.dp(40), r = 4))
-        ghost.addView(ghostLabel, W.lp(0, W.WRAP, 1f))
+        }, W.lp(W.dp(40), W.dp(40), l = 4))
         scroll.addView(list)
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         stage.addView(ghost, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -93,6 +88,12 @@ class FieldArrangeEditor(
             seen.add(k)
             if (v) shown.add(k) else hidden.add(k)
         }
+        // Missing standard fields → hidden so the user can drag them back up
+        for (k in Order.DEFAULT_LAYOUT) {
+            if (k == Order.F_TITLE || k in seen) continue
+            seen.add(k)
+            hidden.add(k)
+        }
     }
 
     /** Title always first+visible, then editor rows. Hides keep values via "-" in KPExplorer.Fields. */
@@ -107,14 +108,8 @@ class FieldArrangeEditor(
             list.addView(fieldRow(k, visible = true, dimmed = dragKey == k), W.lp(W.MATCH, W.WRAP, b = 2))
         }
         list.addView(dividerRow(), W.lp(W.MATCH, W.WRAP, t = 6, b = 6))
-        if (hidden.isEmpty()) {
-            list.addView(W.text(ctx, "(非表示の欄はここに並びます)", 12f, color = W.SHADOW).apply {
-                setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4)); tag = "hidden-hint"
-            }, W.lp(W.MATCH, W.WRAP))
-        } else {
-            hidden.forEach { k ->
-                list.addView(fieldRow(k, visible = false, dimmed = dragKey == k), W.lp(W.MATCH, W.WRAP, b = 2))
-            }
+        hidden.forEach { k ->
+            list.addView(fieldRow(k, visible = false, dimmed = dragKey == k), W.lp(W.MATCH, W.WRAP, b = 2))
         }
         onChanged()
     }
@@ -128,7 +123,7 @@ class FieldArrangeEditor(
             minimumHeight = W.dp(36)
         }
         row.addView(View(ctx).apply { setBackgroundColor(W.NAVY) }, W.lp(0, W.dp(2), 1f))
-        row.addView(W.text(ctx, " 非表示 ", 13f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
+        row.addView(W.text(ctx, " この下は非表示 ", 13f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         row.addView(View(ctx).apply { setBackgroundColor(W.NAVY) }, W.lp(0, W.dp(2), 1f))
         return row
     }
@@ -141,6 +136,23 @@ class FieldArrangeEditor(
             setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4))
             tag = k
             alpha = if (dimmed) 0.25f else 1f
+        }
+        val label = KeyFields.label(k).removeSuffix(":")
+        row.addView(W.text(ctx, if (visible) label else "($label)", 15f).apply {
+            isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+        }, W.lp(0, W.WRAP, 1f))
+        // Custom delete × immediately LEFT of the rightmost handle
+        if (k !in Order.DEFAULT_LAYOUT) {
+            row.addView(W.text(ctx, "×", 18f, true).apply {
+                gravity = Gravity.CENTER; contentDescription = "欄を削除"
+                minimumWidth = W.dp(44); minimumHeight = W.dp(48)
+                isClickable = true
+                tag = "delete:$k"
+                setOnClickListener {
+                    if (dragKey != null) return@setOnClickListener
+                    shown.remove(k); hidden.remove(k); removedCustoms.add(k); render()
+                }
+            }, W.lp(W.dp(44), W.dp(48), r = 2))
         }
         val handle = ImageView(ctx).apply {
             setImageDrawable(Glyph(Glyph.Kind.MORE, W.SHADOW))
@@ -157,27 +169,10 @@ class FieldArrangeEditor(
                     if (dragKey == null) beginDrag(k, e)
                     true
                 }
-                // MOVE/UP for an active drag are stolen by dispatchTouchEvent; still return true
-                // so the handle keeps ownership until the parent steals.
                 else -> dragKey == k
             }
         }
-        row.addView(handle, W.lp(W.dp(48), W.dp(48), r = 4))
-        val label = KeyFields.label(k).removeSuffix(":")
-        row.addView(W.text(ctx, if (visible) label else "($label)", 15f).apply {
-            isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
-        }, W.lp(0, W.WRAP, 1f))
-        if (k !in Order.DEFAULT_LAYOUT) {
-            row.addView(W.text(ctx, "×", 18f, true).apply {
-                gravity = Gravity.CENTER; contentDescription = "欄を削除"
-                minimumWidth = W.dp(40); minimumHeight = W.dp(40)
-                isClickable = true
-                setOnClickListener {
-                    if (dragKey != null) return@setOnClickListener
-                    shown.remove(k); hidden.remove(k); removedCustoms.add(k); render()
-                }
-            }, W.lp(W.dp(40), W.dp(40)))
-        }
+        row.addView(handle, W.lp(W.dp(48), W.dp(48)))
         return row
     }
 
@@ -199,8 +194,6 @@ class FieldArrangeEditor(
             p.parent?.requestDisallowInterceptTouchEvent(true)
             p = p.parent as? View
         }
-        // Defer dimming rebuild so we don't destroy the handle mid-DOWN (which cancels the stream
-        // before the parent can steal subsequent MOVE events on some devices).
         post {
             if (dragKey == key) render()
         }
@@ -281,7 +274,7 @@ class FieldArrangeEditor(
         for (i in 0 until list.childCount) {
             val child = list.getChildAt(i)
             val tag = child.tag as? String ?: continue
-            if (tag == TAG_DIVIDER || tag == "hidden-hint" || tag == key) continue
+            if (tag == TAG_DIVIDER || tag == key) continue
             val loc = IntArray(2); child.getLocationOnScreen(loc)
             slots.add(Slot(tag, loc[1] + child.height / 2f))
         }
@@ -306,7 +299,6 @@ class FieldArrangeEditor(
         }
         if (!placed) placeDragged()
 
-        // Keys that were off-screen and missed: keep prior zone, append
         for (ok in others) {
             if (ok !in newShown && ok !in newHidden) {
                 if (ok in hidden) newHidden.add(ok) else newShown.add(ok)
@@ -357,6 +349,7 @@ class FieldArrangeEditor(
     }
 
     fun handleFor(key: String): View? = list.findViewWithTag("handle:$key")
+    fun deleteFor(key: String): View? = list.findViewWithTag("delete:$key")
     fun rowFor(key: String): View? = list.findViewWithTag(key)
     fun dividerView(): View? = list.findViewWithTag(TAG_DIVIDER)
 

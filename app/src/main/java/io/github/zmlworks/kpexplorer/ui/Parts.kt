@@ -64,10 +64,10 @@ object Parts {
 
 
     /**
-     * Key detail title bar (0.3.10): navy gradient kept; centered title; flat Win11-like
-     * transparent ⋮ (menu) and × (close) on the right — no boxed bevel buttons, no left ←.
+     * Key detail title bar (0.3.13): navy gradient; physically centered title; flat × only on the right
+     * (no ⋮ — actions live on fields / 「欄を編集」 / bottom secondary row).
      */
-    fun keyDetailBar(ctx: Context, title: String, onClose: () -> Unit, onMenu: (View) -> Unit): AppBar {
+    fun keyDetailBar(ctx: Context, title: String, onClose: () -> Unit): AppBar {
         val bar = W.hbox(ctx)
         bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.NAVY, W.TITLE2))
         bar.gravity = Gravity.CENTER_VERTICAL
@@ -75,27 +75,21 @@ object Parts {
         val frame = android.widget.FrameLayout(ctx)
         val t = W.text(ctx, title, 17f, true, W.HILITE).apply {
             isSingleLine = true; ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.CENTER; setPadding(W.dp(56), 0, W.dp(100), 0)
+            gravity = Gravity.CENTER; setPadding(W.dp(56), 0, W.dp(56), 0)
         }
         frame.addView(t, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH, Gravity.CENTER))
-        val tools = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL or Gravity.END }
-        fun flatHit(desc: String, glyph: Glyph.Kind, click: (View) -> Unit): ImageView =
-            ImageView(ctx).apply {
-                setImageDrawable(Glyph(glyph, W.HILITE))
-                scaleType = ImageView.ScaleType.CENTER
-                background = null
-                contentDescription = desc; tooltipText = desc
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-                isClickable = true; isFocusable = true
-                minimumWidth = W.dp(48); minimumHeight = W.dp(48)
-                setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(12))
-                setOnClickListener(click)
-            }
-        val menu = flatHit("メニュー", Glyph.Kind.MORE) { onMenu(it) }
-        val close = flatHit("閉じる", Glyph.Kind.CLOSE) { onClose() }
-        tools.addView(menu, W.lp(W.dp(48), W.dp(48)))
-        tools.addView(close, W.lp(W.dp(48), W.dp(48)))
-        frame.addView(tools, android.widget.FrameLayout.LayoutParams(W.WRAP, W.MATCH, Gravity.END or Gravity.CENTER_VERTICAL))
+        val close = ImageView(ctx).apply {
+            setImageDrawable(Glyph(Glyph.Kind.CLOSE, W.HILITE))
+            scaleType = ImageView.ScaleType.CENTER
+            background = null
+            contentDescription = "閉じる"; tooltipText = "閉じる"
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            isClickable = true; isFocusable = true
+            minimumWidth = W.dp(48); minimumHeight = W.dp(48)
+            setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(12))
+            setOnClickListener { onClose() }
+        }
+        frame.addView(close, android.widget.FrameLayout.LayoutParams(W.dp(48), W.MATCH, Gravity.END or Gravity.CENTER_VERTICAL))
         bar.addView(frame, W.lp(0, W.dp(48), 1f))
         return AppBar(bar, t)
     }

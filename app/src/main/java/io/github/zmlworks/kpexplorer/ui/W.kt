@@ -35,6 +35,10 @@ object W {
     const val SHADOW = 0xFF808080.toInt()
     const val DARK = 0xFF000000.toInt()
     const val NAVY = 0xFF000080.toInt()
+    /** Softer muted blue for key-detail location band (not shocking #000080). */
+    const val BAND_SOFT = 0xFF4A6FA5.toInt()
+    /** Darker gray for plain-row field labels (stronger contrast than SHADOW). */
+    const val LABEL_DARK = 0xFF3A3A3A.toInt()
     const val TITLE2 = 0xFF1084D0.toInt()
     const val INACTIVE1 = 0xFF808080.toInt()
     const val INACTIVE2 = 0xFFB5B5B5.toInt()
@@ -466,6 +470,17 @@ object W {
             v.verticalScrollbarThumbDrawable = Bevel(Style.RAISED)
             v.verticalScrollbarTrackDrawable = Stipple()
             v.scrollBarSize = dp(12)
+            v.isScrollbarFadingEnabled = false
+        }
+    }
+
+    /** Much thicker classic scrollbar (field-arrange editor). */
+    fun thickScrollbars(v: View, sizeDp: Int = 28) {
+        classicScrollbars(v)
+        if (Build.VERSION.SDK_INT >= 29) {
+            v.scrollBarSize = dp(sizeDp)
+            v.verticalScrollbarThumbDrawable = Bevel(Style.RAISED)
+            v.verticalScrollbarTrackDrawable = Stipple()
             v.isScrollbarFadingEnabled = false
         }
     }

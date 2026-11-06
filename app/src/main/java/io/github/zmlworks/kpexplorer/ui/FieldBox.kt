@@ -52,11 +52,16 @@ class FieldBox(
     var editing = false
         private set
     private val labelColor = when {
-        plain -> W.SHADOW
+        plain -> W.LABEL_DARK
         table -> W.TEXT
         else -> W.NAVY
     }
-    val labelView: TextView = W.text(ctx, label, if (table) 14f else 11f, table && !plain, labelColor).apply {
+    val labelView: TextView = W.text(ctx, label,
+        when {
+            plain -> 13f
+            table -> 14f
+            else -> 11f
+        }, table && !plain, labelColor).apply {
         isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
     }
     private var idleFill = rowFill
@@ -67,10 +72,10 @@ class FieldBox(
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         background = frameBg
         setPadding(
-            W.dp(if (table || plain) 8 else 6),
-            W.dp(if (plain) 6 else if (table) 8 else 4),
-            W.dp(4),
-            W.dp(if (plain) 6 else if (table) 8 else 4))
+            W.dp(if (plain) 10 else if (table) 8 else 6),
+            W.dp(if (plain) 8 else if (table) 8 else 4),
+            W.dp(if (plain) 6 else 4),
+            W.dp(if (plain) 8 else if (table) 8 else 4))
     }
 
     private val leftHint: LinearLayout
@@ -114,7 +119,10 @@ class FieldBox(
             front.addView(divider, W.lp(W.px, W.MATCH, r = 6))
             front.addView(view ?: field, W.lp(0, W.WRAP, 1f))
         } else {
-            if (icon != null) front.addView(ImageView(ctx).apply { setImageDrawable(icon) }, W.lp(W.dp(22), W.dp(22), r = 8))
+            // plain: larger left glyph (~26dp) and more inset so Title/value sit further right
+            val iconDp = if (plain) 26 else 22
+            val iconGap = if (plain) 12 else 8
+            if (icon != null) front.addView(ImageView(ctx).apply { setImageDrawable(icon) }, W.lp(W.dp(iconDp), W.dp(iconDp), r = iconGap))
             val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             col.addView(labelView, W.lp(W.MATCH, W.WRAP))
             col.addView(view ?: field, W.lp(W.MATCH, W.WRAP))

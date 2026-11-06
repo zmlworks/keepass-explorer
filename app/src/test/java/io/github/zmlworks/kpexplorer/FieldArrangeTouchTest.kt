@@ -105,8 +105,8 @@ class FieldArrangeTouchTest {
         // Drag on the Pass *label row center* (not handle) — should scroll or at least not reorder
         val row = ed.rowFor(Order.F_PASS)!!
         val (rx, ry) = rawOf(row)
-        // Touch on the right half of the row (away from handle)
-        val x = rx + row.width * 0.3f
+        // Touch on the LEFT half of the row (handle is rightmost since 0.3.13)
+        val x = rx - row.width * 0.3f
         row.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, x, ry, row))
         assertFalse(ed.isDragging())
         ed.scroll.scrollBy(0, 80)
@@ -197,18 +197,70 @@ class FieldArrangeTouchTest {
         assertFalse(Order.F_PASS in ed2.hidden)
     }
 
-    @Test fun renderEditorScreenshot() {
-        ed.place(Order.F_URL, visible = false, index = 0)
+    @Test fun handleIsRightmostAndDeleteLeftOfHandle() {
+        // Rebuild with a custom so × appears
+        host.removeAllViews()
+        val initial = listOf(
+            Order.F_TITLE to true,
+            Order.F_USER to true,
+            Order.F_PASS to true,
+            "暗証" to true,
+            Order.F_NOTES to true,
+        )
+        ed = FieldArrangeEditor(app(), initial)
+        host.addView(ed, FrameLayout.LayoutParams(411 * 3, 700))
         host.measure(
             View.MeasureSpec.makeMeasureSpec(411 * 3, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.EXACTLY))
         host.layout(0, 0, 411 * 3, 700)
+        ShadowLooper.idleMainLooper()
+        val row = ed.rowFor("暗証") as android.view.ViewGroup
+        val handle = ed.handleFor("暗証")!!
+        val del = ed.deleteFor("暗証")!!
+        assertTrue("delete should be left of handle", del.left < handle.left)
+        assertEquals("handle should be last child", row.childCount - 1, (0 until row.childCount).first { row.getChildAt(it) === handle })
+        // Standard fields have no delete
+        assertNull(ed.deleteFor(Order.F_USER))
+        assertNotNull(ed.handleFor(Order.F_USER))
+    }
+
+    @Test fun dividerSaysHiddenBelow() {
+        val div = ed.dividerView() as android.view.ViewGroup
+        var found = false
+        fun walk(v: View) {
+            if (v is android.widget.TextView && v.text.toString().contains("この下は非表示")) found = true
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(div)
+        assertTrue(found)
+    }
+
+    @Test fun renderEditorScreenshot() {
+        // Custom + hidden URL so × and boundary both show
+        host.removeAllViews()
+        val initial = listOf(
+            Order.F_TITLE to true,
+            Order.F_USER to true,
+            Order.F_PASS to true,
+            "暗証" to true,
+            Order.F_URL to false,
+            Order.F_NOTES to false,
+        )
+        ed = FieldArrangeEditor(app(), initial)
+        host.addView(ed, FrameLayout.LayoutParams(411 * 3, 900))
+        host.measure(
+            View.MeasureSpec.makeMeasureSpec(411 * 3, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY))
+        host.layout(0, 0, 411 * 3, 900)
+        ShadowLooper.idleMainLooper()
         val b = android.graphics.Bitmap.createBitmap(host.width, host.height, android.graphics.Bitmap.Config.ARGB_8888)
         host.draw(android.graphics.Canvas(b))
-        FileOutputStream(File(out, "12-field-arrange-no-title.png")).use {
+        FileOutputStream(File(out, "13-field-arrange-boundary.png")).use {
             b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
         assertNotNull(ed.dividerView())
+        assertNotNull(ed.deleteFor("暗証"))
+        assertTrue(Order.F_URL in ed.hidden)
         assertFalse(Order.F_TITLE in ed.shown)
     }
 }

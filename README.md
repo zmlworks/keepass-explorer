@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.3.12 試作版)
+# KeePass Explorer (v0.3.13 試作版)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -15,7 +15,7 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
   一覧のスクロールは、項目のない所か右端のスクロールバーの帯をなぞります。並び順は CustomData `KPExplorer.Order` に保存。
 - **新しいフォルダ／新しいメモ** は連番名ですぐ作成。独立メモはクリアカバー付きメモ帳アイコン。本文は罫線ノート。
 - **新しい鍵**: 作成専用画面 (すぐ編集、Pass 表示切替と「生成」、タグ、アイコン選択)。作成後は通常の鍵画面へ。
-- **鍵の画面**: タイトル中央＋右端のフラット ⋮／×。紺ヘッダ帯＋プレーン行。スワイプで薄い青の背後に「コピー」。長押しで編集、Pass はタップで表示／非表示。OTP は `(10s)`。アイコンはダブルタップ／長押しで変更 (Material Symbols)。欄の編集は ☰ ドラッグと「非表示」線 (タイトルは一覧外で先頭固定)。未保存時は戻る前に確認。
+- **鍵の画面**: タイトル中央＋右端フラット × (⋮なし)。穏やかな青の場所帯＋大きめプレーン行。スワイプで薄い青の背後に「コピー」。長押しで編集、Pass はタップで表示／非表示＋「生成」、URL は開くボタン。OTP は黒字 `(10s)`。下部に OTP設定／削除。「欄を編集」「欄を追加」。アイコンはダブルタップ／長押し (Material Symbols)。欄の編集は右端つまみドラッグと「この下は非表示」(タイトルは一覧外で先頭固定)。未保存時は戻る前に確認。
 - **タグ**: スペース区切りで入力 (KDBX の Tags)。入力欄の下に過去に使ったタグのボタンが並び、タップで追加／削除。
   検索では `#タグ` で完全一致、検索ダイアログにも使用済みタグのボタン。
 - **鍵の仕組み**: 初回にランダムな 32 バイトの鍵を作り、Android キーストアの AES-256-GCM 鍵 (画面ロックの認証が毎回必要、
@@ -31,6 +31,12 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.3.13 の変更
+
+- 鍵画面: 「欄を編集」を「欄を追加」の左に常時表示。タイトルバーの ⋮ を削除 (Pass「生成」・URL 開く・OTP／削除は欄または下部へ)。
+- 欄の見た目: 左アイコンやや大、ラベル濃色・字と行を少し拡大。OTP を黒字。場所帯を穏やかな青に。
+- 欄の編集: 説明文削除。区切りを「この下は非表示」。スクロールバーを太く。つまみを右端、カスタム × はその左隣。
 
 ## アプリ 0.3.12 の変更
 

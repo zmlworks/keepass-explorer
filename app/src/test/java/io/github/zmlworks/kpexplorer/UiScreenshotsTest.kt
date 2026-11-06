@@ -17,7 +17,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -260,9 +259,11 @@ class UiScreenshotsTest {
         idle()
         assertFalse(ks.passShown)
         ks.togglePass(); assertTrue(ks.passShown); ks.togglePass()
-        // 0.3.10 key title bar: centered title, flat メニュー + 閉じる (×), no boxed ← in the bar
-        assertNotNull(findDesc(a.host, "メニュー"))
+        // 0.3.13 key title bar: centered title, flat 閉じる (×) only — no メニュー
+        assertNull(findDesc(a.host, "メニュー"))
         assertNotNull(findDesc(a.host, "閉じる"))
+        assertNotNull(findDesc(a.host, "欄を編集"))
+        assertNotNull(findDesc(a.host, "欄を追加"))
         assertEquals("Gmail", ks.barTitle())
         // swipe on User box = copy
         val ub = ks.boxes["UserName"]!!
@@ -492,7 +493,10 @@ class UiScreenshotsTest {
     @Test fun keyFieldMenuAndPermanentDelete() {
         val a = openSample()
         var ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
-        assertTrue(ks.menu().map { it.label }.containsAll(listOf("欄の編集...", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更...")))
+        assertNotNull(ks.editButton)
+        assertNotNull(ks.addButton)
+        val labels = ks.menu().map { it.label }
+        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更", "OTPを設定")))
         val order0 = ks.layout.map { it.first }
         val iu = order0.indexOf("UserName")
         ks.moveField("UserName", -1)
@@ -517,7 +521,7 @@ class UiScreenshotsTest {
         assertFalse("Title" in ed.hidden)
         assertTrue("URL" in ed.hidden)
         assertNull(ed.handleFor("Title"))
-        save(withDialog(shot(a.host)), "05h-field-arrange.png") // URL under 非表示; Title omitted
+        save(withDialog(shot(a.host)), "05h-field-arrange.png") // URL under この下は非表示; Title omitted; handle right
         ed.place("URL", visible = true, index = ed.shown.size)
         ed.place("Title", visible = false, index = 0) // no-op
         assertFalse("Title" in ed.shown)
