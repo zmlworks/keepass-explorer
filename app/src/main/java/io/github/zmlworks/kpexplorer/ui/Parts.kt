@@ -22,21 +22,27 @@ object Parts {
      *         └フォルダ２
      * Every line is a [View] tagged with the group uuid (drop target / tap to navigate).
      */
-    fun pathTree(ctx: Context, path: List<Group>, onTap: ((Group) -> Unit)? = null, lines: MutableList<View>? = null): LinearLayout {
+    /**
+     * Folder path as indented tree. [showCounts] is for rare callers; NewKey / Key location paths
+     * omit "(folders,files)" counts (0.4.2/0.4.3). Explorer tree uses [FolderTree] separately.
+     */
+    fun pathTree(ctx: Context, path: List<Group>, onTap: ((Group) -> Unit)? = null,
+                 lines: MutableList<View>? = null, showCounts: Boolean = false): LinearLayout {
         val box = W.vbox(ctx).apply { setPadding(W.dp(6), W.dp(3), W.dp(6), W.dp(4)) }
         path.forEachIndexed { i, g ->
             val name = if (i == 0) "/" else g.name.ifEmpty { "(名前なし)" }
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = g.uuid; minimumHeight = W.dp(26) }
-            row.setPadding(W.dp(20) * i, 0, 0, 0)   // every level one step further right
+            row.setPadding(W.dp(20) * i, 0, 0, 0)
             if (i > 0) row.addView(W.text(ctx, "└", 15f), W.lp(W.WRAP, W.WRAP))
             row.addView(W.icon(ctx, Px.folder16, maxOf(1, W.iconScale() - 2)).apply { setPadding(W.dp(2), 0, W.dp(3), 0) }, W.lp(W.WRAP, W.WRAP))
             row.addView(W.text(ctx, name, 15f, bold = i == path.size - 1).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END },
                 W.lp(W.WRAP, W.WRAP))
-            // (subfolders, files) directly inside this folder
-            row.addView(W.text(ctx, " (${g.groups.size},${g.entries.size})", 13f, color = W.SHADOW).apply { isSingleLine = true; tag = "count" },
-                W.lp(0, W.WRAP, 1f))
+            if (showCounts) {
+                row.addView(W.text(ctx, " (${g.groups.size},${g.entries.size})", 13f, color = W.SHADOW).apply { isSingleLine = true; tag = "count" },
+                    W.lp(0, W.WRAP, 1f))
+            }
             if (onTap != null) { row.isClickable = true; row.background = W.Bevel(W.Style.NONE); row.setOnClickListener { onTap(g) } }
-            row.setPadding(W.dp(20) * i, 0, 0, 0)   // (again: setting a background resets the padding)
+            row.setPadding(W.dp(20) * i, 0, 0, 0)
             box.addView(row, W.lp(W.MATCH, W.WRAP))
             lines?.add(row)
         }

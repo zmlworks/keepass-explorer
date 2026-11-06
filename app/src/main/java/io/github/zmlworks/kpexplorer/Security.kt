@@ -41,7 +41,7 @@ object Security {
     fun opened(a: MainActivity, db: KeePassDatabase) {
         Session.open(db)
         val binName = a.getString(R.string.recycle_bin)
-        Session.update { Tree.ensureRecycleBin(it, binName) }
+        Session.update { Tree.ensureRecycleBinAtRoot(it, binName) }
     }
 
     /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */

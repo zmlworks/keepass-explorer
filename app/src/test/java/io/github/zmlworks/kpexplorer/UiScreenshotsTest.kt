@@ -498,7 +498,8 @@ class UiScreenshotsTest {
         assertNotNull(ks.editButton)
         assertNotNull(ks.addButton)
         val labels = ks.menu().map { it.label }
-        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "アイコンの変更")))
+        assertTrue(labels.containsAll(listOf("欄を編集", "アイコンの変更")))
+        assertFalse(labels.contains("URL をブラウザで開く"))
         assertFalse(labels.contains("パスワードを生成"))
         assertFalse(labels.contains("OTPを設定"))
         assertFalse(labels.contains("この鍵を削除"))

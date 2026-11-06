@@ -27,7 +27,7 @@ object Stars : PasswordTransformationMethod() {
 
 /**
  * At most one [FieldBox] is in inline edit. Outside [ACTION_DOWN] commits via [commitActive]
- * (host typically saves the entry). IME window taps do not reach the host view tree.
+ * (draft-only unless host sets onCommitted). IME window taps do not reach the host view tree.
  */
 object FieldEditSession {
     var active: FieldBox? = null
@@ -60,7 +60,7 @@ object FieldEditSession {
  * One key field.
  * Default (cream well): [glyph] [label over value] — used by the new-key form.
  * [table]=true: two-column property sheet. [plain]=true: proposal #3 plain rows (no boxes).
- * Gestures: swipe = copy (row slides over a lighter blue reveal with icon + 「コピー」),
+ * Gestures: swipe = copy (row slides over a fixed lighter-blue reveal with clipboard glyph only),
  * long press = edit, tap = [onTap] (Pass show/hide). Secret values are never drawn on the reveal.
  */
 class FieldBox(
@@ -120,21 +120,15 @@ class FieldBox(
 
     init {
         clipChildren = true
-        fun hint(start: Boolean): LinearLayout {
+        fun hint(@Suppress("UNUSED_PARAMETER") start: Boolean): LinearLayout {
+            // Clipboard glyph only (no 「コピー」 text) — 0.4.3
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(W.dp(14), 0, W.dp(14), 0)
+                gravity = Gravity.CENTER
+                setPadding(W.dp(16), 0, W.dp(16), 0)
             }
-            val iv = ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.COPY, W.HILITE)) }
-            val tv = W.text(ctx, "コピー", 15f, true, W.HILITE).apply { isSingleLine = true }
-            if (start) {
-                row.addView(iv, W.lp(W.dp(22), W.dp(22), r = 8))
-                row.addView(tv, W.lp(W.WRAP, W.WRAP))
-            } else {
-                row.addView(tv, W.lp(W.WRAP, W.WRAP, r = 8))
-                row.addView(iv, W.lp(W.dp(22), W.dp(22)))
-            }
+            row.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.COPY, W.HILITE)) },
+                W.lp(W.dp(24), W.dp(24)))
             return row
         }
         leftHint = hint(true)
@@ -208,34 +202,18 @@ class FieldBox(
         // commit path for outside-tap is FieldEditSession.commitActive → onCommitted
     }
 
-    /** Brief flash after a successful copy — keep front navy pulse; do not paint secrets on reveal. */
+    /** Post-copy: no color flash (navy/arm flicker removed 0.4.3). Host may toast. */
     fun flash() {
-        frameBg.fill = W.NAVY; labelView.setTextColor(W.HILITE); front.invalidate()
-        reveal.setBackgroundColor(COPY_BLUE_DONE)
-        setHintText("コピー済み")
-        postDelayed({
-            frameBg.fill = if (editing) (if (table || plain) EDIT_FILL else W.WINDOW) else idleFill
-            labelView.setTextColor(labelColor); front.invalidate()
-            reveal.setBackgroundColor(COPY_BLUE)
-            setHintText("コピー")
-            updateHints(0f, false)
-        }, 280)
-    }
-
-    private fun setHintText(s: String) {
-        fun labelOf(row: LinearLayout): TextView? {
-            for (i in 0 until row.childCount) (row.getChildAt(i) as? TextView)?.let { return it }
-            return null
-        }
-        labelOf(leftHint)?.text = s
-        labelOf(rightHint)?.text = s
+        // Keep reveal at fixed COPY_BLUE; do not recolor front/reveal.
+        updateHints(0f, false)
     }
 
     /** True when |translation| has crossed [copyThreshold] (reveal armed). For tests / screenshots. */
     val revealArmed: Boolean get() = abs(front.translationX) >= copyThreshold()
     fun revealColor(): Int = (reveal.background as? ColorDrawable)?.color ?: COPY_BLUE
 
-    fun copyThreshold(): Float = maxOf(W.dp(72).toFloat(), minOf(width * 0.4f, W.dp(120).toFloat()))
+    /** Required travel to arm a copy (~110dp). Visual slide clamps here; release uses raw dx. */
+    fun copyThreshold(): Float = W.dp(110).toFloat()
     private val slop = W.dp(10)
     private val handler = Handler(Looper.getMainLooper())
     /** Shorter than the system long-press (~500ms); horizontal swipe / scroll cancels. */
@@ -300,24 +278,24 @@ class FieldBox(
     }
 
     fun slideTo(dx: Float) {
-        front.translationX = dx
-        val past = abs(dx) >= copyThreshold()
-        // Keep front at idle fill while sliding so the blue reveal stays readable behind it.
+        val lim = copyThreshold()
+        // Visual clamp at required distance; raw finger can go further for release check.
+        front.translationX = dx.coerceIn(-lim, lim)
         frameBg.fill = idleFill
         labelView.setTextColor(labelColor)
-        updateHints(dx, past)
+        updateHints(front.translationX, abs(dx) >= lim)
         front.invalidate()
     }
 
-    private fun updateHints(dx: Float, past: Boolean) {
+    private fun updateHints(dx: Float, @Suppress("UNUSED_PARAMETER") past: Boolean) {
         val showL = dx > W.dp(4)
         val showR = dx < -W.dp(4)
         leftHint.alpha = if (showL) 1f else 0f
         rightHint.alpha = if (showR) 1f else 0f
-        leftHint.scaleX = if (past) 1.05f else 1f
-        rightHint.scaleX = if (past) 1.05f else 1f
-        // Slightly brighter blue once past the copy threshold
-        reveal.setBackgroundColor(if (past) COPY_BLUE_ARM else COPY_BLUE)
+        leftHint.scaleX = 1f
+        rightHint.scaleX = 1f
+        // Fixed lighter-blue reveal for the whole gesture (no threshold accent / navy flash).
+        reveal.setBackgroundColor(COPY_BLUE)
     }
 
     fun springBack() {
@@ -344,14 +322,14 @@ class FieldBox(
         /** While editing a table cell — light gray, not cream. */
         const val EDIT_FILL = 0xFFE8E4DC.toInt()
         /**
-         * Swipe-reveal blue: lighter than [W.NAVY] (0x000080) / title bar navy.
-         * Does not paint field secrets — icon + 「コピー」 only.
+         * Swipe-reveal blue: lighter than [W.NAVY]. Fixed for whole gesture (0.4.3).
+         * Reveal shows clipboard glyph only — never field secrets.
          */
         const val COPY_BLUE = 0xFF5BA3E8.toInt()
-        /** Armed (past threshold) — a touch brighter. */
-        const val COPY_BLUE_ARM = 0xFF6BB4F0.toInt()
-        /** Brief post-copy flash on the reveal. */
-        const val COPY_BLUE_DONE = 0xFF3D8FD6.toInt()
+        /** @deprecated Kept for binary compat / old tests; unused — same as COPY_BLUE. */
+        const val COPY_BLUE_ARM = COPY_BLUE
+        /** @deprecated Unused since 0.4.3 (no post-copy color flash). */
+        const val COPY_BLUE_DONE = COPY_BLUE
         fun mask(t: TextView, hidden: Boolean) { t.transformationMethod = if (hidden) Stars else null as TransformationMethod? }
     }
 }

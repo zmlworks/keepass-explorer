@@ -231,6 +231,8 @@ object Tree {
     fun move(db: KeePassDatabase, id: UUID, target: UUID, index: Int? = null, now: Instant = Instant.now()): KeePassDatabase {
         val r = root(db)
         if (id == r.uuid) throw TreeException("cannot move the root")
+        val bin = recycleBinId(db)
+        if (bin != null && id == bin) throw TreeException("cannot move the recycle bin")
         val from = parentOf(r, id) ?: throw TreeException("item not found")
         findGroup(r, target) ?: throw TreeException("target not found")
         findGroup(r, id)?.let { if (isDescendantOrSelf(it, target)) throw TreeException("cannot move a folder into itself") }
@@ -292,6 +294,10 @@ object Tree {
         g.groups.forEach { addAll(allIds(it)) }
     }
 
+    /** ensureRecycleBin + reparent to root (writable primary load / import). */
+    fun ensureRecycleBinAtRoot(db: KeePassDatabase, displayName: String, now: Instant = Instant.now()): KeePassDatabase =
+        reparentRecycleBinToRoot(ensureRecycleBin(db, displayName, now), now)
+
     /**
      * Ensure Meta.recycleBinEnabled and a real Recycle Bin group exist.
      * Identity is [Meta.recycleBinUuid] (stable across locale renames).
@@ -330,6 +336,30 @@ object Tree {
             copy(meta = this.meta.copy(recycleBinUuid = bin.uuid, recycleBinChanged = now, recycleBinEnabled = true))
         }
         return out
+    }
+
+
+    /**
+     * If the recycle bin group exists but is not a direct child of root, reparent it to root
+     * (preserves UUID, children, histories). Used on writable primary open to repair accidental moves.
+     * Does not create a second bin by name.
+     */
+    fun reparentRecycleBinToRoot(db: KeePassDatabase, now: Instant = Instant.now()): KeePassDatabase {
+        val binId = recycleBinId(db) ?: return db
+        val r = root(db)
+        val parent = parentOf(r, binId) ?: return db
+        if (parent.uuid == r.uuid) return db
+        // Internal relocate: detach bin group and append under root (bypass move()'s bin lock).
+        val (detached, item) = detach(r, binId)
+        val g = (item as? Item.G)?.group ?: return db
+        val relocated = g.copy(
+            times = (g.times ?: TimeData.create(now)).copy(locationChanged = now),
+            previousParentGroup = parent.uuid
+        )
+        val nr = mapGroup(detached, r.uuid) { rootG ->
+            rootG.copy(groups = rootG.groups + relocated)
+        }
+        return db.modifyContent { copy(group = nr) }
     }
 
     /** Move [id] into the recycle bin (creates bin if needed). Refuses root and the bin itself. */

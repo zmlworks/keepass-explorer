@@ -69,7 +69,6 @@ class FieldEditCommitTest {
         Session.open(db)
         App.prefs(app()).edit().putString("dbName", db.content.meta.name).commit()
         val a = Robolectric.buildActivity(MainActivity::class.java).setup().get(); idle()
-        // Activity lifecycle may have locked; re-open like a warm session before showing the key
         if (!Session.isOpen) Session.open(db)
         Session.store = a.store
         val ks = KeyScreen(a, e.uuid, g.uuid); a.show(ks); idle()
@@ -100,21 +99,26 @@ class FieldEditCommitTest {
         box.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, x, y))
     }
 
-    @Test fun outsideTouchCommitsAndPersists() {
-        val (a, ks) = openKey()
+    /** Outside tap ends edit into local draft only — Session/DB unchanged until 保存. */
+    @Test fun outsideTouchUpdatesDraftOnlyNotDb() {
+        val (_, ks) = openKey()
         val box = ks.boxes["UserName"]!!
         box.startEdit()
         assertTrue(box.editing)
         box.field.setText("new-user")
         assertTrue(ks.dirty)
+        assertEquals("new-user", ks.values["UserName"])
         val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
-        a.host.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
+        val beforeUser = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
+        // Dispatch on KeyScreen root (not activity host padding) so outside-tap interceptor runs.
+        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
         idle()
         assertFalse(box.editing)
-        assertFalse("autosave clears dirty", ks.dirty)
+        assertEquals("new-user", ks.values["UserName"])
+        assertTrue("draft stays dirty until explicit Save; dirty=${ks.dirty} user=${ks.values["UserName"]}", ks.dirty)
         val e = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second
-        assertEquals("new-user", Tree.userName(e))
-        assertEquals(histBefore + 1, e.history.size)
+        assertEquals("session entry unchanged", beforeUser, Tree.userName(e))
+        assertEquals(histBefore, e.history.size)
     }
 
     @Test fun touchInsideEditingFieldDoesNotCommit() {
@@ -128,12 +132,51 @@ class FieldEditCommitTest {
     }
 
     @Test fun noopOutsideCommitDoesNotGrowHistory() {
-        val (a, ks) = openKey()
+        val (_, ks) = openKey()
         val box = ks.boxes["UserName"]!!
         box.startEdit()
         val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
-        a.host.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
+        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
         idle()
+        assertEquals(histBefore, Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size)
+        assertFalse(ks.dirty)
+    }
+
+    @Test fun explicitSavePersistsAndHistory() {
+        val (_, ks) = openKey()
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("saved-user"); assertTrue(ks.dirty)
+        FieldEditSession.commitActive(); idle()
+        assertTrue(ks.dirty)
+        val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
+        assertTrue(ks.save()); idle()
+        assertFalse(ks.dirty)
+        val e = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second
+        assertEquals("saved-user", Tree.userName(e))
+        assertEquals(histBefore + 1, e.history.size)
+    }
+
+    @Test fun discardLeavesDbAndHistoryUnchanged() {
+        val (a, ks) = openKey()
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("discard-me"); assertTrue(ks.dirty)
+        FieldEditSession.commitActive(); idle()
+        assertTrue(ks.dirty)
+        val beforeUser = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
+        val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
+        // Simulate discard path (保存しない): leave without save — Session entry untouched.
+        // (encodeVerified uses fresh IV each call, so compare fields/history not ciphertext)
+        ks.dirty = false
+        a.showExplorer(); idle()
+        assertEquals(beforeUser, Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second))
+        assertEquals(histBefore, Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size)
+    }
+
+    @Test fun noopSaveDoesNotGrowHistory() {
+        val (_, ks) = openKey()
+        assertFalse(ks.dirty)
+        val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
+        assertTrue(ks.save())
         assertEquals(histBefore, Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size)
     }
 
@@ -147,6 +190,22 @@ class FieldEditCommitTest {
         assertEquals(before, ks.values[Order.OTP])
     }
 
+    @Test fun sessionAutosaveDoesNotFlushUnsavedDraft() {
+        val (_, ks) = openKey()
+        Session.debounceMs = 10
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("draft-only"); assertTrue(ks.dirty)
+        FieldEditSession.commitActive(); idle()
+        // Trigger unrelated Session persistence (folder expand would update DB; here just flush current)
+        val beforeUser = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
+        Session.flush(); idle()
+        Thread.sleep(80); idle()
+        assertEquals("draft must not leak via Session.flush", beforeUser,
+            Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second))
+        assertTrue(ks.dirty)
+        assertEquals("draft-only", ks.values["UserName"])
+    }
+
     @Test fun renderKeyAndArrangeScreenshots() {
         val (a, ks) = openKey()
         val b = android.graphics.Bitmap.createBitmap(a.host.width, a.host.height, android.graphics.Bitmap.Config.ARGB_8888)
@@ -154,6 +213,7 @@ class FieldEditCommitTest {
         FileOutputStream(File(out, "15-key-detail.png")).use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         assertNullDesc(a.host, "OTP設定を変更")
         assertNullDesc(a.host, "この鍵を削除")
+        assertNullDesc(a.host, "URL をブラウザで開く")
         ks.addCustomField("暗証", "1")
         ks.editLayout(); idle()
         val ed = ks.arrangeEditor!!
@@ -162,7 +222,6 @@ class FieldEditCommitTest {
         assertNotNull(ed.deleteFor("暗証"))
         assertTrue(ed.deleteFor("暗証")!!.minimumWidth >= W.dp(48))
         Dlg.last?.dismiss(); idle()
-        // Fresh editor instance for standalone shot (not the dialog-attached one)
         val ed2 = io.github.zmlworks.kpexplorer.ui.FieldArrangeEditor(a, ks.layout)
         ed2.place(Order.F_URL, visible = false, index = 0)
         val host = FrameLayout(a)
@@ -185,16 +244,13 @@ class FieldEditCommitTest {
         org.junit.Assert.assertNull(find(v))
     }
 
-    @Test fun autosaveIsSilentButExplicitSaveToasts() {
-        val (a, ks) = openKey()
+    @Test fun explicitSaveToastsWhenDirty() {
+        val (_, ks) = openKey()
         ShadowToast.reset()
         val box = ks.boxes["UserName"]!!
-        box.startEdit(); box.field.setText("silent-user"); assertTrue(ks.dirty)
-        a.host.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f)); idle()
-        assertFalse(ks.dirty)
-        assertEquals("no success toast on outside-tap autosave", 0, ShadowToast.shownToastCount())
-        // Explicit save still toasts when dirty
         box.startEdit(); box.field.setText("explicit-user"); assertTrue(ks.dirty)
+        FieldEditSession.commitActive(); idle()
+        assertTrue(ks.dirty)
         assertTrue(ks.save()); idle()
         assertTrue("explicit save may toast", ShadowToast.shownToastCount() >= 1)
         assertTrue(ShadowToast.getTextOfLatestToast().contains("保存"))

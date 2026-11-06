@@ -588,6 +588,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private var drop: Drop? = null
 
     private fun beginDrag(r: Order.Node, rx: Float, ry: Float) {
+        if (isRecycleBinFolder(r)) return  // recycle bin is root-fixed (0.4.3)
         drag = DragState(r.uuid, r, rx, ry)
         ghost.setImageDrawable(Px.drawable(ctx, unselected(r), maxOf(1, W.iconScale() - 1)))
         notifyList()

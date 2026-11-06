@@ -140,25 +140,21 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         content.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
         dirty = false
-        io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = { autosaveAfterFieldEdit() }
+        // Outside-tap / IME Done only ends inline edit into the local draft (TextWatchers).
+        // Database write happens solely via explicit footer 保存 (0.4.3).
+        io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = null
     }
 
-    /** Outside-tap / IME Done commit: persist existing entries only (never spawn empty new keys). */
+    /** Outside-tap / IME Done: end edit into draft only — never Session.update / save. */
     fun commitActiveFieldEdit() {
         io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
-    }
-
-    private fun autosaveAfterFieldEdit() {
-        if (entryId == null) return  // NewKeyScreen / unsaved new key: don't auto-create
-        if (!dirty) return           // no-op → Order.saveEntry skips history
-        save(silent = true)          // outside-tap: no success toast (errors still shown)
     }
 
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
     fun barTitle(): String = bar.title.text.toString()
 
     /**
-     * Layout after the KeePassDX entry screen, drawn in Windows 98 style: a raised key tile with folder path
+     * Layout after the KeePassDX entry screen, drawn in Windows 98 style: a flat key icon with folder path
      * (└ tree with counts) and Last Modified beside it, then one sunken well per field (glyph, small label,
      * value, trailing action) with a ⋮ menu button, 「欄を追加」, and 戻る / 保存 at the bottom.
      */
@@ -172,7 +168,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(14))
         }
         val tile = android.widget.FrameLayout(ctx).apply {
-            background = W.Bevel(W.Style.RAISED)
+            // Flat icon on band — no 3D bevel/raised frame (0.4.3)
+            background = null
             contentDescription = "アイコン (ダブルタップまたは長押しで変更)"
             isClickable = true
             val gd = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
@@ -274,12 +271,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         build()
     }
 
-    fun openUrl(u: String) {
-        if (u.isBlank()) return
-        val uri = android.net.Uri.parse(if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(u)) u else "https://$u")
-        runCatching { a.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
-            .onFailure { Toast.makeText(ctx, "開けませんでした", Toast.LENGTH_SHORT).show() }
-    }
 
     /** Already-used tags as toggle buttons under the Tag row (tap = add / remove). */
     private fun tagPicker() {
@@ -334,7 +325,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     /**
      * Every field is a sunken well (glyph, small label, value): swipe sideways = copy, long press = edit in place,
-     * tap on Pass (or its eye button) = show / hide (masked as ****** by default). URL has an open-link button.
+     * tap on Pass = show / hide (masked as ****** by default). URL is plain text (no browser open).
      */
     private fun fieldRow(k: String, value: String, multi: Boolean, set: (String) -> Unit) {
         val f = W.field(ctx, multi = multi)
@@ -349,16 +340,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         f.textSize = 17f
         val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES
         rowIndex++
-        val trail: View? = when (k) {
-            // Pass「生成」removed from existing key (0.4.2); use menu PassGen or NewKeyScreen
-            Order.F_URL -> ImageView(ctx).apply {
-                setImageDrawable(Glyph(Glyph.Kind.OPEN, W.NAVY))
-                contentDescription = "URL をブラウザで開く"; scaleType = ImageView.ScaleType.CENTER
-                minimumWidth = W.dp(36); minimumHeight = W.dp(36)
-                isClickable = true; setOnClickListener { openUrl(f.text.toString()) }
-            }
-            else -> null
-        }
+        // URL open-in-browser removed (0.4.3); Pass gen removed (0.4.2).
+        val trail: View? = null
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(k), f,
             onSwipe = { copy(copyName(k), f.text.toString(), sensitive) }, icon = glyphFor(k),
             trailing = trail, plain = true)
@@ -415,7 +398,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     fun menu(): List<Menus.Item> = listOf(
         Menus.Item("欄を編集") { editLayout() },
         Menus.Item("欄を追加") { addCustom() },
-        Menus.Item("URL をブラウザで開く", values["URL"].orEmpty().isNotBlank()) { openUrl(values["URL"].orEmpty()) },
         Menus.Item("アイコンの変更") { pickIcon() },
     )
 
@@ -542,6 +524,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     fun save(silent: Boolean = false): Boolean {
         val d = Session.db ?: return false
+        // No-op save: keep Session/DB/history untouched (explicit Save with no draft changes).
+        if (entryId != null && !dirty) {
+            if (!silent) Toast.makeText(ctx, "変更はありません", Toast.LENGTH_SHORT).show()
+            return true
+        }
         val vals = LinkedHashMap(values)
         val tagList = Tree.parseTags(tags)
         try {
