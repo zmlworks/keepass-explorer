@@ -140,7 +140,7 @@ class UiScreenshotsTest {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
-        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
+        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Recycle Bin", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
             ex.rows.map { ex.label(it) })
         assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
         save(shot(a.host), "01-main-no-selection.png")
@@ -188,7 +188,7 @@ class UiScreenshotsTest {
         assertEquals(ids["プロジェクトA"], ft.current)
         assertTrue(ft.rows.any { it.tag == ids["プロジェクトA"] })
         save(shot(a.host), "03b-path-counts.png")
-        // expand another folder with +, select it with one tap, jump with the second tap
+        // expand another folder with +/−; label one-tap navigates (0.4.0)
         val mail = ids["メール"]!!
         val shownBefore = ft.rows.size
         ft.toggle(ids["仕事"]!!)   // collapse
@@ -199,10 +199,8 @@ class UiScreenshotsTest {
         assertTrue(Tree.findGroup(Session.db!!, ids["仕事"]!!)!!.expanded)
         ft.tap(mail); idle()
         assertEquals(mail, ft.selected)
-        assertEquals("first tap only selects", ids["プロジェクトA"], ex.current)
+        assertEquals("one tap navigates", mail, ex.current)
         save(shot(a.host), "03e-main-expanded-tree.png")
-        ft.tap(mail); idle()
-        assertEquals("second tap jumps", mail, ex.current)
         ex.navigate(ids["プロジェクトA"]!!); idle()
         // live search: inline panel, results update on every keystroke (150 ms) and tag toggle — no button
         ex.searchTags.clear()
@@ -561,10 +559,12 @@ class UiScreenshotsTest {
         a.explorer!!.askDelete(ids["Gmail"]!!); idle()
         fun find(v: View, t: String): View? { if (v is android.widget.TextView && v.text.toString() == t) return v
             if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i), t)?.let { return it }; return null }
-        find(Dlg.last!!.frame, "はい")!!.performClick(); idle()
-        assertNull(Tree.findEntry(Session.db!!, ids["Gmail"]!!))
-        assertEquals(before + 1, Session.db!!.content.deletedObjects.size)
-        assertTrue(Tree.root(Session.db!!).groups.none { it.name == "ごみ箱" })
+        val yes = listOf("はい", "Yes").firstNotNullOf { lab -> find(Dlg.last!!.frame, lab) }
+        yes.performClick(); idle()
+        // Soft-delete: entry lives in recycle bin; DeletedObjects unchanged
+        assertTrue(Tree.isInRecycleBin(Session.db!!, ids["Gmail"]!!))
+        assertEquals(before, Session.db!!.content.deletedObjects.size)
+        assertNotNull(Tree.recycleBinId(Session.db!!))
     }
 
     @Test fun historyIsCappedAtTen() {

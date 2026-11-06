@@ -49,7 +49,7 @@ class TreeTest {
         assertEquals("", Tree.password(memo)); assertEquals("", Tree.userName(memo))
         assertEquals("牛乳\n卵", Tree.notes(memo))
         assertTrue(db is KeePassDatabase.Ver4x)
-        assertFalse(db.content.meta.recycleBinEnabled)
+        assertTrue(db.content.meta.recycleBinEnabled)
     }
 
     @Test fun wrongPassword_isReported() {
@@ -111,19 +111,24 @@ class TreeTest {
         assertEquals(listOf("Yahoo", "Gmail"), Tree.findGroup(rt, g["mail"]!!)!!.entries.map { Tree.title(it) })
     }
 
-    @Test fun delete_isPermanentWithDeletedObjects_noRecycleBin() {
+    @Test fun delete_movesToRecycleBin_thenPermanent() {
         val (db0, g, e) = sample()
-        val (db1, toBin) = Tree.delete(db0, g["mail"]!!)
-        assertFalse(toBin)
-        assertNull(Tree.recycleBinId(db1))
-        assertEquals(setOf(g["mail"], e["gmail"], e["yahoo"]), db1.content.deletedObjects.map { it.id }.toSet())
-        assertNull(Tree.findEntry(db1, e["gmail"]!!))
-        assertTrue(Tree.root(db1).groups.none { it.name == "ごみ箱" })
-        val (db2, _) = Tree.delete(db1, e["memo"]!!)
-        val rt = roundTrip(db2)
+        val (db1, toBin) = Tree.delete(db0, g["mail"]!!, "Recycle Bin")
+        assertTrue(toBin)
+        val bin = Tree.recycleBinId(db1)!!
+        assertTrue(Tree.isInRecycleBin(db1, g["mail"]!!))
+        assertEquals(0, db1.content.deletedObjects.size)
+        // Permanent delete from bin
+        val db2 = Tree.deletePermanently(db1, g["mail"]!!)
+        assertEquals(setOf(g["mail"], e["gmail"], e["yahoo"]), db2.content.deletedObjects.map { it.id }.toSet())
+        assertNull(Tree.findEntry(db2, e["gmail"]!!))
+        val (db3, toBin2) = Tree.delete(db2, e["memo"]!!, "Recycle Bin")
+        assertTrue(toBin2)
+        val db4 = Tree.deletePermanently(db3, e["memo"]!!)
+        val rt = roundTrip(db4)
         assertEquals(4, rt.content.deletedObjects.size)
-        assertFalse(rt.content.meta.recycleBinEnabled)
-        assertNull(Tree.recycleBinId(rt))
+        assertTrue(rt.content.meta.recycleBinEnabled)
+        assertNotNull(Tree.recycleBinId(rt))
     }
 
     @Test fun tags_parseAndSuggest() {

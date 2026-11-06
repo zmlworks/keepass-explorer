@@ -38,6 +38,16 @@ object Session {
     /** Number of completed file writes (tests: debounce coalescing). */
     @Volatile var saveCount = 0
 
+    /** Temporary read-only browse of an external file or dated backup (sepia chrome). */
+    @Volatile var readOnlyTemp = false
+        private set
+    @Volatile var tempSourceLabel: String = ""
+        private set
+    private var stashedPrimary: KeePassDatabase? = null
+    private var stashedVersion = 0L
+    private var stashedSavedVersion = 0L
+    private var stashedGeneration = 0L
+
     /** Result of the last save task on [io] (null = ok). Written and read on the io thread. */
     @Volatile private var lastIoError: Throwable? = null
     /** A save started by [lock] failed after the session was gone; shown once by [takeLockSaveError]. */
@@ -48,11 +58,16 @@ object Session {
     fun open(d: KeePassDatabase) {
         generation++
         db = d; version = 0; savedVersion = 0; saveState = SaveState.SAVED
+        // open() always means primary (or fresh); clear any temp stash
+        readOnlyTemp = false
+        tempSourceLabel = ""
+        stashedPrimary = null
         io.execute { lastIoError = null }
     }
 
     /** Apply a change and schedule an auto-save. */
     fun update(f: (KeePassDatabase) -> KeePassDatabase): KeePassDatabase? {
+        if (readOnlyTemp) throw IllegalStateException("read-only temp view")
         val cur = db ?: return null
         val next = f(cur)
         if (next === cur) return cur
@@ -67,6 +82,7 @@ object Session {
 
     /** Save now (asynchronously) if there are unsaved changes. */
     fun flush() {
+        if (readOnlyTemp) return  // never write while browsing a temp file
         main.removeCallbacks(saveRunnable)
         val snap = db ?: return
         val st = store ?: return
@@ -121,13 +137,69 @@ object Session {
     val hasUnsaved get() = db != null && version != savedVersion
 
     /** Lock: pending changes are saved from the snapshot, then every reference to the database is dropped. */
+
+    /**
+     * Park the primary DB in memory and open [temp] read-only.
+     * Does not write the primary file. [update]/exitTempView] restores primary intact.
+     * Cancels any pending autosave so the primary file is never touched while browsing temp.
+     */
+    fun beginTempView(temp: KeePassDatabase, sourceLabel: String) {
+        if (readOnlyTemp) throw IllegalStateException("already in temp view")
+        val cur = db ?: throw IllegalStateException("no primary open")
+        main.removeCallbacks(saveRunnable)
+        stashedPrimary = cur
+        stashedVersion = version
+        stashedSavedVersion = savedVersion
+        stashedGeneration = generation
+        // Bump generation so in-flight primary saves are ignored while in temp view.
+        generation++
+        db = temp
+        version = 0L
+        savedVersion = 0L
+        saveState = SaveState.SAVED
+        readOnlyTemp = true
+        tempSourceLabel = sourceLabel
+        notifyListener()
+    }
+
+    fun exitTempView() {
+        if (!readOnlyTemp) return
+        val p = stashedPrimary ?: throw IllegalStateException("no stashed primary")
+        main.removeCallbacks(saveRunnable)
+        stashedPrimary = null
+        generation++ // drop any temp-era callbacks
+        db = p
+        version = stashedVersion
+        savedVersion = stashedSavedVersion
+        // Restore saveState from version vs savedVersion
+        saveState = if (version == savedVersion) SaveState.SAVED else SaveState.PENDING
+        readOnlyTemp = false
+        tempSourceLabel = ""
+        notifyListener()
+    }
+
     fun lock() {
+        // Leave temp view first so flush (if any) targets the primary file, never the temp bytes.
+        if (readOnlyTemp) {
+            val p = stashedPrimary
+            stashedPrimary = null
+            readOnlyTemp = false
+            tempSourceLabel = ""
+            if (p != null) {
+                db = p
+                version = stashedVersion
+                savedVersion = stashedSavedVersion
+            }
+        }
         if (db != null && version != savedVersion) flush()
         main.removeCallbacks(saveRunnable)
         generation++
         db = null
         version = 0; savedVersion = 0
         saveState = SaveState.SAVED
+        readOnlyTemp = false
+        tempSourceLabel = ""
+        stashedPrimary = null
         Clip.clearNowIfOurs()
         io.execute { Kdbx.KdfCache.clear() }   // after the final save above
         notifyListener()

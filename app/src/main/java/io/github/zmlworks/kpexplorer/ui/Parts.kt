@@ -69,7 +69,7 @@ object Parts {
      */
     fun keyDetailBar(ctx: Context, title: String, onClose: () -> Unit): AppBar {
         val bar = W.hbox(ctx)
-        bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.NAVY, W.TITLE2))
+        bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.accent1(), W.accent2()))
         bar.gravity = Gravity.CENTER_VERTICAL
         bar.minimumHeight = W.dp(48)
         val frame = android.widget.FrameLayout(ctx)
@@ -97,7 +97,7 @@ object Parts {
     /** Navy gradient bar: big "←" back button, title, optional right-side tool buttons. */
     fun appBar(ctx: Context, title: String, onBack: () -> Unit, titleView: TextView? = null): AppBar {
         val bar = W.hbox(ctx)
-        bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.NAVY, W.TITLE2))
+        bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.accent1(), W.accent2()))
         bar.setPadding(W.dp(3), W.dp(3), W.dp(3), W.dp(3))
         bar.gravity = Gravity.CENTER_VERTICAL
         val back = W.text(ctx, "←", 20f, true).apply {

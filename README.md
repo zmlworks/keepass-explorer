@@ -1,11 +1,11 @@
-# KeePass Explorer (v0.3.15 試作版)
+# KeePass Explorer (v0.4.0)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
 
 
 昔の Windows (95/98/2000) のエクスプローラー風の見た目で使う、KeePass (KDBX) 形式のパスワード／メモ帳アプリ (Android)。
-A KeePass (KDBX) password & memo manager for Android with a classic Windows-Explorer look. Japanese UI, light only.
+A KeePass (KDBX) password & memo manager for Android with a classic Windows-Explorer look. Japanese / English UI (system locale), light only.
 
 - **起動 → 指紋・画面ロック、またはマスターパスワードで解除 → ルートフォルダー「/」。**
   紺色のタイトルバー、ツールバー (上へ・表示切替・新しいフォルダ・新しい鍵・新しいメモ・保存・メニュー・検索)、その下に「└」で階層を示すパス表示。
@@ -25,12 +25,21 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - **保存 (ツールバー)**:
   - アプリ内に保存: アプリの中に `backups/2026-11-05.kdbx` (同じ日は `_2`, `_3`…)。「保存したファイルの一覧」から復元・削除・書き出し。
   - 外部に書き出す: 保存先を選び (SAF)、そのとき入力したパスワードで暗号化した普通の KDBX 4 (AES-256 / Argon2id) を書き出します。
-    KeePass / KeePassXC で開けます。外部のファイルを開く機能は今はありません。
+    KeePass / KeePassXC で開けます。メニュー「外部ファイルを閲覧」またはバックアップの「閲覧」で一時閲覧専用 (セピア)。「インポート」で日時バックアップ強制のうえメイン置き換え。
   - フォルダー操作は変更のたびに自動保存、鍵とメモは画面の「保存」で保存 (読み直して検証し、一時ファイル → rename で置き換え)。
 - コピー: 長押しメニューでユーザー名／パスワードをコピー (パスワードは「機密」扱い、45 秒後に消去)。
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.0 の変更
+
+- **パスツリーのフォルダはワンタップで移動** (+/− は展開/折りたたみのまま)
+- **外部 KDBX / 内部バックアップの一時閲覧専用**: セピアのタイトル／帯、「閲覧専用」表示。まず同じマスター由来の複合鍵で試行し、失敗時のみパスワード入力。メインDBはメモリに退避し、終了で完全復帰。編集・保存・削除不可 (コピーは可)
+- **インポート**: メニューから外部または内部バックアップを選びメインを**置き換え**。必ず `yyyy-MM-dd_HH-mm-ss.kdbx` バックアップを先に作成 (失敗時は中止)
+- **パスワード生成** (メニュー): 英小/英大/数字/記号のチェック → 約32文字を SecureRandom で生成・再生成・コピー
+- **英語化**: `values` 英語デフォルト、`values-ja` 日本語。システムロケールで自動選択
+- **ごみ箱**: Meta.recycleBinEnabled、標準ごみ箱UUID。通常削除はごみ箱へ、ごみ箱内削除／空にするは DeletedObjects 付き完全削除。「元に戻す」は PreviousParentGroup (なければルート)
 
 ## アプリ 0.3.15 の変更
 

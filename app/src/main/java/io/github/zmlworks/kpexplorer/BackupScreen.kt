@@ -40,6 +40,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
         fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
         b("今すぐ作成") { create() }
+        b(ctx.getString(R.string.browse_backup)) { selected?.let { TempImport.browseBackupFile(a, it) } ?: need() }
         b("外部に書き出す...") { selected?.let { export(it) } ?: need() }
         b("復元...") { selected?.let { restore(it) } ?: need() }
         b("削除") { selected?.let { delete(it) } ?: need() }
@@ -128,9 +129,13 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun menuFor(f: File) = listOf(
+        Menus.Item(ctx.getString(R.string.browse_backup)) { TempImport.browseBackupFile(a, f) },
         Menus.Item("外部に書き出す (パスワード付き)...") { export(f) },
         Menus.sep(),
         Menus.Item("このバックアップから復元...") { restore(f) },
+        Menus.Item(ctx.getString(R.string.import_menu)) {
+            TempImport.confirmAndImport(a, f.readBytes(), f.name)
+        },
         Menus.sep(),
         Menus.Item("削除") { delete(f) }
     )

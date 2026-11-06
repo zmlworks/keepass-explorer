@@ -1,4 +1,150 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">KeePass Explorer</string>
+
+    <!-- Common -->
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="back">Back</string>
+    <string name="delete">Delete</string>
+    <string name="confirm">Confirm</string>
+    <string name="copy">Copy</string>
+    <string name="open">Open</string>
+    <string name="save">Save</string>
+    <string name="rename">Rename</string>
+    <string name="lock">Lock</string>
+    <string name="menu">Menu</string>
+    <string name="search">Search</string>
+    <string name="help">Help</string>
+    <string name="error">Error</string>
+
+    <!-- Recycle bin -->
+    <string name="recycle_bin">Recycle Bin</string>
+    <string name="restore">Restore</string>
+    <string name="empty_recycle_bin">Empty Recycle Bin</string>
+    <string name="delete_permanently">Delete permanently</string>
+    <string name="move_to_recycle_bin">Move to Recycle Bin</string>
+    <string name="confirm_move_to_bin">Move %1$s to the Recycle Bin?\nYou can restore it later from the Recycle Bin.</string>
+    <string name="confirm_delete_permanent">Permanently delete %1$s?\nThis cannot be undone.</string>
+    <string name="confirm_empty_bin">Permanently delete all items in the Recycle Bin?\nThis cannot be undone.</string>
+    <string name="cannot_delete_bin">The Recycle Bin itself cannot be deleted. Empty it instead.</string>
+
+    <!-- Read-only temp -->
+    <string name="read_only">Read-only</string>
+    <string name="read_only_banner">Read-only · %1$s</string>
+    <string name="browse_external">Browse external file…</string>
+    <string name="browse_backup">Browse (read-only)</string>
+    <string name="temp_open_title">Open file (read-only)</string>
+    <string name="temp_trying_same">Trying the same password…</string>
+    <string name="temp_need_password">Could not open with the current password. Enter the password for this file.</string>
+    <string name="temp_wrong_password">Wrong password for this file.</string>
+    <string name="temp_invalid_file">This is not a valid KeePass database, or the file is corrupt.</string>
+    <string name="temp_exit">Close read-only view</string>
+    <string name="temp_no_edit">Editing is disabled in read-only view.</string>
+    <string name="password_label">Password:</string>
+    <string name="password_confirm_label">Confirm password:</string>
+    <string name="show_password">Show password</string>
+
+    <!-- Import -->
+    <string name="import_menu">Import…</string>
+    <string name="import_title">Import as primary database</string>
+    <string name="import_explain">Replace this app\'s primary database with the selected file.\n\nA timestamped backup of the current primary is always created first (required). If the backup fails, nothing is replaced.</string>
+    <string name="import_from_external">Choose external file…</string>
+    <string name="import_from_backup">Choose internal backup…</string>
+    <string name="import_confirm_title">Replace primary database?</string>
+    <string name="import_confirm_body">The current primary will be backed up as %1$s, then replaced by:\n%2$s\n\nThis cannot be undone except by restoring that backup.</string>
+    <string name="import_backup_failed">Could not create the required backup. Primary database was not changed.</string>
+    <string name="import_invalid">Could not open the candidate as a KeePass database. Primary was not changed.</string>
+    <string name="import_wrong_password">Wrong password for the candidate file. Primary was not changed.</string>
+    <string name="import_cancelled">Import cancelled. Primary was not changed.</string>
+    <string name="import_ok">Imported. Primary database replaced.</string>
+    <string name="import_working">Importing…</string>
+    <string name="import_backing_up">Creating required backup…</string>
+
+    <!-- Password generator -->
+    <string name="passgen_menu">Password generator…</string>
+    <string name="passgen_title">Password generator</string>
+    <string name="passgen_classes">Character classes (at least one):</string>
+    <string name="passgen_lower">Lowercase (a–z)</string>
+    <string name="passgen_upper">Uppercase (A–Z)</string>
+    <string name="passgen_digits">Digits (0–9)</string>
+    <string name="passgen_symbols">Symbols</string>
+    <string name="passgen_need_one">Select at least one character class.</string>
+    <string name="passgen_next">Generate</string>
+    <string name="passgen_result">Generated password</string>
+    <string name="passgen_regenerate">Regenerate</string>
+    <string name="passgen_copy">Copy</string>
+    <string name="passgen_copied">Password copied (%1$d s until clipboard clear)</string>
+
+    <!-- Main menu (existing + new) -->
+    <string name="menu_lock">Lock</string>
+    <string name="menu_history">History</string>
+    <string name="menu_internal_save">Save inside app (date.kdbx)</string>
+    <string name="menu_export">Export with password…</string>
+    <string name="menu_backup_list">Saved files…</string>
+    <string name="menu_change_master">Change master password…</string>
+    <string name="menu_secure_screen">Protect screen (block screenshots)</string>
+    <string name="menu_autolock_now">Auto-lock: immediately</string>
+    <string name="menu_autolock_5">Auto-lock: after 5 minutes</string>
+    <string name="menu_autolock_never">Auto-lock: never</string>
+    <string name="menu_usage">How to use</string>
+    <string name="menu_db_info">Database info</string>
+    <string name="menu_about">About</string>
+
+    <!-- Explorer chrome -->
+    <string name="tool_up">Up</string>
+    <string name="tool_view">View</string>
+    <string name="tool_new_folder">New folder</string>
+    <string name="tool_new_key">New key</string>
+    <string name="tool_new_memo">New memo</string>
+    <string name="new_folder_default">New folder</string>
+    <string name="new_memo_default">New memo</string>
+    <string name="history_title">History</string>
+    <string name="history_missing">Entry not found.</string>
+
+    <!-- Item context -->
+    <string name="copy_username">Copy username</string>
+    <string name="copy_password">Copy password</string>
+    <string name="copy_otp">Copy one-time password</string>
+    <string name="open_item_folder">Open this item\'s folder</string>
+    <string name="cut">Cut</string>
+    <string name="paste_here">Paste here</string>
+    <string name="move_to_folder">Move to folder…</string>
+    <string name="move_up_folder">Move to parent folder</string>
+    <string name="move_earlier">Move earlier</string>
+    <string name="move_later">Move later</string>
+    <string name="view_details">View: details</string>
+    <string name="view_icons">View: icons</string>
+    <string name="paste">Paste</string>
+    <string name="cut_toast">Cut. Choose Paste at the destination.</string>
+    <string name="move_error_title">Move error</string>
+    <string name="move_error_into_self">Cannot move: the destination is inside the folder being moved.</string>
+    <string name="move_error_generic">Cannot move there.</string>
+    <string name="rename_title">Rename</string>
+    <string name="rename_prompt">New name:</string>
+    <string name="delete_confirm_title">Confirm delete</string>
+    <string name="folder_and_contents">folder \"%1$s\" and its contents</string>
+    <string name="quoted_name">\"%1$s\"</string>
+    <string name="copied_toast">%1$s copied</string>
+    <string name="copied_toast_sensitive">%1$s copied (clears in %2$d s)</string>
+    <string name="move_to_title">Move to folder</string>
+    <string name="move_to_label">Destination for \"%1$s\":</string>
+    <string name="move_btn">Move</string>
+
+    <!-- Backup screen -->
+    <string name="backup_title">Saved files</string>
+    <string name="backup_need_select">Select a backup from the list first.</string>
+    <string name="backup_export">Export…</string>
+    <string name="backup_restore">Restore…</string>
+    <string name="backup_delete">Delete</string>
+    <string name="backup_create">Create backup</string>
+
+    <!-- Unlock / setup (partial for new flows; existing hardcoded still work until migrated) -->
+    <string name="logon_title">Log on</string>
+    <string name="opening_db">Opening database…</string>
+    <string name="wrong_master">Wrong master password.</string>
+    <string name="cannot_open_db">Could not open the database.\n%1$s</string>
 </resources>

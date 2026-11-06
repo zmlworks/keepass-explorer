@@ -28,7 +28,7 @@ class FolderTree(
     /** Main-screen mode (Registry Editor-like): "(subfolders,files)" counts, current folder bold on a band. */
     private val showCounts: Boolean = false,
     var current: UUID? = null,
-    /** Tap on the already-selected node (= select + tap, double tap) → jump there. */
+    /** When set (main path tree): a single tap on the label navigates into that folder. +/− still expands. */
     private val onJump: ((UUID) -> Unit)? = null,
     private val rowDp: Int = 38
 ) : LinearLayout(ctx) {
@@ -171,7 +171,13 @@ class FolderTree(
                 onToggle(n.g.uuid, now)
                 rebuild()
             } else if (n.g.uuid !in disabled) {
-                if (selected == n.g.uuid && onJump != null) { onJump.invoke(n.g.uuid); return true }
+                // Main directory tree: one tap navigates. Move dialog (onJump=null): select only.
+                if (onJump != null) {
+                    selected = n.g.uuid
+                    onSelect(n.g.uuid)
+                    onJump.invoke(n.g.uuid)
+                    return true
+                }
                 selected = n.g.uuid
                 onSelect(n.g.uuid)
                 for (i in 0 until this@FolderTree.childCount) this@FolderTree.getChildAt(i).invalidate()

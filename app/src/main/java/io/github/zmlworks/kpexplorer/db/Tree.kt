@@ -283,7 +283,7 @@ object Tree {
         return move(db, id, p.uuid, to)
     }
 
-    // ---------------------------------------------------------------- delete
+    // ---------------------------------------------------------------- delete / recycle bin
 
     /** All group + entry ids under [g] including g itself. */
     fun allIds(g: Group): List<UUID> = buildList {
@@ -292,27 +292,155 @@ object Tree {
         g.groups.forEach { addAll(allIds(it)) }
     }
 
-    /** Delete permanently (no recycle bin) and record DeletedObjects. @return the new database and false. */
-    fun delete(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): Pair<KeePassDatabase, Boolean> =
-        deletePermanently(db, id, now) to false
+    /**
+     * Ensure Meta.recycleBinEnabled and a real Recycle Bin group exist.
+     * Identity is [Meta.recycleBinUuid] (stable across locale renames).
+     * [displayName] is applied so the tree shows the localized label without creating a second bin.
+     */
+    fun ensureRecycleBin(db: KeePassDatabase, displayName: String, now: Instant = Instant.now()): KeePassDatabase {
+        var out = db
+        val meta = out.content.meta
+        if (!meta.recycleBinEnabled || meta.historyMaxItems != HISTORY_MAX) {
+            out = out.modifyContent {
+                copy(meta = meta.copy(
+                    recycleBinEnabled = true,
+                    historyMaxItems = HISTORY_MAX,
+                    settingsChanged = now
+                ))
+            }
+        }
+        val existing = recycleBinId(out)?.let { findGroup(out, it) }
+        if (existing != null) {
+            if (existing.name != displayName) {
+                out = renameGroup(out, existing.uuid, displayName, now)
+            }
+            return out
+        }
+        // Create bin under root with a fresh UUID and wire Meta.recycleBinUuid.
+        val bin = Group(
+            uuid = UUID.randomUUID(),
+            name = displayName,
+            icon = PredefinedIcon.TrashBin,
+            times = TimeData.create(now),
+            enableSearching = GroupOverride.Disabled,
+            enableAutoType = GroupOverride.Disabled
+        )
+        out = addGroup(out, root(out).uuid, bin)
+        out = out.modifyContent {
+            copy(meta = this.meta.copy(recycleBinUuid = bin.uuid, recycleBinChanged = now, recycleBinEnabled = true))
+        }
+        return out
+    }
+
+    /** Move [id] into the recycle bin (creates bin if needed). Refuses root and the bin itself. */
+    fun moveToBin(db: KeePassDatabase, id: UUID, displayName: String, now: Instant = Instant.now()): KeePassDatabase {
+        var d = ensureRecycleBin(db, displayName, now)
+        val bin = recycleBinId(d) ?: throw TreeException("recycle bin missing")
+        if (id == root(d).uuid) throw TreeException("cannot delete the root")
+        if (id == bin) throw TreeException("cannot delete the recycle bin")
+        if (isInRecycleBin(d, id) && parentOf(root(d), id)?.uuid == bin) {
+            // Already direct child of bin — no-op move
+            return d
+        }
+        // Refuse moving bin into itself via descendant check in move()
+        return move(d, id, bin, index = null, now = now)
+    }
+
+    /**
+     * Soft-delete when recycle bin is enabled and item is not already in the bin;
+     * otherwise permanent delete. Pair.second = true when moved to bin.
+     */
+    fun delete(db: KeePassDatabase, id: UUID, displayName: String = "Recycle Bin", now: Instant = Instant.now()): Pair<KeePassDatabase, Boolean> {
+        if (db.content.meta.recycleBinEnabled && !isInRecycleBin(db, id)) {
+            return moveToBin(db, id, displayName, now) to true
+        }
+        return deletePermanently(db, id, now) to false
+    }
 
     fun deletePermanently(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
         val r = root(db)
         if (id == r.uuid) throw TreeException("cannot delete the root")
+        val binId = recycleBinId(db)
+        if (id == binId) throw TreeException("cannot delete the recycle bin itself; empty it instead")
         val (detached, item) = detach(r, id)
         item ?: throw TreeException("item not found")
         val ids = when (item) {
             is Item.G -> allIds(item.group)
             is Item.E -> listOf(item.entry.uuid)
         }
-        val bin = recycleBinId(db)
         return db.modifyContent {
             copy(
                 group = detached,
-                deletedObjects = deletedObjects + ids.map { DeletedObject(it, now) },
-                meta = if (bin != null && bin == id) meta.copy(recycleBinUuid = ZERO, recycleBinChanged = now) else meta
+                deletedObjects = deletedObjects + ids.map { DeletedObject(it, now) }
             )
         }
+    }
+
+    /**
+     * Restore from recycle bin: prefer PreviousParentGroup when it still exists and is not inside the bin;
+     * otherwise place under root. Clears previousParentGroup after restore.
+     */
+    fun restoreFromBin(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
+        if (!isInRecycleBin(db, id)) throw TreeException("not in recycle bin")
+        val bin = recycleBinId(db) ?: throw TreeException("recycle bin missing")
+        if (id == bin) throw TreeException("cannot restore the recycle bin")
+        val r = root(db)
+        val prev: UUID? = when (val item = findItem(r, id)) {
+            is Item.G -> item.group.previousParentGroup
+            is Item.E -> item.entry.previousParentGroup
+            null -> throw TreeException("item not found")
+        }
+        val target = when {
+            prev == null -> r.uuid
+            prev == bin -> r.uuid
+            findGroup(r, prev) == null -> r.uuid
+            isInRecycleBin(db, prev) -> r.uuid
+            else -> prev
+        }
+        var out = move(db, id, target, index = null, now = now)
+        // Clear previousParentGroup so a later delete records the post-restore parent.
+        out = when {
+            findEntry(out, id) != null -> modifyEntryParentLink(out, id, null, now)
+            findGroup(out, id) != null -> modifyGroupParentLink(out, id, null, now)
+            else -> out
+        }
+        return out
+    }
+
+    private fun findItem(g: Group, id: UUID): Item? {
+        g.groups.firstOrNull { it.uuid == id }?.let { return Item.G(it) }
+        g.entries.firstOrNull { it.uuid == id }?.let { return Item.E(it) }
+        for (c in g.groups) findItem(c, id)?.let { return it }
+        return null
+    }
+
+    private fun modifyEntryParentLink(db: KeePassDatabase, id: UUID, prev: UUID?, now: Instant): KeePassDatabase {
+        val (parent, e) = findEntry(db, id) ?: return db
+        val updated = e.copy(previousParentGroup = prev, times = touch(e.times, now))
+        return db.withRoot { r ->
+            mapGroup(r, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) updated else it }) }
+        }
+    }
+
+    private fun modifyGroupParentLink(db: KeePassDatabase, id: UUID, prev: UUID?, now: Instant): KeePassDatabase =
+        modifyGroup(db, id) { it.copy(previousParentGroup = prev, times = touch(it.times, now)) }
+
+    /** Permanently delete every direct child of the recycle bin (and their descendants). */
+    fun emptyRecycleBin(db: KeePassDatabase, now: Instant = Instant.now()): KeePassDatabase {
+        val binId = recycleBinId(db) ?: return db
+        val bin = findGroup(db, binId) ?: return db
+        var out = db
+        // Snapshot children first — deleting mutates the tree.
+        val childIds = bin.groups.map { it.uuid } + bin.entries.map { it.uuid }
+        for (cid in childIds) {
+            out = deletePermanently(out, cid, now)
+        }
+        return out
+    }
+
+    fun recycleBinChildCount(db: KeePassDatabase): Int {
+        val bin = recycleBinId(db)?.let { findGroup(db, it) } ?: return 0
+        return bin.groups.size + bin.entries.size
     }
 
     // ---------------------------------------------------------------- tags & search

@@ -40,6 +40,14 @@ object W {
     /** Darker gray for plain-row field labels (stronger contrast than SHADOW). */
     const val LABEL_DARK = 0xFF3A3A3A.toInt()
     const val TITLE2 = 0xFF1084D0.toInt()
+    /** Temporary read-only browse: sepia title / band (not shocking blue). */
+    const val SEPIA1 = 0xFF5C4033.toInt()
+    const val SEPIA2 = 0xFF8B6914.toInt()
+    const val BAND_SEPIA = 0xFF7A5C45.toInt()
+    /** Live title-bar colors: sepia while [Session.readOnlyTemp]. */
+    fun accent1(): Int = if (io.github.zmlworks.kpexplorer.Session.readOnlyTemp) SEPIA1 else NAVY
+    fun accent2(): Int = if (io.github.zmlworks.kpexplorer.Session.readOnlyTemp) SEPIA2 else TITLE2
+    fun bandFill(): Int = if (io.github.zmlworks.kpexplorer.Session.readOnlyTemp) BAND_SEPIA else BAND_SOFT
     const val INACTIVE1 = 0xFF808080.toInt()
     const val INACTIVE2 = 0xFFB5B5B5.toInt()
     const val DESKTOP = 0xFF008080.toInt()
@@ -412,7 +420,7 @@ object W {
                  onMin: (() -> Unit)? = null, onMax: (() -> Unit)? = null, onClose: (() -> Unit)? = null): Caption {
         val bar = hbox(ctx)
         bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            if (active) intArrayOf(NAVY, TITLE2) else intArrayOf(INACTIVE1, INACTIVE2))
+            if (active) intArrayOf(accent1(), accent2()) else intArrayOf(INACTIVE1, INACTIVE2))
         bar.setPadding(dp(4), dp(3), dp(3), dp(3))
         bar.minimumHeight = dp(32)
         if (iconBmp != null) bar.addView(icon(ctx, iconBmp, max(1, iconScale() - 1)), lp(WRAP, WRAP, r = 4))

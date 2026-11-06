@@ -130,6 +130,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             multi.addAll(Order.multiline(e))
         } else listOf("Title", "UserName", "Password", "URL", "Notes").forEach { values[it] = "" }
         bar = Parts.keyDetailBar(ctx, titleText(), onClose = { onBack() })
+        if (Session.readOnlyTemp) {
+            bar.title.text = ctx.getString(R.string.read_only_banner, Session.tempSourceLabel)
+        }
         content.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
         scroll = sv

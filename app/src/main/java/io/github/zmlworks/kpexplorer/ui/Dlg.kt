@@ -1,5 +1,7 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.R
+
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Canvas
@@ -73,11 +75,14 @@ object Dlg {
         ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(ClassicDialog.Btn("OK", true) { onOk(); true }))
             .also { it.show() }
 
-    fun confirm(ctx: Context, title: String, msg: CharSequence, icon: Char = '?', yes: String = "はい", no: String = "いいえ",
-                onYes: () -> Unit): ClassicDialog =
-        ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(
-            ClassicDialog.Btn(yes, true) { onYes(); true },
-            ClassicDialog.Btn(no) { true })).also { it.show() }
+    fun confirm(ctx: Context, title: String, msg: CharSequence, icon: Char = '?', yes: String? = null, no: String? = null,
+                onYes: () -> Unit): ClassicDialog {
+        val y = yes ?: ctx.getString(R.string.yes)
+        val n = no ?: ctx.getString(R.string.no)
+        return ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(
+            ClassicDialog.Btn(y, true) { onYes(); true },
+            ClassicDialog.Btn(n) { true })).also { it.show(); last = it }
+    }
 
     fun prompt(ctx: Context, title: String, label: String, initial: String, ok: String = "OK",
                password: Boolean = false, onOk: (String) -> Boolean): ClassicDialog {

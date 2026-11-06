@@ -61,6 +61,6 @@ object Help {
             "エントリ: ${Tree.countEntries(d.content.group)} 個\n" +
             "ファイル: ${a.store.dbFile.name} (${size / 1024} KB)\n" +
             "作成元: ${d.content.meta.generator}\n" +
-            "削除: 確認のうえ完全に削除 (ごみ箱なし)", 'i')
+            "削除: ごみ箱へ / ごみ箱内は完全削除", 'i')
     }
 }

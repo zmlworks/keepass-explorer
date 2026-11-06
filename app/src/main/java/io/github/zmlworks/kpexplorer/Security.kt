@@ -37,11 +37,11 @@ object Security {
         }
     }
 
-    /** Session start; makes sure Meta.HistoryMaxItems is the app's cap. */
+    /** Session start; HistoryMaxItems + recycle bin enabled (localized bin name, stable UUID). */
     fun opened(a: MainActivity, db: KeePassDatabase) {
         Session.open(db)
-        if (db.content.meta.historyMaxItems != Tree.HISTORY_MAX || db.content.meta.recycleBinEnabled)
-            Session.update { it.modifyContent { copy(meta = meta.copy(historyMaxItems = Tree.HISTORY_MAX, recycleBinEnabled = false)) } }
+        val binName = a.getString(R.string.recycle_bin)
+        Session.update { Tree.ensureRecycleBin(it, binName) }
     }
 
     /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */

@@ -66,6 +66,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     lateinit var caption: W.Caption
         private set
     private val pathBox = FrameLayout(ctx)
+    private val tempBanner = W.hbox(ctx).apply {
+        setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
+        setBackgroundColor(W.BAND_SEPIA)
+        visibility = View.GONE
+        gravity = Gravity.CENTER_VERTICAL
+    }
+    private val tempBannerText = W.text(ctx, "", 14f, true, W.HILITE).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.MIDDLE }
     /** Inline search panel (text + tag toggles); results are the list below, updated live. */
     val searchPanel = W.vbox(ctx, 6).apply { background = W.Bevel(W.Style.RAISED) }
     lateinit var searchField: android.widget.EditText
@@ -132,6 +139,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         tool("find", Px.find16, "検索") { if (search == null) openSearch() else closeSearch() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         root.addView(W.hsep(ctx))
+        tempBanner.removeAllViews()
+        tempBanner.addView(tempBannerText, W.lp(0, W.WRAP, 1f))
+        tempBanner.addView(W.text(ctx, ctx.getString(R.string.temp_exit), 13f, true, W.HILITE).apply {
+            setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
+            background = W.Bevel(W.Style.BUTTON)
+            isClickable = true
+            setOnClickListener { TempImport.exitTemp(a) }
+        }, W.lp(W.WRAP, W.WRAP, l = 6))
+        root.addView(tempBanner, W.lp())
 
         searchPanel.visibility = View.GONE
         root.addView(searchPanel, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, t = 2))
@@ -194,7 +210,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, null,
-                onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
+                onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32)
             folderTree = tree
             pathLines.addAll(tree.rows)
@@ -228,10 +244,20 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             v.alpha = if (on) 1f else 0.45f
             (v.getChildAt(0) as ImageView).colorFilter = if (on) null else ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
         }
+        val ro = Session.readOnlyTemp
         val isRoot = current == Tree.root(d).uuid && search == null
         en("back", history.isNotEmpty() || search != null)
         en("up", !isRoot)
-        en("newFolder", search == null); en("newKey", search == null); en("newMemo", search == null)
+        en("newFolder", search == null && !ro); en("newKey", search == null && !ro); en("newMemo", search == null && !ro)
+        en("save", !ro)
+        // Temp banner
+        if (ro) {
+            tempBanner.visibility = View.VISIBLE
+            tempBanner.setBackgroundColor(W.BAND_SEPIA)
+            tempBannerText.text = ctx.getString(R.string.read_only_banner, Session.tempSourceLabel)
+        } else {
+            tempBanner.visibility = View.GONE
+        }
     }
 
     /** No status bar any more: only a save error is surfaced (once per distinct error). */
@@ -249,7 +275,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun label(r: Order.Node): String = r.name.ifEmpty { if (r is Order.Node.F) "(名前なし)" else "(無題)" }
 
-    private fun isBin(@Suppress("UNUSED_PARAMETER") r: Order.Node) = false
+    private fun isBin(r: Order.Node): Boolean {
+        val d = db()
+        val bin = Tree.recycleBinId(d) ?: return false
+        return r.uuid == bin || Tree.isInRecycleBin(d, r.uuid)
+    }
+    private fun isRecycleBinFolder(r: Order.Node): Boolean {
+        val bin = Tree.recycleBinId(db()) ?: return false
+        return r.uuid == bin
+    }
 
     var folderTree: FolderTree? = null
         private set
@@ -264,6 +298,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val ic = (r as? Order.Node.E)?.takeIf { it.kind == Order.Kind.KEY }?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }
         val sz = if (large) 32 else 16
         val b = when {
+            isRecycleBinFolder(r) -> if (large) Px.bin32 else Px.bin16
             ic != null -> io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(ctx, ic, sz)
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
             r.kind == Order.Kind.MEMO -> if (large) Ico.notepad32 else Ico.notepad16
@@ -674,6 +709,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     override fun onBack(): Boolean {
         if (search != null) { search = null; refresh(); return true }
         if (current != Tree.root(db()).uuid) { goUp(); return true }
+        if (Session.readOnlyTemp) { TempImport.exitTemp(a); return true }
         return false
     }
 
@@ -763,86 +799,111 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val lockMin = a.autoLockMinutes()
         val selEntry = selection?.let { id -> rows.find { it.uuid == id } as? Order.Node.E }
         val histEnabled = selEntry != null
-        return listOf(
-            Menus.Item("ロック") { a.lock() },
-            Menus.Item("履歴", histEnabled) {
-                val id = selEntry?.uuid ?: return@Item
-                io.github.zmlworks.kpexplorer.ui.HistoryViewer.show(ctx, id)
-                    ?: Dlg.message(ctx, "履歴", "エントリが見つかりません。", '!')
-            },
-            Menus.sep(),
-            Menus.Item("アプリ内に保存 (日付.kdbx)") { Security.internalBackup(a) },
-            Menus.Item("外部に書き出す (パスワード付き)...") { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } },
-            Menus.Item("保存したファイルの一覧...") { a.show(BackupScreen(a)) },
-            Menus.Item("マスターパスワードの変更...") { Security.changeMasterPassword(a) },
-            Menus.sep(),
-            Menus.Item("画面を保護 (スクリーンショット禁止)", checked = p.getBoolean("secure", true)) {
-                p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
-            },
-            Menus.Item("自動ロック: すぐ", checked = lockMin == 0) { p.edit().putInt("autolock", 0).apply() },
-            Menus.Item("自動ロック: 5 分後", checked = lockMin == 5) { p.edit().putInt("autolock", 5).apply() },
-            Menus.Item("自動ロック: しない", checked = lockMin < 0) { p.edit().putInt("autolock", -1).apply() },
-            Menus.sep(),
-            Menus.Item("使い方") { Help.usage(a) },
-            Menus.Item("データベースの情報") { Help.dbInfo(a) },
-            Menus.Item("バージョン情報") { Help.about(a) }
-        )
+        val ro = Session.readOnlyTemp
+        val out = ArrayList<Menus.Item>()
+        if (ro) {
+            out.add(Menus.Item(ctx.getString(R.string.temp_exit)) { TempImport.exitTemp(a) })
+            out.add(Menus.sep())
+        }
+        out.add(Menus.Item(ctx.getString(R.string.menu_lock)) { a.lock() })
+        out.add(Menus.Item(ctx.getString(R.string.menu_history), histEnabled) {
+            val id = selEntry?.uuid ?: return@Item
+            io.github.zmlworks.kpexplorer.ui.HistoryViewer.show(ctx, id)
+                ?: Dlg.message(ctx, ctx.getString(R.string.history_title), ctx.getString(R.string.history_missing), '!')
+        })
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.browse_external), !ro) { TempImport.browseExternal(a) })
+        out.add(Menus.Item(ctx.getString(R.string.import_menu), !ro) { TempImport.showImportMenu(a) })
+        out.add(Menus.Item(ctx.getString(R.string.passgen_menu)) { PassGen.show(a) })
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.menu_internal_save), !ro) { Security.internalBackup(a) })
+        out.add(Menus.Item(ctx.getString(R.string.menu_export), !ro) { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } })
+        out.add(Menus.Item(ctx.getString(R.string.menu_backup_list), !ro) { a.show(BackupScreen(a)) })
+        out.add(Menus.Item(ctx.getString(R.string.menu_change_master), !ro) { Security.changeMasterPassword(a) })
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.menu_secure_screen), checked = p.getBoolean("secure", true)) {
+            p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
+        })
+        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_now), checked = lockMin == 0) { p.edit().putInt("autolock", 0).apply() })
+        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_5), checked = lockMin == 5) { p.edit().putInt("autolock", 5).apply() })
+        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_never), checked = lockMin < 0) { p.edit().putInt("autolock", -1).apply() })
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.menu_usage)) { Help.usage(a) })
+        out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
+        out.add(Menus.Item(ctx.getString(R.string.menu_about)) { Help.about(a) })
+        return out
     }
 
     fun itemMenu(r: Order.Node): List<Menus.Item> {
         val inSearch = search != null
         val bin = isBin(r)
+        val binFolder = isRecycleBinFolder(r)
+        val inBin = Tree.isInRecycleBin(db(), r.uuid) && !binFolder
+        val ro = Session.readOnlyTemp
         val idx = rows.indexOfFirst { it.uuid == r.uuid }
         val out = ArrayList<Menus.Item>()
-        out.add(Menus.Item("開く") { open(r) })
+        out.add(Menus.Item(ctx.getString(R.string.open)) { open(r) })
         if (r is Order.Node.E && r.kind == Order.Kind.KEY) {
-            out.add(Menus.Item("ユーザー名をコピー", Tree.userName(r.e).isNotEmpty()) { copy("ユーザー名", Tree.userName(r.e), false) })
-            out.add(Menus.Item("パスワードをコピー", Tree.password(r.e).isNotEmpty()) { copy("パスワード", Tree.password(r.e), true) })
-            Order.otpUri(r.e)?.let { u -> out.add(Menus.Item("ワンタイムパスワードをコピー") {
+            out.add(Menus.Item(ctx.getString(R.string.copy_username), Tree.userName(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_username), Tree.userName(r.e), false) })
+            out.add(Menus.Item(ctx.getString(R.string.copy_password), Tree.password(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_password), Tree.password(r.e), true) })
+            Order.otpUri(r.e)?.let { u -> out.add(Menus.Item(ctx.getString(R.string.copy_otp)) {
                 runCatching { io.github.zmlworks.kpexplorer.db.Totp.code(io.github.zmlworks.kpexplorer.db.Totp.parse(u), java.time.Instant.now().epochSecond) }
-                    .onSuccess { copy("ワンタイムパスワード", it, true) } }) }
+                    .onSuccess { copy(ctx.getString(R.string.copy_otp), it, true) } }) }
         }
-        if (inSearch) out.add(Menus.Item("この項目のフォルダーを開く") {
+        if (inSearch) out.add(Menus.Item(ctx.getString(R.string.open_item_folder)) {
             Tree.parentOf(Tree.root(db()), r.uuid)?.let { navigate(it.uuid); select(r.uuid) } })
+        if (ro) return out  // copy/open only in read-only
         out.add(Menus.sep())
-        out.add(Menus.Item("名前の変更", !bin) { rename(r) })
-        out.add(Menus.Item("切り取り", !bin) { cut(r.uuid) })
-        if (r is Order.Node.F) out.add(Menus.Item("ここに貼り付け", cut != null && cut != r.uuid) { paste(r.uuid) })
-        out.add(Menus.Item("フォルダーへ移動...", !bin) { moveToDialog(r.uuid) })
+        if (inBin) {
+            out.add(Menus.Item(ctx.getString(R.string.restore)) { restoreItem(r.uuid) })
+            out.add(Menus.Item(ctx.getString(R.string.delete_permanently)) { askDelete(r.uuid) })
+            return out
+        }
+        if (binFolder) {
+            out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(db()) > 0) { askEmptyBin() })
+            return out
+        }
+        out.add(Menus.Item(ctx.getString(R.string.rename), !bin) { rename(r) })
+        out.add(Menus.Item(ctx.getString(R.string.cut), !bin) { cut(r.uuid) })
+        if (r is Order.Node.F) out.add(Menus.Item(ctx.getString(R.string.paste_here), cut != null && cut != r.uuid) { paste(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.move_to_folder), !bin) { moveToDialog(r.uuid) })
         if (r is Order.Node.E && !bin) {
             val canUp = canMoveToParentFolder(r.uuid)
-            out.add(Menus.Item("一つ上のフォルダへ移動", canUp) { moveToParentFolder(r.uuid) })
+            out.add(Menus.Item(ctx.getString(R.string.move_up_folder), canUp) { moveToParentFolder(r.uuid) })
         }
-        out.add(Menus.Item("前へ移動", !inSearch && idx > 0) { moveIndex(r.uuid, idx - 1) })
-        out.add(Menus.Item("後ろへ移動", !inSearch && idx in 0 until rows.size - 1) { moveIndex(r.uuid, idx + 1) })
+        out.add(Menus.Item(ctx.getString(R.string.move_earlier), !inSearch && idx > 0) { moveIndex(r.uuid, idx - 1) })
+        out.add(Menus.Item(ctx.getString(R.string.move_later), !inSearch && idx in 0 until rows.size - 1) { moveIndex(r.uuid, idx + 1) })
         out.add(Menus.sep())
-        out.add(Menus.Item("削除") { askDelete(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.delete)) { askDelete(r.uuid) })
         return out
     }
 
     fun backgroundMenu(): List<Menus.Item> {
         val ns = search == null
+        val ro = Session.readOnlyTemp
         return listOf(
-            Menus.Item(if (iconMode) "表示: 詳細" else "表示: アイコン") { toggleView() },
-            Menus.Item("貼り付け", cut != null && ns) { paste(current) },
+            Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() },
+            Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) },
             Menus.sep(),
-            Menus.Item("新しいフォルダ", ns) { newFolder() },
-            Menus.Item("新しい鍵", ns) { newKey() },
-            Menus.Item("新しいメモ", ns) { newMemo() }
+            Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { newFolder() },
+            Menus.Item(ctx.getString(R.string.tool_new_key), ns && !ro) { newKey() },
+            Menus.Item(ctx.getString(R.string.tool_new_memo), ns && !ro) { newMemo() }
         )
     }
 
     // ------------------------------------------------------------------ operations
 
     fun newFolder(): UUID {
-        val g = Tree.newGroup(Order.uniqueChildName(currentGroup(), "新しいフォルダ"))
+        if (Session.readOnlyTemp) throw IllegalStateException("read-only")
+        val g = Tree.newGroup(Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default)))
         Session.update { Order.appendGroup(it, current, g) }
         selection = g.uuid; refresh()
         return g.uuid
     }
 
     fun newMemo(): UUID {
-        val e = Order.newMemo(Order.uniqueChildName(currentGroup(), "新しいメモ"))
+        if (Session.readOnlyTemp) throw IllegalStateException("read-only")
+        val e = Order.newMemo(Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default)))
         Session.update { Order.appendEntry(it, current, e) }
         selection = e.uuid; refresh()
         return e.uuid
@@ -919,12 +980,50 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun askDelete(id: UUID) {
+        if (Session.readOnlyTemp) {
+            Dlg.message(ctx, ctx.getString(R.string.delete), ctx.getString(R.string.temp_no_edit), 'i')
+            return
+        }
         val d = db()
-        val r = rows.firstOrNull { it.uuid == id } ?: return
-        val what = if (r is Order.Node.F) "フォルダー「${label(r)}」とその内容" else "「${label(r)}」"
-        Dlg.confirm(ctx, "削除の確認", "$what を完全に削除しますか?\nこの操作は元に戻せません。", '!') {
-            Session.update { Tree.delete(it, id).first }
+        val binId = Tree.recycleBinId(d)
+        if (id == binId) {
+            Dlg.message(ctx, ctx.getString(R.string.delete), ctx.getString(R.string.cannot_delete_bin), '!')
+            return
+        }
+        val r = rows.firstOrNull { it.uuid == id } ?: Tree.findGroup(d, id)?.let { Order.Node.F(it) }
+            ?: Tree.findEntry(d, id)?.let { Order.Node.E(it.second) } ?: return
+        val what = if (r is Order.Node.F)
+            ctx.getString(R.string.folder_and_contents, label(r))
+        else ctx.getString(R.string.quoted_name, label(r))
+        val inBin = Tree.isInRecycleBin(d, id)
+        val soft = d.content.meta.recycleBinEnabled && !inBin
+        val msg = if (soft) ctx.getString(R.string.confirm_move_to_bin, what)
+        else ctx.getString(R.string.confirm_delete_permanent, what)
+        Dlg.confirm(ctx, ctx.getString(R.string.delete_confirm_title), msg, '!') {
+            val binName = ctx.getString(R.string.recycle_bin)
+            Session.update {
+                if (soft) Tree.moveToBin(it, id, binName)
+                else Tree.deletePermanently(it, id)
+            }
             if (cut == id) cut = null
+            selection = null; refresh()
+        }
+    }
+
+    fun restoreItem(id: UUID) {
+        if (Session.readOnlyTemp) return
+        try {
+            Session.update { Tree.restoreFromBin(it, id) }
+            selection = id; refresh()
+        } catch (e: Tree.TreeException) {
+            Dlg.message(ctx, ctx.getString(R.string.restore), e.message ?: e.toString(), 'x')
+        }
+    }
+
+    fun askEmptyBin() {
+        if (Session.readOnlyTemp) return
+        Dlg.confirm(ctx, ctx.getString(R.string.empty_recycle_bin), ctx.getString(R.string.confirm_empty_bin), '!') {
+            Session.update { Tree.emptyRecycleBin(it) }
             selection = null; refresh()
         }
     }
