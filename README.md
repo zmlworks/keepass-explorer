@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.0)
+# KeePass Explorer (v0.4.1)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,10 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.1 の変更
+
+- **新規鍵画面のクラッシュ修正**: タイトル等未入力のまま Pass に入力すると落ちていた。原因は表示用 `Stars`（常に `******` 6文字）を編集可能な Pass に載せていたこと。新規作成画面のマスクは長さ一致の `PasswordTransformationMethod` に変更。未完成エントリの自動保存はしない（作成ボタンは従来どおり）
 
 ## アプリ 0.4.0 の変更
 

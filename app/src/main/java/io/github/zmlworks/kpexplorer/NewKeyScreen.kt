@@ -2,6 +2,7 @@ package io.github.zmlworks.kpexplorer
 
 import android.text.Editable
 import android.text.TextWatcher
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.widget.EditText
@@ -185,7 +186,9 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             background = null; setPadding(0, W.dp(1), 0, W.dp(1)); textSize = 16f
             isSingleLine = true; typeface = android.graphics.Typeface.MONOSPACE
             setText(values["Password"].orEmpty())
-            FieldBox.mask(this, !passShown)
+            // Length-preserving mask: FieldBox.Stars returns fixed "******" and crashes
+            // EditText cursor mapping when typing into an empty/masked Pass field (t521u).
+            transformationMethod = if (passShown) null else PasswordTransformationMethod.getInstance()
         }
         f.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
@@ -223,7 +226,15 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
     fun togglePass(show: Boolean? = null) {
         passShown = show ?: !passShown
-        editors[Order.F_PASS]?.let { FieldBox.mask(it, !passShown) }
+        editors[Order.F_PASS]?.let { f ->
+            val start = f.selectionStart
+            val end = f.selectionEnd
+            f.transformationMethod = if (passShown) null else PasswordTransformationMethod.getInstance()
+            val len = f.text?.length ?: 0
+            if (len >= 0 && start >= 0) {
+                f.setSelection(start.coerceIn(0, len), end.coerceIn(0, len))
+            }
+        }
         (eyeButton as? ImageView)?.setImageDrawable(Glyph(if (passShown) Glyph.Kind.EYE else Glyph.Kind.EYE_OFF))
     }
 
