@@ -241,6 +241,10 @@ class UiScreenshotsTest {
         idle()
         assertFalse(ks.passShown)
         ks.togglePass(); assertTrue(ks.passShown); ks.togglePass()
+        // 0.3.10 key title bar: centered title, flat メニュー + 閉じる (×), no boxed ← in the bar
+        assertNotNull(findDesc(a.host, "メニュー"))
+        assertNotNull(findDesc(a.host, "閉じる"))
+        assertEquals("Gmail", ks.barTitle())
         // swipe on User box = copy
         val ub = ks.boxes["UserName"]!!
         fun ev(act: Int, x: Float) = MotionEvent.obtain(0, 0, act, x, 20f, 0)
@@ -266,10 +270,16 @@ class UiScreenshotsTest {
         ks.scroll.scrollTo(0, 100000)
         save(shot(a.host), "05b-key-bottom.png")
         ks.scroll.scrollTo(0, 0)
-        // mid-slide mock (past the threshold → navy)
-        ks.boxes["Password"]!!.slideTo(ks.boxes["Password"]!!.copyThreshold() + 10f)
+        // mid-slide mock (past threshold → lighter blue reveal + コピー icon/text; password stays masked on the row)
+        val pb = ks.boxes["Password"]!!
+        pb.slideTo(pb.copyThreshold() + 10f)
+        assertTrue(pb.revealArmed)
+        assertEquals(io.github.zmlworks.kpexplorer.ui.FieldBox.COPY_BLUE_ARM, pb.revealColor())
         save(shot(a.host), "05c-key-swipe-mid.png")
-        ks.boxes["Password"]!!.slideTo(0f); ks.boxes["Password"]!!.springBack(); idle()
+        pb.slideTo(-(pb.copyThreshold() + 10f)) // other direction also reveals
+        assertTrue(pb.revealArmed)
+        save(shot(a.host), "05c2-key-swipe-left.png")
+        pb.slideTo(0f); pb.springBack(); idle()
         // existing tags hidden until the Tag field is long-pressed
         assertFalse(ks.tagsShown)
         ks.boxes["@Tags"]!!.startEdit(); idle()
@@ -295,8 +305,8 @@ class UiScreenshotsTest {
         assertEquals(listOf("秘密の質問"), io.github.zmlworks.kpexplorer.db.Order.customFieldNames(gm))
         assertTrue(io.github.zmlworks.kpexplorer.db.Order.otpUri(gm)!!.contains("issuer=Gmail"))
         ks.addCustomField("一時", "x"); idle()
-        a.onBackPressed(); idle()
-        assertNotNull("unsaved edits → confirm dialog", Dlg.last)
+        findDesc(a.host, "閉じる")!!.performClick(); idle()
+        assertNotNull("unsaved edits → confirm dialog via ×", Dlg.last)
         save(withDialog(shot(a.host)), "06-unsaved-confirm.png")
         Dlg.last?.dismiss(); idle()
         a.showExplorer(); idle()

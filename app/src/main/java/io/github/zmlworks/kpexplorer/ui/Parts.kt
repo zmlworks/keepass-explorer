@@ -62,6 +62,44 @@ object Parts {
 
     class AppBar(val bar: LinearLayout, val title: TextView)
 
+
+    /**
+     * Key detail title bar (0.3.10): navy gradient kept; centered title; flat Win11-like
+     * transparent ⋮ (menu) and × (close) on the right — no boxed bevel buttons, no left ←.
+     */
+    fun keyDetailBar(ctx: Context, title: String, onClose: () -> Unit, onMenu: (View) -> Unit): AppBar {
+        val bar = W.hbox(ctx)
+        bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.NAVY, W.TITLE2))
+        bar.gravity = Gravity.CENTER_VERTICAL
+        bar.minimumHeight = W.dp(48)
+        val frame = android.widget.FrameLayout(ctx)
+        val t = W.text(ctx, title, 17f, true, W.HILITE).apply {
+            isSingleLine = true; ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER; setPadding(W.dp(56), 0, W.dp(100), 0)
+        }
+        frame.addView(t, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH, Gravity.CENTER))
+        val tools = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL or Gravity.END }
+        fun flatHit(desc: String, glyph: Glyph.Kind, click: (View) -> Unit): ImageView =
+            ImageView(ctx).apply {
+                setImageDrawable(Glyph(glyph, W.HILITE))
+                scaleType = ImageView.ScaleType.CENTER
+                background = null
+                contentDescription = desc; tooltipText = desc
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                isClickable = true; isFocusable = true
+                minimumWidth = W.dp(48); minimumHeight = W.dp(48)
+                setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(12))
+                setOnClickListener(click)
+            }
+        val menu = flatHit("メニュー", Glyph.Kind.MORE) { onMenu(it) }
+        val close = flatHit("閉じる", Glyph.Kind.CLOSE) { onClose() }
+        tools.addView(menu, W.lp(W.dp(48), W.dp(48)))
+        tools.addView(close, W.lp(W.dp(48), W.dp(48)))
+        frame.addView(tools, android.widget.FrameLayout.LayoutParams(W.WRAP, W.MATCH, Gravity.END or Gravity.CENTER_VERTICAL))
+        bar.addView(frame, W.lp(0, W.dp(48), 1f))
+        return AppBar(bar, t)
+    }
+
     /** Navy gradient bar: big "←" back button, title, optional right-side tool buttons. */
     fun appBar(ctx: Context, title: String, onBack: () -> Unit, titleView: TextView? = null): AppBar {
         val bar = W.hbox(ctx)

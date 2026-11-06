@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.3.9 試作版)
+# KeePass Explorer (v0.3.10 試作版)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -34,6 +34,11 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.3.10 の変更
+
+- 鍵画面のスワイプコピー: 行の背後に基調紺より薄い青を隠し、露出部分にコピーアイコンと「コピー」を表示 (値／秘密は出さない)。しきい値超えで離したときコピー。
+- 鍵画面のタイトルバー: タイトル中央寄せ。左の戻ると枠付きメニューをやめ、右端にフラットな × (閉じる)、その左に ⋮ (メニュー)。Win11 風の枠なし。下部の 戻る／保存は従来どおり。
 
 ## アプリ 0.3.9 の変更
 

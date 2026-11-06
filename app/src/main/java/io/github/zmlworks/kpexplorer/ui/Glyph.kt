@@ -14,7 +14,7 @@ import android.graphics.drawable.Drawable
  */
 class Glyph(val kind: Kind, private val color: Int = W.TEXT, private val accent: Int = W.NAVY) : Drawable() {
     enum class Kind { TITLE, USER, PASS, URL, TAG, OTP, MEMO, CUSTOM, EYE, EYE_OFF, OPEN, MORE, PLUS, KEY, FLOPPY,
-        MAIL, GLOBE, WIFI, FOOD, ACCOUNT, CARD, BANK, GAME, PHONE, LOCK, CART, HOME, STAR, NOTE }
+        MAIL, GLOBE, WIFI, FOOD, ACCOUNT, CARD, BANK, GAME, PHONE, LOCK, CART, HOME, STAR, NOTE, COPY, CLOSE }
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.SQUARE; strokeJoin = Paint.Join.MITER }
@@ -77,6 +77,18 @@ class Glyph(val kind: Kind, private val color: Int = W.TEXT, private val accent:
                 line.color = accent; c.drawLine(11f, 13f, 20f, 4f, line); c.drawLine(14f, 4f, 20f, 4f, line); c.drawLine(20f, 4f, 20f, 10f, line)
             }
             Kind.MORE -> for (y in listOf(5f, 12f, 19f)) c.drawRect(10f, y - 2f, 14f, y + 2f, fill)
+            Kind.COPY -> { // clipboard
+                fill.color = color
+                c.drawRoundRect(RectF(7f, 2f, 17f, 6f), 1.5f, 1.5f, fill)
+                line.strokeWidth = 1.8f
+                c.drawRect(5f, 5f, 19f, 21f, line)
+                fill.color = W.HILITE; c.drawRect(6.5f, 6.5f, 17.5f, 19.5f, fill)
+                line.color = color; for (y in listOf(10f, 13f, 16f)) c.drawLine(9f, y, 15f, y, line)
+            }
+            Kind.CLOSE -> { // ×
+                line.strokeWidth = 2.6f; line.strokeCap = Paint.Cap.SQUARE
+                c.drawLine(6f, 6f, 18f, 18f, line); c.drawLine(18f, 6f, 6f, 18f, line)
+            }
             Kind.PLUS -> {
                 line.strokeWidth = 2f; c.drawCircle(12f, 12f, 9f, line); line.color = accent; line.strokeWidth = 2.4f
                 c.drawLine(12f, 7f, 12f, 17f, line); c.drawLine(7f, 12f, 17f, 12f, line)

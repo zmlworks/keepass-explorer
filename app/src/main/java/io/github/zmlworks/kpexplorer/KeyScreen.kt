@@ -110,12 +110,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             iconId = io.github.zmlworks.kpexplorer.db.EntryIcon.of(e)?.id
             multi.addAll(Order.multiline(e))
         } else listOf("Title", "UserName", "Password", "URL", "Notes").forEach { values[it] = "" }
-        bar = Parts.appBar(ctx, titleText(), onBack = { onBack() })
-        bar.bar.addView(ImageView(ctx).apply {
-            setImageDrawable(Glyph(Glyph.Kind.MORE, W.TEXT)); background = W.Bevel(W.Style.BUTTON)
-            setPadding(W.dp(8), W.dp(8), W.dp(8), W.dp(8)); contentDescription = "メニュー"; tooltipText = "メニュー"
-            isClickable = true; setOnClickListener { v -> Menus.dropDown(v, menu()) }
-        }, W.lp(W.dp(44), W.dp(38), l = 4))
+        bar = Parts.keyDetailBar(ctx, titleText(),
+            onClose = { onBack() },
+            onMenu = { v -> Menus.dropDown(v, menu()) })
         root.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
         scroll = sv
@@ -126,6 +123,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
+    fun barTitle(): String = bar.title.text.toString()
 
     /**
      * Layout after the KeePassDX entry screen, drawn in Windows 98 style: a raised key tile with folder path
