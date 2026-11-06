@@ -128,7 +128,8 @@ class FieldBox(
             col.addView(view ?: field, W.lp(W.MATCH, W.WRAP))
             front.addView(col, W.lp(0, W.WRAP, 1f))
         }
-        if (trailing != null) front.addView(trailing, W.lp(W.dp(36), W.dp(36), l = 4))
+        // WRAP: text chips like 「生成」must stay horizontal; fixed 36dp crushed CJK to 2 lines
+        if (trailing != null) front.addView(trailing, W.lp(W.WRAP, W.WRAP, l = 6).apply { gravity = Gravity.CENTER_VERTICAL })
         addView(front, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
 
         field.background = null

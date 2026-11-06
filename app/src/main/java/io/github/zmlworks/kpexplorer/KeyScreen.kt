@@ -334,12 +334,16 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val trail: View? = when (k) {
             Order.F_PASS -> W.text(ctx, "生成", 13f, true, W.NAVY).apply {
                 gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-                contentDescription = "パスワードを生成"; setPadding(W.dp(6), W.dp(4), W.dp(6), W.dp(4))
+                contentDescription = "パスワードを生成"
+                isSingleLine = true; maxLines = 1; ellipsize = null
+                minWidth = W.dp(52); minHeight = W.dp(36)
+                setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
                 setOnClickListener { f.setText(generate()) }
             }
             Order.F_URL -> ImageView(ctx).apply {
                 setImageDrawable(Glyph(Glyph.Kind.OPEN, W.NAVY))
                 contentDescription = "URL をブラウザで開く"; scaleType = ImageView.ScaleType.CENTER
+                minimumWidth = W.dp(36); minimumHeight = W.dp(36)
                 isClickable = true; setOnClickListener { openUrl(f.text.toString()) }
             }
             else -> null

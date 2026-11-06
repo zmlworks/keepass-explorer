@@ -585,7 +585,46 @@ class UiScreenshotsTest {
         assertEquals("one coalesced save", before + 1, Session.saveCount)
     }
 
+    /** 0.3.14: Pass「生成」must stay one horizontal line at ~480dp phone width (not 生/成 stack). */
+    @Test fun passGenerateChipStaysHorizontalAt480() {
+        val a = openSample()
+        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
+        val dens = a.resources.displayMetrics.density
+        // 480dp logical width (not raw 480px — at xxhdpi that is only ~160dp and crushes the whole UI)
+        val wPx = (480 * dens).toInt()
+        val hPx = (891 * dens).toInt()
+        a.host.measure(
+            View.MeasureSpec.makeMeasureSpec(wPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(hPx, View.MeasureSpec.EXACTLY))
+        a.host.layout(0, 0, wPx, hPx)
+        idle()
+        val gen = findDesc(a.host, "パスワードを生成") as android.widget.TextView
+        assertNotNull(gen)
+        val wDp = gen.width / dens
+        val hDp = gen.height / dens
+        assertTrue("min width ~52dp (was crushed to 36dp): wDp=$wDp", wDp >= 50f)
+        assertTrue("horizontal not stacked: wDp=$wDp hDp=$hDp", wDp + 4f >= hDp)
+        assertEquals("生成", gen.text.toString())
+        assertTrue(gen.isSingleLine || gen.maxLines == 1)
+        assertTrue("lineCount=${gen.lineCount}", gen.lineCount <= 1)
+        val gloc = IntArray(2); gen.getLocationOnScreen(gloc)
+        assertTrue("chip fully inside host: right=${gloc[0] + gen.width} host=$wPx",
+            gloc[0] + gen.width <= wPx + 1)
+        val full = android.graphics.Bitmap.createBitmap(wPx, hPx, android.graphics.Bitmap.Config.ARGB_8888)
+        a.host.draw(android.graphics.Canvas(full))
+        val box = ks.boxes["Password"]!!
+        val loc = IntArray(2); box.getLocationOnScreen(loc)
+        val top = loc[1].coerceIn(0, full.height - 1)
+        val bottom = (loc[1] + box.height).coerceIn(top + 1, full.height)
+        save(android.graphics.Bitmap.createBitmap(full, 0, top, full.width, bottom - top),
+            "14-pass-generate-chip-480.png")
+        // Top portion of key screen for visual check
+        val topH = (loc[1] + box.height + (80 * dens).toInt()).coerceAtMost(full.height)
+        save(android.graphics.Bitmap.createBitmap(full, 0, 0, full.width, topH), "14-key-top-480.png")
+    }
+
     private fun findDesc(v: View, d: String): View? {
+
         if (v.contentDescription?.toString() == d) return v
         if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findDesc(v.getChildAt(i), d)?.let { return it }
         return null
