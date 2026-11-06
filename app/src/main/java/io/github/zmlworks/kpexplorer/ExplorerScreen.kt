@@ -262,11 +262,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun bmpFor(r: Order.Node, large: Boolean): Bitmap {
         val ic = (r as? Order.Node.E)?.takeIf { it.kind == Order.Kind.KEY }?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }
+        val sz = if (large) 32 else 16
         val b = when {
-            ic != null -> io.github.zmlworks.kpexplorer.ui.Glyph.bitmap(ic.glyph, if (large) 32 else 16)
+            ic != null -> io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(ctx, ic, sz)
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
             r.kind == Order.Kind.MEMO -> if (large) Ico.notepad32 else Ico.notepad16
-            else -> if (large) Ico.bigKey32 else Ico.key16
+            else -> io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(ctx, "key", sz)
         }
         return when {
             r.uuid == selection -> Px.selected(b)

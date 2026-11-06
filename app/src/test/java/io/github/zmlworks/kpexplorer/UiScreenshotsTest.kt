@@ -466,7 +466,7 @@ class UiScreenshotsTest {
         a.showExplorer(); a.explorer!!.navigate(ids["メール"]!!); idle()
         val node = a.explorer!!.rows.first { it.uuid == ids["Gmail"] }
         a.explorer!!.selection = null
-        assertTrue(a.explorer!!.bmpFor(node, true).sameAs(io.github.zmlworks.kpexplorer.ui.Glyph.bitmap(io.github.zmlworks.kpexplorer.ui.Glyph.Kind.WIFI, 32)))
+        assertTrue(a.explorer!!.bmpFor(node, true).sameAs(io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(a, "wifi", 32)))
         a.show(ks); idle()
         ks.dirty = false; a.showExplorer(); idle()
         val before = Session.db!!.content.deletedObjects.size

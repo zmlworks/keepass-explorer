@@ -37,3 +37,12 @@ password manager by Dominik Reichl; this is an independent app that reads and wr
 
 
 Modifications to vendored kotpass (KeePass Explorer 0.3.3): BaseKdfProvider made public; added `keepKdfSalt` option to encoding to keep KDF salt/parameters.
+
+
+## Material Symbols (entry icons) — Apache License 2.0
+
+Subset of [Material Symbols Outlined](https://github.com/google/material-design-icons) (© Google LLC):
+`key`, `mail`, `public`, `wifi`, `restaurant`, `person`, `credit_card`, `account_balance`,
+`shopping_cart`, `sports_esports`, `smartphone`, `lock`, `home`, `star`, `sticky_note_2`.
+Bundled as `app/src/main/res/drawable/ms_*.xml`, tinted navy (`#000080`).
+Full license: [`LICENSES/MaterialSymbols-Apache-2.0.txt`](LICENSES/MaterialSymbols-Apache-2.0.txt).

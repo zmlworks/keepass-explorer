@@ -89,7 +89,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             isClickable = true; setOnClickListener { pickIcon() }
         }
         tile.addView(ImageView(ctx).apply {
-            setImageDrawable(Glyph(EntryIcon.def(iconId)?.glyph ?: Glyph.Kind.KEY))
+            setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, iconId))
         }, android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
         iconTile = tile
         head.addView(tile, W.lp(W.dp(84), W.dp(84), r = 10, t = 4))
@@ -137,7 +137,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true
             contentDescription = "作成"; setOnClickListener { create() }
         }
-        sv.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.KEY)) }, W.lp(W.dp(24), W.dp(24), r = 8))
+        sv.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, "key")) }, W.lp(W.dp(24), W.dp(24), r = 8))
         sv.addView(W.text(ctx, "作成", 17f, true), W.lp(W.WRAP, W.WRAP))
         foot.addView(sv, W.lp(0, W.dp(56), 1f, l = 6))
         return foot
@@ -277,7 +277,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
                 setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(4))
                 setOnClickListener { setIcon(d.id); dlg.dismiss() }
             }
-            cell.addView(ImageView(ctx).apply { setImageDrawable(Glyph(d.glyph)) }, W.lp(W.dp(36), W.dp(36)))
+            cell.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, d.id)) }, W.lp(W.dp(36), W.dp(36)))
             cell.addView(W.text(ctx, d.label, 11f).apply { isSingleLine = true; gravity = Gravity.CENTER }, W.lp(W.MATCH, W.WRAP, t = 2))
             grid.addView(cell, android.view.ViewGroup.MarginLayoutParams(W.dp(72), W.dp(72)).apply {
                 setMargins(W.dp(2), W.dp(2), W.dp(2), W.dp(2))

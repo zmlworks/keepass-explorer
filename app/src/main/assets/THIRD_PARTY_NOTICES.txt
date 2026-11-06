@@ -289,3 +289,17 @@ SOFTWARE.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+--- Material Symbols (Apache-2.0) ---
+Material Symbols (subset) from https://github.com/google/material-design-icons
+Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+Icons used (Outlined): key, mail, public, wifi, restaurant, person, credit_card,
+account_balance, shopping_cart, sports_esports, smartphone, lock, home, star, sticky_note_2.
+Tinted navy (#000080) for this app.
+
+
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apa
+...(see LICENSES/MaterialSymbols-Apache-2.0.txt)
