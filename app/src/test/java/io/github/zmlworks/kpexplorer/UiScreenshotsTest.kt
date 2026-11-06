@@ -164,6 +164,24 @@ class UiScreenshotsTest {
         val row = ex.rows.first { it.uuid == ids["メール"] }
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
+        // 0.3.11: 一つ上のフォルダへ移動 (entry only; root-level disabled)
+        val gmailId = ids["Gmail"]!!
+        assertTrue(ex.canMoveToParentFolder(gmailId))
+        assertFalse(ex.canMoveToParentFolder(ids["Wi-Fi (自宅)"]!!))
+        assertFalse(ex.itemMenu(row).any { it.label == "一つ上のフォルダへ移動" }) // row is folder メール
+        ex.navigate(ids["メール"]!!); idle()
+        val gRow = ex.rows.first { it.uuid == gmailId }
+        assertTrue(ex.itemMenu(gRow).any { it.label == "一つ上のフォルダへ移動" && it.enabled })
+        save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(gRow)) {}, 120, 480, 720), "03f-move-up-folder-menu.png")
+        Menus.dismiss(); idle()
+        ex.moveToParentFolder(gmailId); idle()
+        assertEquals(Tree.root(Session.db!!).uuid, ex.current)
+        assertEquals(0, Order.children(Tree.root(Session.db!!)).indexOfFirst { it.uuid == gmailId })
+        // put Gmail back into メール for the rest of the sample-driven tests
+        Session.update { Order.moveTo(it, gmailId, ids["メール"]!!) }; idle()
+        ex.navigate(ids["メール"]!!); idle()
+        ex.navigate(Tree.root(Session.db!!).uuid); idle()
+
         ex.navigate(ids["プロジェクトA"]!!); idle()
         // Registry Editor-like folder tree: ancestors of the current folder expanded, current highlighted
         val ft = ex.folderTree!!
@@ -473,13 +491,41 @@ class UiScreenshotsTest {
     @Test fun keyFieldMenuAndPermanentDelete() {
         val a = openSample()
         var ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
-        assertTrue(ks.menu().map { it.label }.containsAll(listOf("欄の編集 (表示・順番・削除)...", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更...")))
+        assertTrue(ks.menu().map { it.label }.containsAll(listOf("欄の編集...", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更...")))
         val order0 = ks.layout.map { it.first }
         val iu = order0.indexOf("UserName")
         ks.moveField("UserName", -1)
         assertEquals(iu - 1, ks.layout.indexOfFirst { it.first == "UserName" })
         ks.moveField("UserName", 1)
         assertEquals(order0, ks.layout.map { it.first })
+        val urlVal = ks.values["URL"].orEmpty()
+        assertTrue(urlVal.isNotEmpty())
+        ks.applyArrangement(ks.layout.map { (k, v) -> if (k == "URL") k to false else k to v })
+        assertTrue(ks.layout.any { it.first == "URL" && !it.second })
+        assertNull(ks.boxes["URL"])
+        assertEquals(urlVal, ks.values["URL"])
+        assertTrue(ks.save()); idle()
+        ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
+        assertTrue(ks.layout.any { it.first == "URL" && !it.second })
+        assertEquals(urlVal, ks.values["URL"])
+        assertNull(ks.boxes["URL"])
+        save(shot(a.host), "05g-key-url-hidden.png")
+        ks.editLayout(); idle()
+        val ed = ks.arrangeEditor!!
+        assertTrue("Title" in ed.shown)
+        assertTrue("URL" in ed.hidden)
+        assertFalse(ed.step("Title", currentlyHidden = false, dir = 1))
+        save(withDialog(shot(a.host)), "05h-field-arrange.png") // URL still under 非表示
+        ed.place("URL", visible = true, index = ed.shown.size)
+        ed.place("Title", visible = false, index = 0)
+        assertTrue("Title" in ed.shown); assertFalse("Title" in ed.hidden)
+        Dlg.last?.dismiss(); idle()
+        ks.applyArrangement(ed.snapshot())
+        assertNotNull(ks.boxes["URL"])
+        assertEquals(urlVal, ks.values["URL"])
+        assertTrue(ks.save()); idle()
+        ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
+        // permanent remove still works (clears content + drops from layout)
         ks.removeFields(listOf("URL")); assertTrue(ks.layout.none { it.first == "URL" })
         assertNotNull(ks.addButton)
         ks.boxes["Password"]!!.onTap!!.invoke(); assertTrue(ks.passShown)

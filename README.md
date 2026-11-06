@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.3.10 試作版)
+# KeePass Explorer (v0.3.11 試作版)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -34,6 +34,12 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.3.11 の変更
+
+- **欄の編集**: ☰ ドラッグで上下並べ替え。「非表示」線より下へ動かすと基本欄・カスタム欄を非表示 (内容は `KPExplorer.Fields` に保持)。タイトルは非表示不可。カスタムのみ × で削除。
+- エントリ長押しメニューに **一つ上のフォルダへ移動** (親フォルダの表示順先頭へ。ルート直下では無効)。
+- エントリアイコン: 長押しに加え **ダブルタップ** で変更画面。ピッカーのアイコンを拡大。
 
 ## アプリ 0.3.10 の変更
 

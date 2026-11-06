@@ -140,8 +140,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(14))
         }
         val tile = android.widget.FrameLayout(ctx).apply {
-            background = W.Bevel(W.Style.RAISED); contentDescription = "アイコン (長押しで変更)"
-            isLongClickable = true; setOnLongClickListener { pickIcon(); true }
+            background = W.Bevel(W.Style.RAISED)
+            contentDescription = "アイコン (ダブルタップまたは長押しで変更)"
+            isClickable = true
+            val gd = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: android.view.MotionEvent) = true
+                override fun onDoubleTap(e: android.view.MotionEvent): Boolean { pickIcon(); return true }
+                override fun onLongPress(e: android.view.MotionEvent) { pickIcon() }
+            })
+            setOnTouchListener { _, e -> gd.onTouchEvent(e); true }
         }
         tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, iconId)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
@@ -351,7 +358,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     ) + Order.DEFAULT_LAYOUT.filter { k -> k != Order.F_OTP && layout.none { it.first == k } }.map { k ->
         Menus.Item("「${KeyFields.label(k).removeSuffix(":")}」欄を戻す") { restoreField(k) }
     } + listOf(
-        Menus.Item("欄の編集 (表示・順番・削除)...") { editLayout() },
+        Menus.Item("欄の編集...") { editLayout() },
         Menus.Item("URL をブラウザで開く", values["URL"].orEmpty().isNotBlank()) { openUrl(values["URL"].orEmpty()) },
         Menus.Item("アイコンの変更...") { pickIcon() },
         Menus.Item(if (values[Order.OTP].isNullOrBlank()) "ワンタイムパスワードを設定..." else "ワンタイムパスワードの設定を変更...") { setupOtp() },
@@ -406,33 +413,37 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         build()
     }
 
-    fun editLayout() {
-        val work = layout.toMutableList()
-        val list = W.vbox(ctx)
-        fun render() {
-            list.removeAllViews()
-            work.forEachIndexed { i, (k, vis) ->
-                val r = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-                val cb = W.check(ctx, KeyFields.label(k).removeSuffix(":"), vis)
-                cb.setOnCheckedChangeListener { _, c -> work[i] = k to c }
-                r.addView(cb, W.lp(0, W.WRAP, 1f))
-                r.addView(small("↑") { if (i > 0) { work.add(i - 1, work.removeAt(i)); render() } }.apply { minWidth = W.dp(40) }, W.lp(W.WRAP, W.WRAP, l = 2))
-                r.addView(small("↓") { if (i < work.size - 1) { work.add(i + 1, work.removeAt(i)); render() } }.apply { minWidth = W.dp(40) }, W.lp(W.WRAP, W.WRAP, l = 2))
-                if (k != Order.F_TITLE) r.addView(small("削除") { work.removeAt(i); render() }, W.lp(W.WRAP, W.WRAP, l = 2))
-                list.addView(r, W.lp(W.MATCH, W.WRAP, b = 2))
-            }
-        }
-        render()
-        val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "チェックを外した欄は表示しません (内容は残ります)。「削除」は欄と内容を消します (Title 以外)。", 13f), W.lp(W.MATCH, W.WRAP, b = 8))
-        col.addView(list)
-        ClassicDialog(ctx, "欄の編集", col, listOf(
+    var arrangeEditor: io.github.zmlworks.kpexplorer.ui.FieldArrangeEditor? = null
+        private set
+
+    fun editLayout(): ClassicDialog {
+        val editor = io.github.zmlworks.kpexplorer.ui.FieldArrangeEditor(ctx, layout)
+        arrangeEditor = editor
+        // Fixed height so drag has room inside the dialog scroll area
+        val wrap = W.vbox(ctx)
+        wrap.addView(editor, W.lp(W.MATCH, W.dp(360)))
+        val dlg = ClassicDialog(ctx, "欄の編集", wrap, listOf(
             ClassicDialog.Btn("OK", true) {
-                captureEditors()
-                removeFields(layout.map { it.first }.filter { k -> work.none { it.first == k } })
-                layout = work; dirty = true; build(); true
+                applyArrangement(editor.snapshot(), editor.removedCustoms.toList())
+                true
             },
-            ClassicDialog.Btn("キャンセル")), scroll = true).show()
+            ClassicDialog.Btn("キャンセル")), scroll = false)
+        dlg.show()
+        return dlg
+    }
+
+    /** Apply arrangement from the editor (or tests). Hidden basic/custom fields keep values. */
+    fun applyArrangement(ordered: List<Pair<String, Boolean>>, removedCustoms: List<String> = emptyList()) {
+        captureEditors()
+        if (removedCustoms.isNotEmpty()) removeFields(removedCustoms)
+        // Drop layout keys that were removed; keep Title visible
+        val next = ordered.map { (k, v) -> if (k == Order.F_TITLE) k to true else k to v }
+            .filter { it.first == Order.F_TITLE || it.first in values || it.first in Order.DEFAULT_LAYOUT || it.first == Order.F_TAGS || it.first == Order.F_OTP }
+            .toMutableList()
+        if (next.none { it.first == Order.F_TITLE }) next.add(0, Order.F_TITLE to true)
+        layout = next
+        dirty = true
+        build()
     }
 
     private fun captureEditors() { /* values are kept live by the TextWatchers */ }

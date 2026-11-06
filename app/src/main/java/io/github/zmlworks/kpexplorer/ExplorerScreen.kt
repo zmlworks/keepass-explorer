@@ -802,6 +802,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item("切り取り", !bin) { cut(r.uuid) })
         if (r is Order.Node.F) out.add(Menus.Item("ここに貼り付け", cut != null && cut != r.uuid) { paste(r.uuid) })
         out.add(Menus.Item("フォルダーへ移動...", !bin) { moveToDialog(r.uuid) })
+        if (r is Order.Node.E && !bin) {
+            val canUp = canMoveToParentFolder(r.uuid)
+            out.add(Menus.Item("一つ上のフォルダへ移動", canUp) { moveToParentFolder(r.uuid) })
+        }
         out.add(Menus.Item("前へ移動", !inSearch && idx > 0) { moveIndex(r.uuid, idx - 1) })
         out.add(Menus.Item("後ろへ移動", !inSearch && idx in 0 until rows.size - 1) { moveIndex(r.uuid, idx + 1) })
         out.add(Menus.sep())
@@ -861,6 +865,33 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun moveIndex(id: UUID, index: Int) { Session.update { Order.moveTo(it, id, current, index) }; selection = id; refresh() }
+
+    /** Parent of the entry's containing folder (null when the entry lives in the database root). */
+    fun parentFolderOfEntry(id: UUID): UUID? {
+        val root = Tree.root(db())
+        val containing = Tree.parentOf(root, id) ?: return null
+        if (containing.uuid == root.uuid) return null
+        return Tree.parentOf(root, containing.uuid)?.uuid
+    }
+
+    fun canMoveToParentFolder(id: UUID): Boolean = parentFolderOfEntry(id) != null
+
+    /**
+     * Move an entry into the parent of its current folder, at the front of that folder's
+     * combined display order (index 0). No-op for root-level entries.
+     */
+    fun moveToParentFolder(id: UUID) {
+        val dest = parentFolderOfEntry(id) ?: return
+        try {
+            Session.update { Order.moveTo(it, id, dest, 0) }
+            selection = id
+            // Navigate to destination so the user sees the entry at the front
+            if (search == null) navigate(dest)
+            refresh()
+        } catch (e: Tree.TreeException) {
+            Dlg.message(ctx, "移動エラー", "移動できませんでした。", 'x')
+        }
+    }
 
     fun moveToDialog(id: UUID) {
         val d = db()

@@ -64,8 +64,9 @@ object MaterialIcons {
      */
     fun pickerGrid(ctx: Context, selectedId: String?, onPick: (String) -> Unit): FlowLayout {
         val grid = FlowLayout(ctx)
-        val cell = W.dp(76)
-        val glyph = W.dp(52)
+        // 0.3.11: larger glyphs; ~3 columns on phone widths
+        val cell = W.dp(100)
+        val glyph = W.dp(72)
         for (d in EntryIcon.ALL) {
             val tile = android.widget.FrameLayout(ctx).apply {
                 background = W.Bevel(if ((selectedId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
