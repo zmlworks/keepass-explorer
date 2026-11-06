@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -512,13 +513,15 @@ class UiScreenshotsTest {
         save(shot(a.host), "05g-key-url-hidden.png")
         ks.editLayout(); idle()
         val ed = ks.arrangeEditor!!
-        assertTrue("Title" in ed.shown)
+        assertFalse("Title" in ed.shown)
+        assertFalse("Title" in ed.hidden)
         assertTrue("URL" in ed.hidden)
-        assertFalse(ed.step("Title", currentlyHidden = false, dir = 1))
-        save(withDialog(shot(a.host)), "05h-field-arrange.png") // URL still under 非表示
+        assertNull(ed.handleFor("Title"))
+        save(withDialog(shot(a.host)), "05h-field-arrange.png") // URL under 非表示; Title omitted
         ed.place("URL", visible = true, index = ed.shown.size)
-        ed.place("Title", visible = false, index = 0)
-        assertTrue("Title" in ed.shown); assertFalse("Title" in ed.hidden)
+        ed.place("Title", visible = false, index = 0) // no-op
+        assertFalse("Title" in ed.shown)
+        assertEquals("Title" to true, ed.snapshot().first())
         Dlg.last?.dismiss(); idle()
         ks.applyArrangement(ed.snapshot())
         assertNotNull(ks.boxes["URL"])

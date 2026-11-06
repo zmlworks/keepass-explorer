@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.3.11 試作版)
+# KeePass Explorer (v0.3.12 試作版)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -34,6 +34,10 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.3.12 の変更
+
+- **欄の編集のドラッグを修正**: ハンドル DOWN 後は親が MOVE/UP を受け取り、並べ替え中の再描画でタッチ列が切れないようにした。本文は通常スクロール、端付近は自動スクロール。タイトルは編集一覧から除外 (常に先頭表示)。
 
 ## アプリ 0.3.11 の変更
 
