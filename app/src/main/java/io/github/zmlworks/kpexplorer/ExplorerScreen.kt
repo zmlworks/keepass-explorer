@@ -997,9 +997,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         else ctx.getString(R.string.quoted_name, label(r))
         val inBin = Tree.isInRecycleBin(d, id)
         val soft = d.content.meta.recycleBinEnabled && !inBin
-        val msg = if (soft) ctx.getString(R.string.confirm_move_to_bin, what)
-        else ctx.getString(R.string.confirm_delete_permanent, what)
-        Dlg.confirm(ctx, ctx.getString(R.string.delete_confirm_title), msg, '!') {
+        fun perform() {
             val binName = ctx.getString(R.string.recycle_bin)
             Session.update {
                 if (soft) Tree.moveToBin(it, id, binName)
@@ -1008,6 +1006,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (cut == id) cut = null
             selection = null; refresh()
         }
+        // Soft move-to-bin: no confirmation (t522u). Permanent / from-bin still confirms.
+        if (soft) perform()
+        else Dlg.confirm(ctx, ctx.getString(R.string.delete_confirm_title),
+            ctx.getString(R.string.confirm_delete_permanent, what), '!') { perform() }
     }
 
     fun restoreItem(id: UUID) {

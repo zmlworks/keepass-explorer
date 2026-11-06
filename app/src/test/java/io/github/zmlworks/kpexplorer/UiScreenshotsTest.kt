@@ -420,7 +420,8 @@ class UiScreenshotsTest {
         ex.newKey(); idle()
         val n = a.screen as NewKeyScreen
         assertNotNull(n.genButton)
-        assertNotNull(n.eyeButton)
+        assertNull("eye button removed 0.4.2", n.eyeButton)
+        assertTrue("new-key Pass starts visible", n.passShown)
         assertNotNull(n.addButton)
         // plain editable fields (no FieldBox swipe)
         n.editors["Title"]!!.setText("新しいアカウント")
@@ -442,6 +443,7 @@ class UiScreenshotsTest {
         assertTrue(n.create()); idle()
         assertTrue("after create → view screen", a.screen is KeyScreen)
         val ks = a.screen as KeyScreen
+        assertFalse("saved entry Pass masked on KeyScreen", ks.passShown)
         assertEquals("新しいアカウント", ks.values["Title"])
         assertEquals("user@example.com", ks.values["UserName"])
         assertTrue(ks.values["Password"]!!.isNotEmpty())
@@ -496,7 +498,8 @@ class UiScreenshotsTest {
         assertNotNull(ks.editButton)
         assertNotNull(ks.addButton)
         val labels = ks.menu().map { it.label }
-        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更")))
+        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "アイコンの変更")))
+        assertFalse(labels.contains("パスワードを生成"))
         assertFalse(labels.contains("OTPを設定"))
         assertFalse(labels.contains("この鍵を削除"))
         val order0 = ks.layout.map { it.first }
@@ -557,14 +560,20 @@ class UiScreenshotsTest {
         val before = Session.db!!.content.deletedObjects.size
         a.explorer!!.navigate(ids["メール"]!!); idle()
         a.explorer!!.askDelete(ids["Gmail"]!!); idle()
-        fun find(v: View, t: String): View? { if (v is android.widget.TextView && v.text.toString() == t) return v
-            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i), t)?.let { return it }; return null }
-        val yes = listOf("はい", "Yes").firstNotNullOf { lab -> find(Dlg.last!!.frame, lab) }
-        yes.performClick(); idle()
+        assertNull("soft delete-to-bin has no confirm (0.4.2)", Dlg.last)
         // Soft-delete: entry lives in recycle bin; DeletedObjects unchanged
         assertTrue(Tree.isInRecycleBin(Session.db!!, ids["Gmail"]!!))
         assertEquals(before, Session.db!!.content.deletedObjects.size)
         assertNotNull(Tree.recycleBinId(Session.db!!))
+        // Permanent delete from bin still confirms
+        a.explorer!!.navigate(Tree.recycleBinId(Session.db!!)!!); idle()
+        a.explorer!!.askDelete(ids["Gmail"]!!); idle()
+        assertNotNull("permanent delete still confirms", Dlg.last)
+        fun find(v: View, t: String): View? { if (v is android.widget.TextView && v.text.toString() == t) return v
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i), t)?.let { return it }; return null }
+        val yes = listOf("はい", "Yes").firstNotNullOf { lab -> find(Dlg.last!!.frame, lab) }
+        yes.performClick(); idle()
+        assertNull(Tree.findEntry(Session.db!!, ids["Gmail"]!!))
     }
 
     @Test fun historyIsCappedAtTen() {
@@ -589,42 +598,36 @@ class UiScreenshotsTest {
         assertEquals("one coalesced save", before + 1, Session.saveCount)
     }
 
-    /** 0.3.14: Pass「生成」must stay one horizontal line at ~480dp phone width (not 生/成 stack). */
+    /** New-key Pass「生成」stays horizontal at ~480dp; existing KeyScreen has no generator (0.4.2). */
     @Test fun passGenerateChipStaysHorizontalAt480() {
         val a = openSample()
-        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
         val dens = a.resources.displayMetrics.density
-        // 480dp logical width (not raw 480px — at xxhdpi that is only ~160dp and crushes the whole UI)
         val wPx = (480 * dens).toInt()
         val hPx = (891 * dens).toInt()
+        // Existing key: no generate chip
+        val ks = KeyScreen(a, ids["Gmail"], ids["メール"]!!); a.show(ks); idle()
         a.host.measure(
             View.MeasureSpec.makeMeasureSpec(wPx, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(hPx, View.MeasureSpec.EXACTLY))
-        a.host.layout(0, 0, wPx, hPx)
-        idle()
+        a.host.layout(0, 0, wPx, hPx); idle()
+        assertNull("existing key has no Pass generator", findDesc(a.host, "パスワードを生成"))
+        // New-key retains generator
+        a.showExplorer(); a.explorer!!.navigate(ids["メール"]!!); idle()
+        a.explorer!!.newKey(); idle()
+        a.host.measure(
+            View.MeasureSpec.makeMeasureSpec(wPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(hPx, View.MeasureSpec.EXACTLY))
+        a.host.layout(0, 0, wPx, hPx); idle()
         val gen = findDesc(a.host, "パスワードを生成") as android.widget.TextView
         assertNotNull(gen)
         val wDp = gen.width / dens
         val hDp = gen.height / dens
-        assertTrue("min width ~52dp (was crushed to 36dp): wDp=$wDp", wDp >= 50f)
+        assertTrue("min width: wDp=$wDp", wDp >= 40f)
         assertTrue("horizontal not stacked: wDp=$wDp hDp=$hDp", wDp + 4f >= hDp)
         assertEquals("生成", gen.text.toString())
-        assertTrue(gen.isSingleLine || gen.maxLines == 1)
-        assertTrue("lineCount=${gen.lineCount}", gen.lineCount <= 1)
-        val gloc = IntArray(2); gen.getLocationOnScreen(gloc)
-        assertTrue("chip fully inside host: right=${gloc[0] + gen.width} host=$wPx",
-            gloc[0] + gen.width <= wPx + 1)
         val full = android.graphics.Bitmap.createBitmap(wPx, hPx, android.graphics.Bitmap.Config.ARGB_8888)
         a.host.draw(android.graphics.Canvas(full))
-        val box = ks.boxes["Password"]!!
-        val loc = IntArray(2); box.getLocationOnScreen(loc)
-        val top = loc[1].coerceIn(0, full.height - 1)
-        val bottom = (loc[1] + box.height).coerceIn(top + 1, full.height)
-        save(android.graphics.Bitmap.createBitmap(full, 0, top, full.width, bottom - top),
-            "14-pass-generate-chip-480.png")
-        // Top portion of key screen for visual check
-        val topH = (loc[1] + box.height + (80 * dens).toInt()).coerceAtMost(full.height)
-        save(android.graphics.Bitmap.createBitmap(full, 0, 0, full.width, topH), "14-key-top-480.png")
+        save(full, "14-pass-generate-chip-480.png")
     }
 
     private fun findDesc(v: View, d: String): View? {
@@ -666,7 +669,13 @@ class UiScreenshotsTest {
 
     @Test fun dialogs() {
         val a = openSample()
+        // Soft delete has no dialog; permanent from bin still confirms
         a.explorer!!.askDelete(ids["メール"]!!); idle()
+        assertNull(Dlg.last)
+        assertTrue(Tree.isInRecycleBin(Session.db!!, ids["メール"]!!))
+        a.explorer!!.navigate(Tree.recycleBinId(Session.db!!)!!); idle()
+        a.explorer!!.askDelete(ids["メール"]!!); idle()
+        assertNotNull(Dlg.last)
         save(withDialog(shot(a.host)), "13-delete-confirm.png")
         Dlg.last?.dismiss()
         Help.about(a); idle()

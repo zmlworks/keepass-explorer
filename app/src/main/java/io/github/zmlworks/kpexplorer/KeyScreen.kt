@@ -151,7 +151,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private fun autosaveAfterFieldEdit() {
         if (entryId == null) return  // NewKeyScreen / unsaved new key: don't auto-create
         if (!dirty) return           // no-op → Order.saveEntry skips history
-        save()
+        save(silent = true)          // outside-tap: no success toast (errors still shown)
     }
 
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
@@ -188,7 +188,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         band.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
         val info = W.vbox(ctx)
         path.forEachIndexed { i, g ->
-            val name = if (i == 0) "/ (${g.groups.size},${g.entries.size})" else "└ ${g.name.ifEmpty { "(名前なし)" }} (${g.groups.size},${g.entries.size})"
+            val name = if (i == 0) "/" else "└ ${g.name.ifEmpty { "(名前なし)" }}"
             info.addView(W.text(ctx, name, 15f, bold = i == path.size - 1, color = W.HILITE).apply {
                 isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(W.dp(12) * i, 0, 0, W.dp(2))
@@ -350,14 +350,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES
         rowIndex++
         val trail: View? = when (k) {
-            Order.F_PASS -> W.text(ctx, "生成", 13f, true, W.NAVY).apply {
-                gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-                contentDescription = "パスワードを生成"
-                isSingleLine = true; maxLines = 1; ellipsize = null
-                minWidth = W.dp(52); minHeight = W.dp(36)
-                setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
-                setOnClickListener { f.setText(generate()) }
-            }
+            // Pass「生成」removed from existing key (0.4.2); use menu PassGen or NewKeyScreen
             Order.F_URL -> ImageView(ctx).apply {
                 setImageDrawable(Glyph(Glyph.Kind.OPEN, W.NAVY))
                 contentDescription = "URL をブラウザで開く"; scaleType = ImageView.ScaleType.CENTER
@@ -415,13 +408,13 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     /**
      * Former titlebar ⋮ inventory (0.3.13: no dropdown). Kept for tests / callers that probe labels.
-     * Relocations: 欄の編集→「欄を編集」chip; 欄を追加→chip; Pass「生成」trailing; URL open trailing;
+     * Relocations: 欄の編集→「欄を編集」chip; 欄を追加→chip; URL open trailing;
      * icon→tile gestures; OTP／削除→bottom secondary row; missing std fields→欄の編集 hidden zone.
+     * Pass generator removed from existing key (0.4.2).
      */
     fun menu(): List<Menus.Item> = listOf(
         Menus.Item("欄を編集") { editLayout() },
         Menus.Item("欄を追加") { addCustom() },
-        Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) },
         Menus.Item("URL をブラウザで開く", values["URL"].orEmpty().isNotBlank()) { openUrl(values["URL"].orEmpty()) },
         Menus.Item("アイコンの変更") { pickIcon() },
     )
@@ -547,7 +540,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         build()
     }
 
-    fun save(): Boolean {
+    fun save(silent: Boolean = false): Boolean {
         val d = Session.db ?: return false
         val vals = LinkedHashMap(values)
         val tagList = Tree.parseTags(tags)
@@ -567,7 +560,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         } catch (t: Throwable) {
             Dlg.message(ctx, "保存", "保存できませんでした。\n$t", 'x'); return false
         }
-        if (d !== Session.db || dirty) Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show()
+        if (!silent && (d !== Session.db || dirty)) Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show()
         dirty = false
         a.explorer?.selection = entryId
         build()
@@ -576,11 +569,20 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     private fun askDelete() {
         val id = entryId ?: return
-        Dlg.confirm(ctx, "鍵の削除", "「${titleText()}」を削除しますか?", '?') {
-            Session.update { Tree.delete(it, id).first }
+        if (Session.readOnlyTemp) return
+        val d = Session.db ?: return
+        val soft = d.content.meta.recycleBinEnabled && !Tree.isInRecycleBin(d, id)
+        fun doDelete() {
+            val binName = ctx.getString(R.string.recycle_bin)
+            Session.update {
+                if (soft) Tree.moveToBin(it, id, binName) else Tree.deletePermanently(it, id)
+            }
             dirty = false
             a.showExplorer()
         }
+        if (soft) doDelete()
+        else Dlg.confirm(ctx, ctx.getString(R.string.delete_confirm_title),
+            ctx.getString(R.string.confirm_delete_permanent, ctx.getString(R.string.quoted_name, titleText())), '!') { doDelete() }
     }
 
     override fun onBack(): Boolean {

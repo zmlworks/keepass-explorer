@@ -39,7 +39,8 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     val multi = LinkedHashSet<String>()
     /** Custom fields in display order (name → always visible). */
     val customs = ArrayList<String>()
-    var passShown = false
+    /** New-key Pass starts visible (no eye button). After 作成 → KeyScreen masks with ******. */
+    var passShown = true
         private set
 
     val editors = LinkedHashMap<String, EditText>()
@@ -186,8 +187,8 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             background = null; setPadding(0, W.dp(1), 0, W.dp(1)); textSize = 16f
             isSingleLine = true; typeface = android.graphics.Typeface.MONOSPACE
             setText(values["Password"].orEmpty())
-            // Length-preserving mask: FieldBox.Stars returns fixed "******" and crashes
-            // EditText cursor mapping when typing into an empty/masked Pass field (t521u).
+            // Visible by default on create. If ever remasked, use length-preserving PTM
+            // (never FieldBox.Stars on editable text — 0.4.1 crash).
             transformationMethod = if (passShown) null else PasswordTransformationMethod.getInstance()
         }
         f.addTextChangedListener(object : TextWatcher {
@@ -196,18 +197,15 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             override fun afterTextChanged(s: Editable?) { values["Password"] = s.toString() }
         })
         editors[Order.F_PASS] = f
-        val eye = ImageView(ctx).apply {
-            setImageDrawable(Glyph(if (passShown) Glyph.Kind.EYE else Glyph.Kind.EYE_OFF))
-            background = W.Bevel(W.Style.BUTTON); contentDescription = "表示"
-            isClickable = true; setOnClickListener { togglePass() }
-        }
-        eyeButton = eye
+        // No eye / show-hide button (0.4.2). Tap the field to toggle if remasked after state change.
+        f.setOnClickListener { if (!passShown) togglePass(show = true) }
         val gen = W.text(ctx, "生成", 13f, true).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON)
             contentDescription = "パスワードを生成"; setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
             isClickable = true; setOnClickListener { f.setText(generate()); togglePass(show = true) }
         }
         genButton = gen
+        eyeButton = null
         val box = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             background = W.Bevel(W.Style.FIELD, FieldBox.FILL)
@@ -219,7 +217,6 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         col.addView(W.text(ctx, "Pass", 11f, false, W.NAVY).apply { isSingleLine = true }, W.lp(W.MATCH, W.WRAP))
         col.addView(f, W.lp(W.MATCH, W.WRAP))
         box.addView(col, W.lp(0, W.WRAP, 1f))
-        box.addView(eye, W.lp(W.dp(36), W.dp(36), l = 4))
         box.addView(gen, W.lp(W.WRAP, W.dp(36), l = 4))
         body.addView(box, W.lp(W.MATCH, W.WRAP, t = 3, b = 3))
     }
@@ -235,7 +232,6 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
                 f.setSelection(start.coerceIn(0, len), end.coerceIn(0, len))
             }
         }
-        (eyeButton as? ImageView)?.setImageDrawable(Glyph(if (passShown) Glyph.Kind.EYE else Glyph.Kind.EYE_OFF))
     }
 
     fun generate(len: Int = 20): String {

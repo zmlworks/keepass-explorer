@@ -26,6 +26,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowLooper
+import org.robolectric.shadows.ShadowToast
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -183,4 +184,20 @@ class FieldEditCommitTest {
         }
         org.junit.Assert.assertNull(find(v))
     }
+
+    @Test fun autosaveIsSilentButExplicitSaveToasts() {
+        val (a, ks) = openKey()
+        ShadowToast.reset()
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("silent-user"); assertTrue(ks.dirty)
+        a.host.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f)); idle()
+        assertFalse(ks.dirty)
+        assertEquals("no success toast on outside-tap autosave", 0, ShadowToast.shownToastCount())
+        // Explicit save still toasts when dirty
+        box.startEdit(); box.field.setText("explicit-user"); assertTrue(ks.dirty)
+        assertTrue(ks.save()); idle()
+        assertTrue("explicit save may toast", ShadowToast.shownToastCount() >= 1)
+        assertTrue(ShadowToast.getTextOfLatestToast().contains("保存"))
+    }
+
 }

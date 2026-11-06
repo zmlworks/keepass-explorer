@@ -105,12 +105,14 @@ class NewKeyPassCrashTest {
         assertEquals("******", t.toString())
     }
 
-    @Test fun newKeyPassUsesLengthPreservingMask() {
+    @Test fun newKeyPassStartsVisible_noStarsOnEditable() {
         val nk = openNewKey()
         val pass = nk.editors[Order.F_PASS]!!
-        assertFalse(nk.passShown)
+        assertTrue("starts visible 0.4.2", nk.passShown)
+        assertNull(pass.transformationMethod)
+        nk.togglePass(show = false)
         assertTrue(
-            "NewKey Pass must use PasswordTransformationMethod, not Stars",
+            "when remasked, length-preserving PTM not Stars",
             pass.transformationMethod is PasswordTransformationMethod && pass.transformationMethod !is Stars
         )
     }
@@ -137,7 +139,7 @@ class NewKeyPassCrashTest {
         tapFocus(pass)
         typeChars(pass, "x1!")
         assertEquals("x1!", nk.values["Password"])
-        assertFalse(nk.passShown)
+        assertTrue(nk.passShown)
     }
 
     @Test fun passwordFirst_thenTitle_noAutosave() {
