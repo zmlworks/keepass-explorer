@@ -264,6 +264,8 @@ class UiScreenshotsTest {
         assertNotNull(findDesc(a.host, "閉じる"))
         assertNotNull(findDesc(a.host, "欄を編集"))
         assertNotNull(findDesc(a.host, "欄を追加"))
+        assertNull(findDesc(a.host, "OTP設定を変更"))
+        assertNull(findDesc(a.host, "この鍵を削除"))
         assertEquals("Gmail", ks.barTitle())
         // swipe on User box = copy
         val ub = ks.boxes["UserName"]!!
@@ -496,7 +498,9 @@ class UiScreenshotsTest {
         assertNotNull(ks.editButton)
         assertNotNull(ks.addButton)
         val labels = ks.menu().map { it.label }
-        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更", "OTPを設定")))
+        assertTrue(labels.containsAll(listOf("欄を編集", "URL をブラウザで開く", "パスワードを生成", "アイコンの変更")))
+        assertFalse(labels.contains("OTPを設定"))
+        assertFalse(labels.contains("この鍵を削除"))
         val order0 = ks.layout.map { it.first }
         val iu = order0.indexOf("UserName")
         ks.moveField("UserName", -1)

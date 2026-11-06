@@ -32,7 +32,11 @@ class FieldArrangeEditor(
 
     private val list = LinearLayout(ctx).apply { orientation = VERTICAL }
     val scroll: ScrollView = ScrollView(ctx).apply {
-        W.thickScrollbars(this, 28)
+        // 0.3.15: no visible scrollbar (user: スクロールは削除). Overflow still scrolls
+        // silently + edge autoscroll while dragging so many custom fields stay reachable.
+        isVerticalScrollBarEnabled = false
+        isHorizontalScrollBarEnabled = false
+        isScrollbarFadingEnabled = true
         isFillViewport = true
         overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
     }
@@ -70,9 +74,10 @@ class FieldArrangeEditor(
         // Ghost: label … ×(spacer) handle on the right (mirrors rows)
         ghost.addView(ghostLabel, W.lp(0, W.WRAP, 1f))
         ghost.addView(ImageView(ctx).apply {
-            setImageDrawable(Glyph(Glyph.Kind.MORE, W.SHADOW))
+            setImageDrawable(Glyph(Glyph.Kind.GRIP, W.SHADOW))
             scaleType = ImageView.ScaleType.CENTER
-        }, W.lp(W.dp(40), W.dp(40), l = 4))
+            contentDescription = "並べ替え"
+        }, W.lp(W.dp(48), W.dp(48), l = 4))
         scroll.addView(list)
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         stage.addView(ghost, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -131,7 +136,7 @@ class FieldArrangeEditor(
     private fun fieldRow(k: String, visible: Boolean, dimmed: Boolean): LinearLayout {
         val row = W.hbox(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = W.dp(48)
+            minimumHeight = W.dp(44)
             background = W.Bevel(W.Style.THIN_RAISED, if (visible) W.FACE else 0xFFD0D0D0.toInt())
             setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4))
             tag = k
@@ -141,25 +146,25 @@ class FieldArrangeEditor(
         row.addView(W.text(ctx, if (visible) label else "($label)", 15f).apply {
             isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
         }, W.lp(0, W.WRAP, 1f))
-        // Custom delete × immediately LEFT of the rightmost handle
+        // Custom delete × immediately LEFT of the rightmost handle (larger ~48dp hit)
         if (k !in Order.DEFAULT_LAYOUT) {
-            row.addView(W.text(ctx, "×", 18f, true).apply {
+            row.addView(W.text(ctx, "×", 22f, true).apply {
                 gravity = Gravity.CENTER; contentDescription = "欄を削除"
-                minimumWidth = W.dp(44); minimumHeight = W.dp(48)
+                minimumWidth = W.dp(48); minimumHeight = W.dp(48)
                 isClickable = true
                 tag = "delete:$k"
                 setOnClickListener {
                     if (dragKey != null) return@setOnClickListener
                     shown.remove(k); hidden.remove(k); removedCustoms.add(k); render()
                 }
-            }, W.lp(W.dp(44), W.dp(48), r = 2))
+            }, W.lp(W.dp(48), W.dp(48), r = 2))
         }
         val handle = ImageView(ctx).apply {
-            setImageDrawable(Glyph(Glyph.Kind.MORE, W.SHADOW))
+            setImageDrawable(Glyph(Glyph.Kind.GRIP, W.TEXT))
             contentDescription = "並べ替え"
-            minimumWidth = W.dp(48); minimumHeight = W.dp(48)
+            minimumWidth = W.dp(56); minimumHeight = W.dp(48)
             scaleType = ImageView.ScaleType.CENTER
-            setPadding(W.dp(10), W.dp(10), W.dp(10), W.dp(10))
+            setPadding(W.dp(8), W.dp(8), W.dp(8), W.dp(8))
             isClickable = true
             tag = "handle:$k"
         }
@@ -172,7 +177,7 @@ class FieldArrangeEditor(
                 else -> dragKey == k
             }
         }
-        row.addView(handle, W.lp(W.dp(48), W.dp(48)))
+        row.addView(handle, W.lp(W.dp(56), W.dp(48)))
         return row
     }
 

@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.drawable.ColorDrawable
 import android.text.method.PasswordTransformationMethod
 import android.text.method.TransformationMethod
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -22,6 +24,37 @@ object Stars : PasswordTransformationMethod() {
     override fun getTransformation(source: CharSequence, view: View): CharSequence =
         if (source.isEmpty()) "" else "******"
 }
+
+/**
+ * At most one [FieldBox] is in inline edit. Outside [ACTION_DOWN] commits via [commitActive]
+ * (host typically saves the entry). IME window taps do not reach the host view tree.
+ */
+object FieldEditSession {
+    var active: FieldBox? = null
+        private set
+    /** Invoked after a successful commit (text already live in host maps). */
+    var onCommitted: (() -> Unit)? = null
+    fun begin(box: FieldBox) {
+        if (active === box) return
+        val prev = active
+        if (prev != null && prev.editing) {
+            prev.endEdit(commit = true)
+            active = null
+            onCommitted?.invoke()
+        }
+        active = box
+    }
+    fun clear(box: FieldBox) { if (active === box) active = null }
+    fun commitActive(): Boolean {
+        val b = active ?: return false
+        if (!b.editing) { active = null; return false }
+        b.endEdit(commit = true)
+        active = null
+        onCommitted?.invoke()
+        return true
+    }
+}
+
 
 /**
  * One key field.
@@ -135,8 +168,8 @@ class FieldBox(
         field.background = null
         field.setPadding(0, W.dp(1), 0, W.dp(1))
         setEditable(false)
-        field.setOnFocusChangeListener { _, has -> if (!has && editing) endEdit() }
-        field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { endEdit(); true } else false }
+        field.setOnFocusChangeListener { _, has -> if (!has && editing) endEdit(commit = true) }
+        field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { FieldEditSession.commitActive(); true } else false }
         field.imeOptions = field.imeOptions or EditorInfo.IME_ACTION_DONE
         updateHints(0f, false)
     }
@@ -153,6 +186,7 @@ class FieldBox(
 
     fun startEdit() {
         if (view != null) { onLongPress?.invoke(); return }
+        FieldEditSession.begin(this)
         editing = true; setEditable(true)
         frameBg.fill = if (table || plain) EDIT_FILL else W.WINDOW; front.invalidate()
         onLongPress?.invoke()
@@ -160,12 +194,18 @@ class FieldBox(
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(field, 0)
     }
 
-    fun endEdit() {
+    /**
+     * Leave edit mode. [commit]=true keeps the typed value (already mirrored by TextWatchers)
+     * and clears the session; false just leaves without [FieldEditSession.onCommitted].
+     */
+    fun endEdit(commit: Boolean = true) {
         if (!editing) return
         editing = false
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
         field.clearFocus(); setEditable(false)
         frameBg.fill = idleFill; front.invalidate()
+        FieldEditSession.clear(this)
+        // commit path for outside-tap is FieldEditSession.commitActive → onCommitted
     }
 
     /** Brief flash after a successful copy — keep front navy pulse; do not paint secrets on reveal. */
@@ -197,11 +237,13 @@ class FieldBox(
 
     fun copyThreshold(): Float = maxOf(W.dp(72).toFloat(), minOf(width * 0.4f, W.dp(120).toFloat()))
     private val slop = W.dp(10)
+    private val handler = Handler(Looper.getMainLooper())
+    /** Shorter than the system long-press (~500ms); horizontal swipe / scroll cancels. */
+    private val longPressRunnable = Runnable { if (!sliding && !editing) startEdit() }
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
         override fun onSingleTapUp(e: MotionEvent): Boolean { onTap?.invoke(); return true }
-        override fun onLongPress(e: MotionEvent) { if (!sliding) startEdit() }
-    })
+    }).also { it.setIsLongpressEnabled(false) }
     private var x0 = 0f; private var y0 = 0f
     var sliding = false
         private set
@@ -214,25 +256,47 @@ class FieldBox(
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (editing) return super.onTouchEvent(e)
+        // Another field is being edited → this DOWN commits it (outside tap)
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+            val other = FieldEditSession.active
+            if (other != null && other !== this && other.editing) {
+                FieldEditSession.commitActive()
+            }
+        }
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { x0 = e.rawX; y0 = e.rawY; sliding = false; front.animate().cancel() }
+            MotionEvent.ACTION_DOWN -> {
+                x0 = e.rawX; y0 = e.rawY; sliding = false; front.animate().cancel()
+                handler.removeCallbacks(longPressRunnable)
+                handler.postDelayed(longPressRunnable, EDIT_LONG_PRESS_MS)
+            }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - x0; val dy = e.rawY - y0
+                if (abs(dx) > slop || abs(dy) > slop) handler.removeCallbacks(longPressRunnable)
                 if (!sliding && abs(dx) > slop && abs(dx) > 1.5f * abs(dy)) {
                     sliding = true; parent?.requestDisallowInterceptTouchEvent(true)
+                    handler.removeCallbacks(longPressRunnable)
                     val c = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }; gd.onTouchEvent(c); c.recycle()
                 }
                 if (sliding) { slideTo(dx); return true }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (sliding) {
-                val dx = e.rawX - x0
-                sliding = false
-                if (e.actionMasked == MotionEvent.ACTION_UP && abs(dx) >= copyThreshold()) { onSwipe?.invoke(); flash() }
-                springBack()
-                return true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
+                if (sliding) {
+                    val dx = e.rawX - x0
+                    sliding = false
+                    if (e.actionMasked == MotionEvent.ACTION_UP && abs(dx) >= copyThreshold()) { onSwipe?.invoke(); flash() }
+                    springBack()
+                    return true
+                }
             }
         }
         return gd.onTouchEvent(e)
+    }
+
+    override fun onDetachedFromWindow() {
+        handler.removeCallbacks(longPressRunnable)
+        if (FieldEditSession.active === this) FieldEditSession.clear(this)
+        super.onDetachedFromWindow()
     }
 
     fun slideTo(dx: Float) {
@@ -268,6 +332,8 @@ class FieldBox(
     }
 
     companion object {
+        /** Long-press to enter inline edit (ms). System default is ~500; user asked shorter. */
+        const val EDIT_LONG_PRESS_MS = 320L
         /** Cream well for the new-key form (kept). */
         const val FILL = 0xFFFFFFE1.toInt()
         /** Property-sheet row fills (no cream / white). */

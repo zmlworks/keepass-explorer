@@ -761,8 +761,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun mainMenu(): List<Menus.Item> {
         val p = App.prefs(ctx)
         val lockMin = a.autoLockMinutes()
+        val selEntry = selection?.let { id -> rows.find { it.uuid == id } as? Order.Node.E }
+        val histEnabled = selEntry != null
         return listOf(
             Menus.Item("ロック") { a.lock() },
+            Menus.Item("履歴", histEnabled) {
+                val id = selEntry?.uuid ?: return@Item
+                io.github.zmlworks.kpexplorer.ui.HistoryViewer.show(ctx, id)
+                    ?: Dlg.message(ctx, "履歴", "エントリが見つかりません。", '!')
+            },
             Menus.sep(),
             Menus.Item("アプリ内に保存 (日付.kdbx)") { Security.internalBackup(a) },
             Menus.Item("外部に書き出す (パスワード付き)...") { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } },

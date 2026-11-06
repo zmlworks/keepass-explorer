@@ -63,7 +63,26 @@ object KeyFields {
  */
 class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private val parent: UUID) : MainActivity.Screen {
     private val ctx = a
-    private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
+    private val content = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
+    /** Intercept outside taps while a [FieldBox] is editing → commit + save (consume so no accidental clicks). */
+    private val root = object : android.widget.FrameLayout(ctx) {
+        override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+            if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                val box = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
+                if (box != null && box.editing) {
+                    val loc = IntArray(2); box.getLocationOnScreen(loc)
+                    val x = ev.rawX; val y = ev.rawY
+                    val inside = x >= loc[0] && x < loc[0] + box.width && y >= loc[1] && y < loc[1] + box.height
+                    if (!inside) {
+                        // IME lives in another window — its taps never reach here.
+                        commitActiveFieldEdit()
+                        return true
+                    }
+                }
+            }
+            return super.dispatchTouchEvent(ev)
+        }
+    }.also { it.addView(content, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH)) }
     override val view: View get() = root
     val values = LinkedHashMap<String, String>()
     var tags = ""
@@ -111,13 +130,25 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             multi.addAll(Order.multiline(e))
         } else listOf("Title", "UserName", "Password", "URL", "Notes").forEach { values[it] = "" }
         bar = Parts.keyDetailBar(ctx, titleText(), onClose = { onBack() })
-        root.addView(bar.bar, W.lp())
+        content.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
         scroll = sv
         sv.addView(body)
-        root.addView(sv, W.lp(W.MATCH, 0, 1f))
+        content.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
         dirty = false
+        io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = { autosaveAfterFieldEdit() }
+    }
+
+    /** Outside-tap / IME Done commit: persist existing entries only (never spawn empty new keys). */
+    fun commitActiveFieldEdit() {
+        io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+    }
+
+    private fun autosaveAfterFieldEdit() {
+        if (entryId == null) return  // NewKeyScreen / unsaved new key: don't auto-create
+        if (!dirty) return           // no-op → Order.saveEntry skips history
+        save()
     }
 
     private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
@@ -195,24 +226,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         rowBtns.addView(add, W.lp(W.WRAP, W.WRAP))
         body.addView(rowBtns, W.lp(W.MATCH, W.WRAP, t = 10))
         body.addView(View(ctx), W.lp(W.MATCH, 0, 1f))
-        // Infrequent actions formerly in titlebar ⋮ (OTP setup / delete)
-        val extras = W.hbox(ctx).apply { gravity = Gravity.CENTER; setPadding(W.dp(4), W.dp(2), W.dp(4), W.dp(2)) }
-        extras.addView(W.text(ctx,
-            if (values[Order.OTP].isNullOrBlank()) "OTPを設定" else "OTP設定を変更",
-            13f, true, W.NAVY).apply {
-            gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-            contentDescription = text.toString(); setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
-            setOnClickListener { setupOtp() }
-        }, W.lp(W.WRAP, W.WRAP, r = 8))
-        if (entryId != null) {
-            extras.addView(W.text(ctx, "この鍵を削除", 13f, true, W.DARK).apply {
-                gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-                contentDescription = "この鍵を削除"; setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
-                setOnClickListener { askDelete() }
-            }, W.lp(W.WRAP, W.WRAP))
-        }
-        body.addView(extras, W.lp(W.MATCH, W.WRAP, t = 4, b = 2))
-        body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 6))
+        // 0.3.15: removed bottom OTP設定／この鍵を削除 (OTP = OTP欄長押し; 削除 = 一覧のメニュー)
+        body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10))
         body.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp(W.MATCH, W.WRAP))
     }
 
@@ -406,8 +421,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Menus.Item("パスワードを生成") { editors[Order.F_PASS]?.setText(generate()) },
         Menus.Item("URL をブラウザで開く", values["URL"].orEmpty().isNotBlank()) { openUrl(values["URL"].orEmpty()) },
         Menus.Item("アイコンの変更") { pickIcon() },
-        Menus.Item(if (values[Order.OTP].isNullOrBlank()) "OTPを設定" else "OTP設定を変更") { setupOtp() },
-        Menus.Item("この鍵を削除", entryId != null) { askDelete() },
     )
 
     /** 「欄を追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
@@ -462,7 +475,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         arrangeEditor = editor
         // Fixed height so drag has room inside the dialog scroll area
         val wrap = W.vbox(ctx)
-        wrap.addView(editor, W.lp(W.MATCH, W.dp(360)))
+        wrap.addView(editor, W.lp(W.MATCH, W.dp(480)))
         val dlg = ClassicDialog(ctx, "欄の編集", wrap, listOf(
             ClassicDialog.Btn("OK", true) {
                 applyArrangement(editor.snapshot(), editor.removedCustoms.toList())
@@ -568,6 +581,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     override fun onBack(): Boolean {
+        io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+        io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = null
         if (!dirty) { a.showExplorer(); return true }
         confirmUnsaved(ctx, { if (save()) a.showExplorer() }, { dirty = false; a.showExplorer() })
         return true
