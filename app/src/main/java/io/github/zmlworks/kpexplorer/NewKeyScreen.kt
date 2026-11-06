@@ -15,7 +15,6 @@ import io.github.zmlworks.kpexplorer.db.Tree
 import io.github.zmlworks.kpexplorer.ui.ClassicDialog
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.FieldBox
-import io.github.zmlworks.kpexplorer.ui.FlowLayout
 import io.github.zmlworks.kpexplorer.ui.Glyph
 import io.github.zmlworks.kpexplorer.ui.Parts
 import io.github.zmlworks.kpexplorer.ui.W
@@ -101,15 +100,15 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         head.addView(info, W.lp(0, W.WRAP, 1f))
         body.addView(head, W.lp(W.MATCH, W.WRAP, b = 10))
 
-        inputRow(Order.F_TITLE, "Title", Glyph.Kind.TITLE, false)
-        inputRow(Order.F_USER, "UserName", Glyph.Kind.USER, false)
+        inputRow(Order.F_TITLE, "Title", Glyph(Glyph.Kind.TITLE), false)
+        inputRow(Order.F_USER, "UserName", Glyph(Glyph.Kind.USER), false)
         passRow()
-        inputRow(Order.F_URL, "URL", Glyph.Kind.URL, false)
-        inputRow(Order.F_TAGS, Order.F_TAGS, Glyph.Kind.TAG, false, isTags = true)
+        inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
+        inputRow(Order.F_TAGS, Order.F_TAGS, Glyph(Glyph.Kind.TAG), false, isTags = true)
         tagPicker()
-        inputRow(Order.F_NOTES, "Notes", Glyph.Kind.MEMO, true)
+        inputRow(Order.F_NOTES, "Notes", io.github.zmlworks.kpexplorer.ui.NotepadIcon(), true)
         for (name in customs) {
-            inputRow(name, name, Glyph.Kind.CUSTOM, name in multi)
+            inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
         }
 
         val add = W.hbox(ctx).apply {
@@ -144,7 +143,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     }
 
     /** Always-editable cream well (no swipe / long-press). */
-    private fun inputRow(layoutKey: String, valueKey: String, icon: Glyph.Kind, multiLine: Boolean, isTags: Boolean = false) {
+    private fun inputRow(layoutKey: String, valueKey: String, icon: android.graphics.drawable.Drawable, multiLine: Boolean, isTags: Boolean = false) {
         val f = W.field(ctx, multi = multiLine).apply {
             background = null
             setPadding(0, W.dp(1), 0, W.dp(1))
@@ -171,7 +170,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             setPadding(W.dp(6), W.dp(4), W.dp(4), W.dp(4))
             contentDescription = KeyFields.name(layoutKey)
         }
-        box.addView(ImageView(ctx).apply { setImageDrawable(Glyph(icon)) }, W.lp(W.dp(22), W.dp(22), r = 8))
+        box.addView(ImageView(ctx).apply { setImageDrawable(icon) }, W.lp(W.dp(22), W.dp(22), r = 8))
         val col = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         col.addView(W.text(ctx, KeyFields.name(layoutKey), 11f, false, W.NAVY).apply {
             isSingleLine = true
@@ -268,21 +267,8 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     }
 
     fun pickIcon(): ClassicDialog {
-        val grid = FlowLayout(ctx)
         lateinit var dlg: ClassicDialog
-        for (d in EntryIcon.ALL) {
-            val cell = W.vbox(ctx).apply {
-                gravity = Gravity.CENTER; isClickable = true; contentDescription = d.label
-                background = W.Bevel(if ((iconId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
-                setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(4))
-                setOnClickListener { setIcon(d.id); dlg.dismiss() }
-            }
-            cell.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, d.id)) }, W.lp(W.dp(36), W.dp(36)))
-            cell.addView(W.text(ctx, d.label, 11f).apply { isSingleLine = true; gravity = Gravity.CENTER }, W.lp(W.MATCH, W.WRAP, t = 2))
-            grid.addView(cell, android.view.ViewGroup.MarginLayoutParams(W.dp(72), W.dp(72)).apply {
-                setMargins(W.dp(2), W.dp(2), W.dp(2), W.dp(2))
-            })
-        }
+        val grid = io.github.zmlworks.kpexplorer.ui.MaterialIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
         dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
         dlg.show()
         return dlg

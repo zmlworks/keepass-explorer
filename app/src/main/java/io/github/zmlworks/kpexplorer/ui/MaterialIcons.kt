@@ -4,12 +4,16 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import io.github.zmlworks.kpexplorer.R
 import io.github.zmlworks.kpexplorer.db.EntryIcon
 
 /**
- * Google Material Symbols (Outlined) used for the 15 selectable entry icons.
- * Vector drawables live in res/drawable/ms_*.xml (Apache-2.0); tinted navy to match the UI.
+ * Entry icons: Google Material Symbols Outlined (Apache-2.0, navy) for most ids;
+ * "note" uses an original Win9x-style notepad drawing ([NotepadIcon]).
  */
 object MaterialIcons {
     private val cache = HashMap<String, Bitmap>()
@@ -28,18 +32,17 @@ object MaterialIcons {
         "lock" -> R.drawable.ms_lock
         "home" -> R.drawable.ms_home
         "star" -> R.drawable.ms_star
-        "note" -> R.drawable.ms_note
+        // "note" is drawn, not a vector resource
         else -> R.drawable.ms_key
     }
 
     fun resId(def: EntryIcon.Def?): Int = resId(def?.id)
 
     fun drawable(ctx: Context, id: String?): Drawable =
-        ctx.getDrawable(resId(id))!!.mutate()
+        if (id == "note") NotepadIcon() else ctx.getDrawable(resId(id))!!.mutate()
 
     fun drawable(ctx: Context, def: EntryIcon.Def?): Drawable = drawable(ctx, def?.id)
 
-    /** Rasterize for explorer list / grids that still use [Bitmap]. */
     fun bitmap(ctx: Context, id: String?, size: Int): Bitmap {
         val key = "${id ?: "key"}/$size"
         cache[key]?.let { return it }
@@ -54,4 +57,31 @@ object MaterialIcons {
     fun bitmap(ctx: Context, def: EntryIcon.Def?, size: Int): Bitmap = bitmap(ctx, def?.id, size)
 
     fun clearCache() { cache.clear() }
+
+    /**
+     * Icon chooser grid: large nearly-square tiles, glyphs only (no visible names).
+     * [contentDescription] keeps the Japanese label for accessibility.
+     */
+    fun pickerGrid(ctx: Context, selectedId: String?, onPick: (String) -> Unit): FlowLayout {
+        val grid = FlowLayout(ctx)
+        val cell = W.dp(76)
+        val glyph = W.dp(52)
+        for (d in EntryIcon.ALL) {
+            val tile = android.widget.FrameLayout(ctx).apply {
+                background = W.Bevel(if ((selectedId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
+                isClickable = true
+                contentDescription = d.label
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+                setOnClickListener { onPick(d.id) }
+            }
+            tile.addView(ImageView(ctx).apply {
+                setImageDrawable(drawable(ctx, d.id)); scaleType = ImageView.ScaleType.FIT_CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, android.widget.FrameLayout.LayoutParams(glyph, glyph, Gravity.CENTER))
+            grid.addView(tile, ViewGroup.MarginLayoutParams(cell, cell).apply {
+                setMargins(W.dp(4), W.dp(4), W.dp(4), W.dp(4))
+            })
+        }
+        return grid
+    }
 }

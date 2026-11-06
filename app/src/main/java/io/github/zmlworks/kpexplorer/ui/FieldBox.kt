@@ -23,7 +23,7 @@ object Stars : PasswordTransformationMethod() {
 /**
  * One key field.
  * Default (cream well): [glyph] [label over value] — used by the new-key form.
- * [table]=true (property sheet): [glyph+label | value] on a gray row — used by the key detail page.
+ * [table]=true: two-column property sheet. [plain]=true: proposal #3 plain rows (no boxes).
  * Gestures: swipe = copy, long press = edit, tap = [onTap] (Pass show/hide).
  */
 class FieldBox(
@@ -37,22 +37,36 @@ class FieldBox(
     icon: android.graphics.drawable.Drawable? = null,
     val trailing: View? = null,
     val table: Boolean = false,
-    rowFill: Int = if (table) TABLE_A else FILL,
+    /** Proposal #3: no boxes — gray face, small shadow label, thin separators added by host. */
+    val plain: Boolean = false,
+    rowFill: Int = when {
+        plain -> PLAIN_FILL
+        table -> TABLE_A
+        else -> FILL
+    },
 ) : LinearLayout(ctx) {
     var editing = false
         private set
-    val labelView: TextView = W.text(ctx, label, if (table) 14f else 11f, table, if (table) W.TEXT else W.NAVY).apply {
+    private val labelColor = when {
+        plain -> W.SHADOW
+        table -> W.TEXT
+        else -> W.NAVY
+    }
+    val labelView: TextView = W.text(ctx, label, if (table) 14f else 11f, table && !plain, labelColor).apply {
         isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
     }
     private var idleFill = rowFill
-    private val frameBg = W.Bevel(if (table) W.Style.NONE else W.Style.FIELD, idleFill)
+    private val frameBg = W.Bevel(if (table || plain) W.Style.NONE else W.Style.FIELD, idleFill)
 
     init {
         orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         background = frameBg
-        setPadding(W.dp(if (table) 8 else 6), W.dp(if (table) 8 else 4), W.dp(4), W.dp(if (table) 8 else 4))
-        if (table) {
-            // left name column
+        setPadding(
+            W.dp(if (table || plain) 8 else 6),
+            W.dp(if (plain) 6 else if (table) 8 else 4),
+            W.dp(4),
+            W.dp(if (plain) 6 else if (table) 8 else 4))
+        if (table && !plain) {
             val left = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             if (icon != null) left.addView(android.widget.ImageView(ctx).apply { setImageDrawable(icon) }, W.lp(W.dp(22), W.dp(22), r = 6))
             left.addView(labelView, W.lp(0, W.WRAP, 1f))
@@ -89,7 +103,7 @@ class FieldBox(
     fun startEdit() {
         if (view != null) { onLongPress?.invoke(); return }
         editing = true; setEditable(true)
-        frameBg.fill = if (table) EDIT_FILL else W.WINDOW; invalidate()
+        frameBg.fill = if (table || plain) EDIT_FILL else W.WINDOW; invalidate()
         onLongPress?.invoke()
         field.requestFocus(); field.setSelection(field.text.length)
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(field, 0)
@@ -106,8 +120,8 @@ class FieldBox(
     fun flash() {
         frameBg.fill = W.NAVY; labelView.setTextColor(W.HILITE); invalidate()
         postDelayed({
-            frameBg.fill = if (editing) (if (table) EDIT_FILL else W.WINDOW) else idleFill
-            labelView.setTextColor(if (table) W.TEXT else W.NAVY); invalidate()
+            frameBg.fill = if (editing) (if (table || plain) EDIT_FILL else W.WINDOW) else idleFill
+            labelView.setTextColor(labelColor); invalidate()
         }, 250)
     }
 
@@ -151,7 +165,7 @@ class FieldBox(
         translationX = dx
         val past = abs(dx) >= copyThreshold()
         frameBg.fill = if (past) W.NAVY else idleFill
-        labelView.setTextColor(if (past) W.HILITE else if (table) W.TEXT else W.NAVY)
+        labelView.setTextColor(if (past) W.HILITE else labelColor)
         invalidate()
     }
 
@@ -159,7 +173,7 @@ class FieldBox(
         animate().translationX(0f).setDuration(160).withEndAction {
             if (!editing) {
                 frameBg.fill = idleFill
-                labelView.setTextColor(if (table) W.TEXT else W.NAVY)
+                labelView.setTextColor(labelColor)
                 invalidate()
             }
         }.start()
@@ -171,6 +185,8 @@ class FieldBox(
         /** Property-sheet row fills (no cream / white). */
         const val TABLE_A = 0xFFC0C0C0.toInt()
         const val TABLE_B = 0xFFD4D0C8.toInt()
+        /** Plain-row face (proposal #3). */
+        const val PLAIN_FILL = 0xFFC0C0C0.toInt()
         /** While editing a table cell — light gray, not cream. */
         const val EDIT_FILL = 0xFFE8E4DC.toInt()
         fun mask(t: TextView, hidden: Boolean) { t.transformationMethod = if (hidden) Stars else null as TransformationMethod? }

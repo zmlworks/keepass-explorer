@@ -37,7 +37,7 @@ object KeyFields {
     fun name(k: String) = label(k).removeSuffix(":")
     fun lastModified(e: Entry?): String = "Last Modified: " + (e?.times?.lastModificationTime?.let { fmt.format(it) } ?: "-")
 
-    /** Live TOTP text: "123 456  (あと 12 秒)", refreshed every second while attached. */
+    /** Live TOTP text: "123 456 (10s)", refreshed every second while attached. */
     class OtpView(ctx: Context, private val uri: () -> String?) : TextView(ctx) {
         private val tick = object : Runnable { override fun run() { update(); postDelayed(this, 1000) } }
         init { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 20f); typeface = android.graphics.Typeface.MONOSPACE; setTextColor(W.NAVY); update() }
@@ -47,7 +47,7 @@ object KeyFields {
             text = if (u.isNullOrBlank()) "" else runCatching {
                 val p = Totp.parse(u); val now = Instant.now().epochSecond
                 val c = Totp.code(p, now)
-                "${c.chunked(3).joinToString(" ")}  (あと ${Totp.remaining(p, now)} 秒)"
+                "${c.chunked(3).joinToString(" ")} (${Totp.remaining(p, now)}s)"
             }.getOrElse { "⚠ 設定が不正です" }
         }
         override fun onAttachedToWindow() { super.onAttachedToWindow(); post(tick) }
@@ -58,7 +58,7 @@ object KeyFields {
 /**
  * Key (password entry) window: ← + title, folder path tree, Last Modified, then the fields in the per-key
  * layout (Title / User / Pass / URL / Tag / OTP / Memo / custom), each "Label: [input]" on one line except Memo.
- * Property-sheet table (項目名 | 中身) on gray rows. Pass masked as ****** until tapped. 戻る / 保存 at bottom.
+ * Navy header band + plain gray rows with thin separators (proposal #3). Pass ****** until tapped. 戻る / 保存 at bottom.
  * [entryId] null = new key in [parent], created on the first save.
  */
 class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private val parent: UUID) : MainActivity.Screen {
@@ -133,10 +133,14 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
      * value, trailing action) with a ⋮ menu button, 「欄を追加」, and 戻る / 保存 at the bottom.
      */
     private fun build() {
-        body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null
+        body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null; tableHost = null
         val d = Session.db ?: return
         val path = Tree.path(Tree.root(d), parent)
-        val head = W.hbox(ctx).apply { gravity = Gravity.TOP }
+        // Proposal #3: navy header band with icon tile + light path / Last Modified
+        val band = W.hbox(ctx).apply {
+            setBackgroundColor(W.NAVY); gravity = Gravity.TOP
+            setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(14))
+        }
         val tile = android.widget.FrameLayout(ctx).apply {
             background = W.Bevel(W.Style.RAISED); contentDescription = "アイコン (長押しで変更)"
             isLongClickable = true; setOnLongClickListener { pickIcon(); true }
@@ -144,28 +148,22 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, iconId)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
         iconTile = tile
-        head.addView(tile, W.lp(W.dp(84), W.dp(84), r = 10, t = 4))
+        band.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
         val info = W.vbox(ctx)
-        info.addView(Parts.pathTree(ctx, path).apply { setPadding(0, 0, 0, W.dp(2)) }, W.lp(W.MATCH, W.WRAP))
-        info.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"), 13f).apply {
-            isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }.also { lastMod = it }, W.lp(W.MATCH, W.WRAP, t = 2))
-        head.addView(info, W.lp(0, W.WRAP, 1f))
-        body.addView(head, W.lp(W.MATCH, W.WRAP, b = 10))
-        // Property-sheet table: 項目名 | 中身 (gray cells, no cream/white wells)
-        val table = W.vbox(ctx).apply { background = W.Bevel(W.Style.SUNKEN, W.FACE) }
-        val header = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(W.dp(2), W.dp(2), W.dp(2), W.dp(2)) }
-        val hName = W.text(ctx, "項目名", 13f, true).apply {
-            gravity = Gravity.CENTER_VERTICAL; background = W.Bevel(W.Style.BUTTON); setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
+        path.forEachIndexed { i, g ->
+            val name = if (i == 0) "/ (${g.groups.size},${g.entries.size})" else "└ ${g.name.ifEmpty { "(名前なし)" }} (${g.groups.size},${g.entries.size})"
+            info.addView(W.text(ctx, name, 15f, bold = i == path.size - 1, color = W.HILITE).apply {
+                isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(W.dp(12) * i, 0, 0, W.dp(2))
+            }, W.lp(W.MATCH, W.WRAP))
         }
-        val hVal = W.text(ctx, "中身", 13f, true).apply {
-            gravity = Gravity.CENTER_VERTICAL; background = W.Bevel(W.Style.BUTTON); setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
-        }
-        header.addView(hName, W.lp(W.dp(132), W.WRAP, r = 2))
-        header.addView(hVal, W.lp(0, W.WRAP, 1f))
-        table.addView(header, W.lp(W.MATCH, W.WRAP))
-        tableHost = table
-        rowIndex = 0
-        body.addView(table, W.lp(W.MATCH, W.WRAP, b = 4))
+        info.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"),
+            13f, color = 0xFFA0C0FF.toInt()).apply {
+            isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+        }.also { lastMod = it }, W.lp(W.MATCH, W.WRAP, t = 8))
+        band.addView(info, W.lp(0, W.WRAP, 1f))
+        body.addView(band, W.lp(W.MATCH, W.WRAP, b = 4))
+        // Plain rows (no cream/white boxes)
         for ((k, vis) in layout) {
             if (!vis) continue
             when (k) {
@@ -182,7 +180,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         add.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.PLUS)) }, W.lp(W.dp(22), W.dp(22), r = 6))
         add.addView(W.text(ctx, "欄を追加", 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         addButton = add
-        body.addView(add, W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        body.addView(add, W.lp(W.WRAP, W.WRAP, t = 10).apply { gravity = Gravity.CENTER_HORIZONTAL })
         body.addView(View(ctx), W.lp(W.MATCH, 0, 1f))
         body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10))
         body.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp(W.MATCH, W.WRAP))
@@ -194,21 +192,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     var iconTile: View? = null
         private set
 
-    /** Icon picker (long-press the big tile): grid of the self-drawn icons; tap one to choose. */
+    /** Icon picker: large nearly-square tiles, glyphs only (names via contentDescription). */
     fun pickIcon(): ClassicDialog {
-        val grid = io.github.zmlworks.kpexplorer.ui.FlowLayout(ctx)
         lateinit var dlg: ClassicDialog
-        for (d in io.github.zmlworks.kpexplorer.db.EntryIcon.ALL) {
-            val cell = W.vbox(ctx).apply {
-                gravity = Gravity.CENTER; isClickable = true; contentDescription = d.label
-                background = W.Bevel(if ((iconId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
-                setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(4))
-                setOnClickListener { setIcon(d.id); dlg.dismiss() }
-            }
-            cell.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, d.id)) }, W.lp(W.dp(36), W.dp(36)))
-            cell.addView(W.text(ctx, d.label, 11f).apply { isSingleLine = true; gravity = Gravity.CENTER }, W.lp(W.MATCH, W.WRAP, t = 2))
-            grid.addView(cell, android.view.ViewGroup.MarginLayoutParams(W.dp(72), W.dp(72)).apply { setMargins(W.dp(2), W.dp(2), W.dp(2), W.dp(2)) })
-        }
+        val grid = io.github.zmlworks.kpexplorer.ui.MaterialIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
         dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
         dlg.show()
         return dlg
@@ -220,11 +207,16 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     var addButton: View? = null
         private set
 
-    private fun glyphFor(k: String) = Glyph(when (k) {
-        Order.F_TITLE -> Glyph.Kind.TITLE; Order.F_USER -> Glyph.Kind.USER; Order.F_PASS -> Glyph.Kind.PASS
-        Order.F_URL -> Glyph.Kind.URL; Order.F_TAGS -> Glyph.Kind.TAG; Order.F_OTP -> Glyph.Kind.OTP
-        Order.F_NOTES -> Glyph.Kind.MEMO; else -> Glyph.Kind.CUSTOM
-    })
+    private fun glyphFor(k: String): android.graphics.drawable.Drawable = when (k) {
+        Order.F_TITLE -> Glyph(Glyph.Kind.TITLE)
+        Order.F_USER -> Glyph(Glyph.Kind.USER)
+        Order.F_PASS -> Glyph(Glyph.Kind.PASS)
+        Order.F_URL -> Glyph(Glyph.Kind.URL)
+        Order.F_TAGS -> Glyph(Glyph.Kind.TAG)
+        Order.F_OTP -> Glyph(Glyph.Kind.OTP)
+        Order.F_NOTES -> io.github.zmlworks.kpexplorer.ui.NotepadIcon()
+        else -> Glyph(Glyph.Kind.CUSTOM)
+    }
 
     /** Moves field [k] one visible step up (-1) or down (+1) in the per-key layout. */
     fun moveField(k: String, dir: Int) {
@@ -249,8 +241,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         if (allTags.isEmpty()) return
         val holder = android.widget.FrameLayout(ctx).apply { visibility = if (tagsShown) View.VISIBLE else View.GONE }
         chips = holder
-        val host = tableHost ?: body
-        host.addView(holder, W.lp(W.MATCH, W.WRAP, l = 4, b = 4))
+        body.addView(holder, W.lp(W.MATCH, W.WRAP, l = 4, b = 4))
         renderChips()
     }
 
@@ -312,11 +303,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         if (multi) { f.minLines = 3; f.gravity = Gravity.TOP or Gravity.START } else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
         f.textSize = 16f
         val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES
-        val fill = if (rowIndex % 2 == 0) io.github.zmlworks.kpexplorer.ui.FieldBox.TABLE_A else io.github.zmlworks.kpexplorer.ui.FieldBox.TABLE_B
         rowIndex++
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(k), f,
             onSwipe = { copy(copyName(k), f.text.toString(), sensitive) }, icon = glyphFor(k),
-            table = true, rowFill = fill)
+            plain = true)
         if (k == Order.F_TAGS) box.onLongPress = { showTagButtons() }
         if (k == Order.F_PASS) {
             f.typeface = android.graphics.Typeface.MONOSPACE
@@ -325,10 +315,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false) }
         }
         boxes[k] = box
-        val host = tableHost ?: body
-        host.addView(box, W.lp(W.MATCH, W.WRAP))
-        // bottom grid line
-        host.addView(View(ctx).apply { setBackgroundColor(W.SHADOW) }, W.lp(W.MATCH, W.px))
+        body.addView(box, W.lp(W.MATCH, W.WRAP))
+        // thin separator (proposal #3)
+        body.addView(View(ctx).apply { setBackgroundColor(W.SHADOW) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
+        body.addView(View(ctx).apply { setBackgroundColor(W.HILITE) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
     }
 
     fun togglePass() {
@@ -339,15 +329,14 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private fun otpRow() {
         val o = KeyFields.OtpView(ctx) { values[Order.OTP] }
         otpView = o
-        val fill = if (rowIndex % 2 == 0) io.github.zmlworks.kpexplorer.ui.FieldBox.TABLE_A else io.github.zmlworks.kpexplorer.ui.FieldBox.TABLE_B
         rowIndex++
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(Order.F_OTP), W.field(ctx), view = o,
             onSwipe = { o.current()?.let { copy("ワンタイムパスワード", it, true) } }, onLongPress = { setupOtp() },
-            icon = glyphFor(Order.F_OTP), table = true, rowFill = fill)
+            icon = glyphFor(Order.F_OTP), plain = true)
         boxes[Order.F_OTP] = box
-        val host = tableHost ?: body
-        host.addView(box, W.lp(W.MATCH, W.WRAP))
-        host.addView(View(ctx).apply { setBackgroundColor(W.SHADOW) }, W.lp(W.MATCH, W.px))
+        body.addView(box, W.lp(W.MATCH, W.WRAP))
+        body.addView(View(ctx).apply { setBackgroundColor(W.SHADOW) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
+        body.addView(View(ctx).apply { setBackgroundColor(W.HILITE) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
     }
 
     private fun copy(label: String, s: String, sensitive: Boolean) {

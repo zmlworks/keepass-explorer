@@ -6,7 +6,7 @@ import app.keemobile.kotpass.models.Entry
 /**
  * Per-entry icon chosen on the key screen. Stored twice so other KeePass apps show something sensible:
  * the standard KDBX IconID (closest PredefinedIcon) and CustomData "KPExplorer.Icon" = our id.
- * Pictures are Google Material Symbols (Outlined), navy-tinted — see [io.github.zmlworks.kpexplorer.ui.MaterialIcons].
+ * Pictures: Material Symbols (Outlined, navy) for most; "note" is an original Win9x notepad drawing — see MaterialIcons.
  */
 object EntryIcon {
     const val CD = "KPExplorer.Icon"
