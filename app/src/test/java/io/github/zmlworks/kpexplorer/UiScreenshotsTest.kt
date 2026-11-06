@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import android.view.View
 import app.keemobile.kotpass.database.KeePassDatabase
 import io.github.zmlworks.kpexplorer.db.Kdbx
+import io.github.zmlworks.kpexplorer.db.Order
 import io.github.zmlworks.kpexplorer.db.Tree
 import io.github.zmlworks.kpexplorer.sec.Vault
 import io.github.zmlworks.kpexplorer.ui.Dlg
@@ -77,6 +78,11 @@ class UiScreenshotsTest {
         e(bank, f("ゆうちょ", "1234-5678", "****", "", "", "銀行 重要"))
         e(root, f("Wi-Fi (自宅)", "MyHome-5G", "correct horse battery", "", "ルーターは棚の上", "家族"))
         e(root, f("買い物リスト", n = "・牛乳\n・卵\n・食パン\n・洗剤 (詰め替え)", tags = "メモ 家族"))
+        run {
+            val memo = Order.newMemo("会議メモ")
+            db = Tree.addEntry(db, root, memo)
+            m["会議メモ"] = memo.uuid
+        }
         val old = e(root, f("古いメモ", n = "削除予定"))
         db = Tree.delete(db, old).first
         ids = m
@@ -134,7 +140,7 @@ class UiScreenshotsTest {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
-        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Wi-Fi (自宅)", "買い物リスト"),
+        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
             ex.rows.map { ex.label(it) })
         assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
         save(shot(a.host), "01-main-no-selection.png")
@@ -311,6 +317,9 @@ class UiScreenshotsTest {
         assertEquals("新しいフォルダ", g.groups.first { it.uuid == nf }.name)
         assertEquals("新しいフォルダ2", g.groups.first { it.uuid == nf2 }.name)
         assertEquals("新しいメモ", g.entries.first { it.uuid == nm }.fields.title?.content)
+
+        // Independent-memo notepad icon in list + toolbar (newMemo16)
+        save(shot(a.host), "07b-independent-memo-list.png")
 
         // drag: memo into folder, folder reordered before メール, entry onto the path line (root)
         ex.performDrop(nm, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, nf)); idle()
@@ -558,6 +567,18 @@ class UiScreenshotsTest {
         save(withDialog(shot(a.host)), "14-about.png")
         assertTrue(W.px >= 1)
     }
+
+    @Test fun memoIcons_clearCoverNotepad() {
+        val dir = File(out, "icons"); dir.mkdirs()
+        fun dump(b: Bitmap, name: String) = FileOutputStream(File(dir, name)).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        dump(io.github.zmlworks.kpexplorer.ui.Ico.notepad32, "memo-notepad32.png")
+        dump(io.github.zmlworks.kpexplorer.ui.Ico.notepad16, "memo-notepad16.png")
+        dump(io.github.zmlworks.kpexplorer.ui.Ico.newMemo16, "memo-newMemo16.png")
+        val note = io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(app(), "note", 48)
+        dump(note, "selectable-note-material.png")
+        assertTrue(note.width == 48)
+    }
+
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -578,4 +599,6 @@ class DataWipeTest {
         App.wipeOldData(app)
         assertTrue(st.dbFile.exists())
     }
+
+
 }

@@ -12,8 +12,8 @@ import io.github.zmlworks.kpexplorer.R
 import io.github.zmlworks.kpexplorer.db.EntryIcon
 
 /**
- * Entry icons: Google Material Symbols Outlined (Apache-2.0, navy) for most ids;
- * "note" uses an original Win9x-style notepad drawing ([NotepadIcon]).
+ * Entry icons: Google Material Symbols Outlined (Apache-2.0, navy).
+ * Independent memo items (Order.Kind.MEMO) use [Ico.notepad32], not these.
  */
 object MaterialIcons {
     private val cache = HashMap<String, Bitmap>()
@@ -32,14 +32,14 @@ object MaterialIcons {
         "lock" -> R.drawable.ms_lock
         "home" -> R.drawable.ms_home
         "star" -> R.drawable.ms_star
-        // "note" is drawn, not a vector resource
+        "note" -> R.drawable.ms_note
         else -> R.drawable.ms_key
     }
 
     fun resId(def: EntryIcon.Def?): Int = resId(def?.id)
 
     fun drawable(ctx: Context, id: String?): Drawable =
-        if (id == "note") NotepadIcon() else ctx.getDrawable(resId(id))!!.mutate()
+        ctx.getDrawable(resId(id))!!.mutate()
 
     fun drawable(ctx: Context, def: EntryIcon.Def?): Drawable = drawable(ctx, def?.id)
 

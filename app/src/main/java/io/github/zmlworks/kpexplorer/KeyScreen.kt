@@ -207,16 +207,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     var addButton: View? = null
         private set
 
-    private fun glyphFor(k: String): android.graphics.drawable.Drawable = when (k) {
-        Order.F_TITLE -> Glyph(Glyph.Kind.TITLE)
-        Order.F_USER -> Glyph(Glyph.Kind.USER)
-        Order.F_PASS -> Glyph(Glyph.Kind.PASS)
-        Order.F_URL -> Glyph(Glyph.Kind.URL)
-        Order.F_TAGS -> Glyph(Glyph.Kind.TAG)
-        Order.F_OTP -> Glyph(Glyph.Kind.OTP)
-        Order.F_NOTES -> io.github.zmlworks.kpexplorer.ui.NotepadIcon()
-        else -> Glyph(Glyph.Kind.CUSTOM)
-    }
+    private fun glyphFor(k: String): android.graphics.drawable.Drawable = Glyph(when (k) {
+        Order.F_TITLE -> Glyph.Kind.TITLE; Order.F_USER -> Glyph.Kind.USER; Order.F_PASS -> Glyph.Kind.PASS
+        Order.F_URL -> Glyph.Kind.URL; Order.F_TAGS -> Glyph.Kind.TAG; Order.F_OTP -> Glyph.Kind.OTP
+        Order.F_NOTES -> Glyph.Kind.MEMO; else -> Glyph.Kind.CUSTOM
+    })
 
     /** Moves field [k] one visible step up (-1) or down (+1) in the per-key layout. */
     fun moveField(k: String, dir: Int) {

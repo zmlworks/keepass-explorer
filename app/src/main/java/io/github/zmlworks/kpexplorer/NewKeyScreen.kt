@@ -106,7 +106,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
         inputRow(Order.F_TAGS, Order.F_TAGS, Glyph(Glyph.Kind.TAG), false, isTags = true)
         tagPicker()
-        inputRow(Order.F_NOTES, "Notes", io.github.zmlworks.kpexplorer.ui.NotepadIcon(), true)
+        inputRow(Order.F_NOTES, "Notes", Glyph(Glyph.Kind.MEMO), true)
         for (name in customs) {
             inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
         }
