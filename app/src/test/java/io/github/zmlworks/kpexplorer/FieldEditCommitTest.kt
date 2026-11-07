@@ -287,4 +287,80 @@ class FieldEditCommitTest {
         assertTrue(ShadowToast.getTextOfLatestToast().contains("保存"))
     }
 
+
+    // ---- 0.4.6: Back delivered as real KeyEvents (pre-IME stage + Activity dispatch), not direct calls ----
+    private fun key(action: Int, t: Long = 0L) = android.view.KeyEvent(t, t, action, android.view.KeyEvent.KEYCODE_BACK, 0)
+    private fun dbUser() = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
+    private fun assertStayedDraft(a: MainActivity, ks: KeyScreen, box: FieldBox, v: String) {
+        assertFalse(box.editing); assertTrue(a.screen === ks)
+        assertEquals(v, ks.values["UserName"]); assertTrue(ks.dirty)
+        assertTrue("no save prompt", Dlg.last == null || !Dlg.last!!.isShowing)
+        assertEquals("u", dbUser()); assertFalse(a.isFinishing)
+        assertFalse("no stale swallow flag", a.backDownWhileEditing)
+    }
+    /** Second, distinct Back through the full Activity path must give the normal unsaved prompt. */
+    private fun secondBackPrompts(a: MainActivity, ks: KeyScreen) {
+        val d = a.window.decorView
+        d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN, 10)); d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP, 10)); idle()
+        assertTrue("prompt on 2nd back", Dlg.last != null && Dlg.last!!.isShowing)
+        assertTrue(a.screen === ks); assertEquals("u", dbUser())
+    }
+
+    /** Keyboard up: ViewRootImpl gives the focused EditText onKeyPreIme first; we consume DOWN+UP. */
+    @Test fun back_preIme_endsEditInDraft_thenSecondBackPrompts() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("k1"); idle()
+        assertTrue("field focused", box.field.isFocused)
+        val d = a.window.decorView
+        assertTrue(d.dispatchKeyEventPreIme(key(android.view.KeyEvent.ACTION_DOWN)))
+        assertTrue("still editing until UP", box.editing)
+        assertTrue(d.dispatchKeyEventPreIme(key(android.view.KeyEvent.ACTION_UP))); idle()
+        assertStayedDraft(a, ks, box, "k1")
+        assertFalse(box.field.isFocused)
+        secondBackPrompts(a, ks)
+    }
+
+    /** No keyboard (or IME did not take it): Back reaches Activity.dispatchKeyEvent while editing. */
+    @Test fun back_activityDispatch_noKeyboard_endsEdit() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("k2"); idle()
+        val d = a.window.decorView
+        assertTrue(d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN)))
+        assertTrue(d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP))); idle()
+        assertStayedDraft(a, ks, box, "k2")
+        secondBackPrompts(a, ks)
+    }
+
+    /** Race: DOWN while editing, then IME-hidden insets callback ends the edit, then UP → must NOT navigate. */
+    @Test fun back_imeHiddenBetweenDownAndUp_doesNotNavigate() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("k3"); idle()
+        a.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN))
+        ks.onImeHidden(); idle()
+        assertFalse(box.editing)
+        assertTrue("UP of same press swallowed", a.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP))); idle()
+        assertStayedDraft(a, ks, box, "k3")
+        secondBackPrompts(a, ks)
+    }
+
+    /** Opposite order: our Back handling ends edit first, the later IME-hidden callback is a no-op. */
+    @Test fun back_thenImeHidden_noop() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("k4"); idle()
+        val d = a.window.decorView
+        d.dispatchKeyEventPreIme(key(android.view.KeyEvent.ACTION_DOWN)); d.dispatchKeyEventPreIme(key(android.view.KeyEvent.ACTION_UP))
+        ks.onImeHidden(); idle()
+        assertStayedDraft(a, ks, box, "k4")
+        secondBackPrompts(a, ks)
+    }
+
+    /** Cancelled Back (e.g. predictive gesture aborted) ends nothing and leaves no stale flag. */
+    @Test fun back_canceledUp_keepsEditing_noStaleFlag() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); idle()
+        a.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN))
+        val up = android.view.KeyEvent.changeFlags(key(android.view.KeyEvent.ACTION_UP), android.view.KeyEvent.FLAG_CANCELED)
+        assertTrue(a.dispatchKeyEvent(up)); idle()
+        assertTrue(box.editing); assertFalse(a.backDownWhileEditing); assertTrue(a.screen === ks)
+    }
 }

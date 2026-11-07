@@ -126,7 +126,22 @@ class FieldBox(
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
+    /** Called whenever an edit ends (any path: Back, Done, outside tap, other field). */
+    var onEditEnd: (() -> Unit)? = null
+    private var preImeBackDown = false
+
     init {
+        (field as? W.BackEditText)?.onPreImeBack = { e ->
+            when (e.action) {
+                android.view.KeyEvent.ACTION_DOWN -> { if (e.repeatCount == 0) preImeBackDown = editing; preImeBackDown }
+                android.view.KeyEvent.ACTION_UP -> {
+                    val mine = preImeBackDown; preImeBackDown = false
+                    if (mine && !e.isCanceled) FieldEditSession.commitActive()
+                    mine
+                }
+                else -> false
+            }
+        }
         clipChildren = true
         fun hint(@Suppress("UNUSED_PARAMETER") start: Boolean): LinearLayout {
             // Clipboard glyph only (no 「コピー」 text) — 0.4.3
@@ -208,6 +223,7 @@ class FieldBox(
         field.clearFocus(); setEditable(false)
         frameBg.fill = idleFill; front.invalidate()
         FieldEditSession.clear(this)
+        onEditEnd?.invoke()
         // commit path for outside-tap is FieldEditSession.commitActive → onCommitted
     }
 

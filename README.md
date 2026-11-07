@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.5)
+# KeePass Explorer (v0.4.6)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,11 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.6 の変更
+- 鍵の値を入力中に OS の戻る（ボタン／ジェスチャー）を 1 回押すと、入力を終えて下書きに残し、キーボードを閉じて鍵画面に留まる（保存確認は出ない）。2 回目の戻るで通常の未保存確認。戻るは IME より先に入力欄で受け取り、同じ押下の DOWN/UP を対で処理する。
+- Tag 編集中に入力欄と候補ボタン以外をタッチすると編集を終え、使用済みタグボタンを閉じる（タグは下書きに残り、保存は「保存」のみ）。戻る・完了で終えた場合も同様に閉じる。
+- 本リリースは AI エージェントが作成・テストしています（実機検証は未実施）。
 
 ## アプリ 0.4.5 の変更
 

@@ -268,6 +268,52 @@ class Ux045Test {
         assertEquals(Order.F_TAGS, Order.layout(e).last().first)
     }
 
+    /** 0.4.6: real root MotionEvents — chip tap keeps edit+chips; outside tap ends edit, collapses ALL chips, draft only. */
+    @Test fun tagOutsideTapCollapsesChips_draftOnly() {
+        val ks = openKey()
+        val box = ks.boxes[Order.F_TAGS]!!
+        val loc0 = IntArray(2); box.getLocationOnScreen(loc0)
+        val tx = loc0[0] + box.width / 2f; val ty = loc0[1] + box.height / 2f
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 1, MotionEvent.ACTION_DOWN, tx, ty, 0))
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 2, MotionEvent.ACTION_UP, tx, ty, 0)); idle()
+        assertTrue("tap starts tag edit", box.editing)
+        assertTrue(ks.tagsShown); assertEquals(View.VISIBLE, ks.chips!!.visibility)
+        box.field.setText("a あ "); layoutHost()
+        val chip = ks.view.findViewWithTagChip("web")!!
+        val l = IntArray(2); chip.getLocationOnScreen(l)
+        val cx = l[0] + chip.width / 2f; val cy = l[1] + chip.height / 2f
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 3, MotionEvent.ACTION_DOWN, cx, cy, 0))
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 4, MotionEvent.ACTION_UP, cx, cy, 0)); idle()
+        assertTrue("chip keeps editing", box.editing); assertEquals(View.VISIBLE, ks.chips!!.visibility)
+        assertEquals(listOf("a", "あ", "web"), Tree.parseTags(ks.tags))
+        val before = entry().tags
+        layoutHost()
+        val consumed = ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 5, MotionEvent.ACTION_DOWN, 20f, 20f, 0)); idle()
+        assertTrue("outside tap consumed", consumed)
+        assertFalse(box.editing); assertFalse(box.field.isFocused)
+        assertFalse(ks.tagsShown); assertEquals(View.GONE, ks.chips!!.visibility)
+        assertEquals(listOf("a", "あ", "web"), Tree.parseTags(ks.tags))
+        assertEquals("no DB write from outside tap", before, entry().tags)
+        idle(); assertEquals("no stale reopen", View.GONE, ks.chips!!.visibility)
+        assertTrue(ks.save()); idle()
+        assertEquals(listOf("a", "あ", "web"), entry().tags)
+        assertEquals(listOf("a", "あ", "web"), Tree.parseTags(openKey().tags))
+    }
+
+    /** Ending Tag edit by Back (pre-IME key event) or Done also collapses chips. */
+    @Test fun tagBackAndDoneCollapseChips() {
+        val ks = openKey(); val box = ks.boxes[Order.F_TAGS]!!
+        box.startEdit(); idle(); assertEquals(View.VISIBLE, ks.chips!!.visibility)
+        val d = a.window.decorView
+        d.dispatchKeyEventPreIme(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK, 0))
+        d.dispatchKeyEventPreIme(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK, 0)); idle()
+        assertFalse(box.editing); assertEquals(View.GONE, ks.chips!!.visibility); assertTrue(a.screen === ks)
+        assertTrue(Dlg.last == null || !Dlg.last!!.isShowing)
+        box.startEdit(); idle(); assertEquals(View.VISIBLE, ks.chips!!.visibility)
+        box.field.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE); idle()
+        assertFalse(box.editing); assertEquals(View.GONE, ks.chips!!.visibility)
+    }
+
     private fun View.findViewWithTagChip(text: String): View? {
         if (this is android.widget.TextView && this.text.toString() == text && isClickable) return this
         if (this is android.view.ViewGroup) for (i in 0 until childCount) getChildAt(i).findViewWithTagChip(text)?.let { return it }

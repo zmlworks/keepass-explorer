@@ -151,6 +151,27 @@ class MainActivity : Activity() {
     /** 0 = immediately when leaving the app, -1 = never. */
     fun autoLockMinutes(): Int = App.prefs(this).getInt("autolock", 5)
 
+    /** True while the current Back DOWN arrived during an inline edit; its UP is swallowed too. */
+    internal var backDownWhileEditing = false
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            val ed = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active?.editing == true
+            when (event.action) {
+                android.view.KeyEvent.ACTION_DOWN -> {
+                    if (event.repeatCount == 0) backDownWhileEditing = ed
+                    if (backDownWhileEditing) return true
+                }
+                android.view.KeyEvent.ACTION_UP -> if (backDownWhileEditing) {
+                    backDownWhileEditing = false
+                    if (!event.isCanceled) io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (Menus.current?.isShowing == true) { Menus.dismiss(); return }

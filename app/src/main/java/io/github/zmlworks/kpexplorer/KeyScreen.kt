@@ -102,8 +102,16 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                     if (!inside && !onChips) {
                         // IME lives in another window — its taps never reach here.
                         commitActiveFieldEdit()
+                        hideTagButtons() // 0.4.6: outside tap always collapses used-tag buttons
                         return true
                     }
+                } else if (tagsShown) {
+                    val ch = chips
+                    val onChips = ch != null && ch.visibility == View.VISIBLE && run {
+                        val c = IntArray(2); ch.getLocationOnScreen(c)
+                        ev.rawX >= c[0] && ev.rawX < c[0] + ch.width && ev.rawY >= c[1] && ev.rawY < c[1] + ch.height
+                    }
+                    if (!onChips) hideTagButtons()
                 }
             }
             return super.dispatchTouchEvent(ev)
@@ -140,7 +148,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private lateinit var bar: Parts.AppBar
     private val body = W.vbox(ctx, 8)
     private val allTags: List<String> = Session.db?.let { Tree.allTags(it) } ?: emptyList()
-    private var chips: android.widget.FrameLayout? = null
+    internal var chips: android.widget.FrameLayout? = null
     lateinit var scroll: ScrollView
         private set
 
@@ -319,6 +327,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     /** Long-press on the Tag field: show the existing-tag buttons (most used first). */
+    fun hideTagButtons() { tagsShown = false; chips?.visibility = View.GONE }
     fun showTagButtons() { tagsShown = true; chips?.visibility = View.VISIBLE; renderChips() }
 
     fun toggleTag(t: String) {
@@ -365,6 +374,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         if (k == Order.F_TAGS) {
             // 0.4.5: no swipe copy for tags; tap or long-press edits and shows used tags
             box.onLongPress = { showTagButtons() }
+            box.onEditEnd = { hideTagButtons() }
             box.onTap = { if (!box.editing) box.startEdit() }
         }
         if (k == Order.F_URL) {

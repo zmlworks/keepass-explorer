@@ -1,6 +1,7 @@
 package io.github.zmlworks.kpexplorer.ui
 
 import android.content.Context
+import android.view.KeyEvent
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.ColorFilter
@@ -325,8 +326,17 @@ object W {
             setOnClickListener(onClick)
         }
 
+    /** EditText that sees Back before the IME (0.4.6): lets an inline edit end on ONE Back. */
+    class BackEditText(ctx: Context) : EditText(ctx) {
+        var onPreImeBack: ((KeyEvent) -> Boolean)? = null
+        override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+            if (keyCode == KeyEvent.KEYCODE_BACK) onPreImeBack?.let { if (it(event)) return true }
+            return super.onKeyPreIme(keyCode, event)
+        }
+    }
+
     fun field(ctx: Context, hint: String = "", multi: Boolean = false, password: Boolean = false): EditText =
-        EditText(ctx).apply {
+        BackEditText(ctx).apply {
             background = Bevel(Style.FIELD)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTextColor(TEXT)
