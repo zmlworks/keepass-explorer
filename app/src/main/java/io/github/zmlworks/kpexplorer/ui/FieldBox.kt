@@ -96,8 +96,16 @@ class FieldBox(
             else -> 11f
         }, table && !plain, labelColor).apply {
         isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
+        // 0.4.5: small labels sit a bit further right (label only; values keep their position)
+        if (plain) setPadding(W.dp(7), 0, 0, 0)
     }
     private var idleFill = rowFill
+    /** Optional action for a LEFT swipe (finger dx<0). When null, both directions use [onSwipe]. */
+    var onSwipeLeft: (() -> Unit)? = null
+    private var rightHintIcon: ImageView? = null
+    /** Glyph revealed (on the right) during a left swipe, e.g. an open-in-browser icon. */
+    fun setLeftSwipeGlyph(d: android.graphics.drawable.Drawable) { rightHintIcon?.setImageDrawable(d) }
+    private fun canSlide(dx: Float) = if (dx < 0) (onSwipeLeft ?: onSwipe) != null else onSwipe != null
     private val frameBg = W.Bevel(if (table || plain) W.Style.NONE else W.Style.FIELD, idleFill)
 
     /** Sliding foreground that holds the field content (not the reveal). */
@@ -127,8 +135,9 @@ class FieldBox(
                 gravity = Gravity.CENTER
                 setPadding(W.dp(16), 0, W.dp(16), 0)
             }
-            row.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.COPY, W.HILITE)) },
-                W.lp(W.dp(24), W.dp(24)))
+            val iv = ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.COPY, W.HILITE)) }
+            row.addView(iv, W.lp(W.dp(24), W.dp(24)))
+            if (!start) rightHintIcon = iv
             return row
         }
         leftHint = hint(true)
@@ -250,7 +259,7 @@ class FieldBox(
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - x0; val dy = e.rawY - y0
                 if (abs(dx) > slop || abs(dy) > slop) handler.removeCallbacks(longPressRunnable)
-                if (!sliding && abs(dx) > slop && abs(dx) > 1.5f * abs(dy)) {
+                if (!sliding && abs(dx) > slop && abs(dx) > 1.5f * abs(dy) && canSlide(dx)) {
                     sliding = true; parent?.requestDisallowInterceptTouchEvent(true)
                     handler.removeCallbacks(longPressRunnable)
                     val c = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }; gd.onTouchEvent(c); c.recycle()
@@ -262,7 +271,10 @@ class FieldBox(
                 if (sliding) {
                     val dx = e.rawX - x0
                     sliding = false
-                    if (e.actionMasked == MotionEvent.ACTION_UP && abs(dx) >= copyThreshold()) { onSwipe?.invoke(); flash() }
+                    if (e.actionMasked == MotionEvent.ACTION_UP && abs(dx) >= copyThreshold()) {
+                        if (dx < 0 && onSwipeLeft != null) onSwipeLeft?.invoke() else if (canSlide(dx)) onSwipe?.invoke()
+                        flash()
+                    }
                     springBack()
                     return true
                 }
@@ -280,7 +292,7 @@ class FieldBox(
     fun slideTo(dx: Float) {
         val lim = copyThreshold()
         // Visual clamp at required distance; raw finger can go further for release check.
-        front.translationX = dx.coerceIn(-lim, lim)
+        front.translationX = if (canSlide(dx)) dx.coerceIn(-lim, lim) else 0f
         frameBg.fill = idleFill
         labelView.setTextColor(labelColor)
         updateHints(front.translationX, abs(dx) >= lim)

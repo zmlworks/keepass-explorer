@@ -34,7 +34,10 @@ object Order {
     /** Field keys of the key screen; custom string fields use their own name. */
     const val F_TITLE = "Title"; const val F_USER = "UserName"; const val F_PASS = "Password"
     const val F_URL = "URL"; const val F_TAGS = "@Tags"; const val F_OTP = "@OTP"; const val F_NOTES = "Notes"
-    val DEFAULT_LAYOUT = listOf(F_TITLE, F_USER, F_PASS, F_URL, F_TAGS, F_OTP, F_NOTES)
+    /** 0.4.5: Tag sits below Memo by default. */
+    val DEFAULT_LAYOUT = listOf(F_TITLE, F_USER, F_PASS, F_URL, F_OTP, F_NOTES, F_TAGS)
+    /** Pre-0.4.5 default; a stored layout exactly equal to it (all visible) is read as the new default. */
+    val OLD_DEFAULT_LAYOUT = listOf(F_TITLE, F_USER, F_PASS, F_URL, F_TAGS, F_OTP, F_NOTES)
     val STANDARD = setOf("Title", "UserName", "Password", "URL", "Notes")
 
     enum class Kind { FOLDER, KEY, MEMO }
@@ -128,6 +131,7 @@ object Order {
     /** (key, visible) for every displayable field, in the stored order; new custom fields are appended. */
     fun layout(e: Entry): List<Pair<String, Boolean>> {
         val stored = e.customData[CD_FIELDS]?.value?.split('\n')?.filter { it.isNotEmpty() }
+            ?.let { if (it == OLD_DEFAULT_LAYOUT) DEFAULT_LAYOUT else it }
         val base = stored?.map { if (it.startsWith("-")) it.substring(1) to false else it to true } ?: DEFAULT_LAYOUT.map { it to true }
         val known = base.map { it.first }.toSet()
         // with a stored layout, a standard field the user deleted stays deleted unless it has content (e.g. edited elsewhere)

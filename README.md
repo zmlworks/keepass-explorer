@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.4)
+# KeePass Explorer (v0.4.5)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,15 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.5 の変更
+
+- 階層表示（フォルダーツリー・移動先ダイアログ）のごみ箱もくずかごアイコンに（ツリーにごみ箱 UUID が渡っていなかったのが原因）
+- 鍵画面の小さいラベル（Title / User など）を少し右へ
+- OTP の残り秒数を括弧なし・小さめの「28s」表示に
+- URL: 左スワイプで毎回確認ののちブラウザで開く（http/https のみ）。右スワイプは従来どおりコピー
+- Tag を既定で Memo の下に（保存済みの並びが旧既定と完全一致する場合のみ新既定として表示、独自の並びはそのまま）。Tag のスワイプコピーを廃止、タップで編集
+- Tag の不具合修正: 入力途中のタグが使用済みタグボタンを押すと消えていた／Tag 編集中に使用済みタグボタンが反応しなかった
 
 ## アプリ 0.4.4 の変更
 

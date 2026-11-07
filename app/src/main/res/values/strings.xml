@@ -150,4 +150,9 @@
     <string name="opening_db">Opening database…</string>
     <string name="wrong_master">Wrong master password.</string>
     <string name="cannot_open_db">Could not open the database.\n%1$s</string>
+    <string name="open_url_title">Open in browser</string>
+    <string name="open_url_msg">Open this address in the browser?\n\n%1$s</string>
+    <string name="open_url_yes">Open</string>
+    <string name="open_url_invalid">Only http:// or https:// addresses can be opened.</string>
+    <string name="open_url_failed">Could not open the browser.</string>
 </resources>

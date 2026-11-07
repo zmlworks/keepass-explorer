@@ -209,7 +209,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         } else {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
-            val tree = FolderTree(ctx, Tree.root(d), g.uuid, null,
+            val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d),
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32)
             folderTree = tree
@@ -965,7 +965,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveToDialog(id: UUID) {
         val d = db()
         var target: UUID? = null
-        val tree = FolderTree(ctx, Tree.root(d), null, null, disabled = setOf(id),
+        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id),
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)

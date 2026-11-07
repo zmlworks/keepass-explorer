@@ -140,4 +140,9 @@
     <string name="opening_db">データベースを開いています…</string>
     <string name="wrong_master">マスターパスワードが違います。</string>
     <string name="cannot_open_db">データベースを開けませんでした。\n%1$s</string>
+    <string name="open_url_title">ブラウザで開く</string>
+    <string name="open_url_msg">このアドレスをブラウザで開きますか?\n\n%1$s</string>
+    <string name="open_url_yes">開く</string>
+    <string name="open_url_invalid">開けるのは http:// または https:// のアドレスだけです。</string>
+    <string name="open_url_failed">ブラウザを開けませんでした。</string>
 </resources>

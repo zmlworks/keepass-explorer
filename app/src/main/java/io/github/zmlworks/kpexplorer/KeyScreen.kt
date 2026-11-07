@@ -26,6 +26,19 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
+/** http/https URL validation for the open-in-browser swipe (no other schemes / intents). */
+object UrlCheck {
+    fun safe(raw: String): String? {
+        val s = raw.trim()
+        if (s.isEmpty() || s.length > 2048 || s.any { it.isWhitespace() || it.code < 0x20 }) return null
+        val u = runCatching { java.net.URI(s) }.getOrNull() ?: return null
+        val scheme = u.scheme?.lowercase() ?: return null
+        if (scheme != "http" && scheme != "https") return null
+        if (u.host.isNullOrEmpty()) return null
+        return s
+    }
+}
+
 /** Shared field labels / formatting for the key screen and the explorer preview pane. */
 object KeyFields {
     val fmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss").withZone(ZoneId.systemDefault())
@@ -44,10 +57,17 @@ object KeyFields {
         fun current(): String? = runCatching { uri()?.let { Totp.code(Totp.parse(it), Instant.now().epochSecond) } }.getOrNull()
         fun update() {
             val u = uri()
-            text = if (u.isNullOrBlank()) "" else runCatching {
+            text = if (u.isNullOrBlank()) "" else runCatching<CharSequence> {
                 val p = Totp.parse(u); val now = Instant.now().epochSecond
                 val c = Totp.code(p, now)
-                "${c.chunked(3).joinToString(" ")} (${Totp.remaining(p, now)}s)"
+                // 0.4.5: "123 456  28s" — countdown smaller, no parentheses; code stays full size/black
+                val code = c.chunked(3).joinToString(" ")
+                val sec = "${Totp.remaining(p, now)}s"
+                android.text.SpannableStringBuilder(code).append("  ").append(sec).apply {
+                    val st = length - sec.length
+                    setSpan(android.text.style.RelativeSizeSpan(0.6f), st, length, 0)
+                    setSpan(android.text.style.ForegroundColorSpan(W.SHADOW), st, length, 0)
+                }
             }.getOrElse { "⚠ 設定が不正です" }
         }
         override fun onAttachedToWindow() { super.onAttachedToWindow(); post(tick) }
@@ -73,7 +93,13 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                     val loc = IntArray(2); box.getLocationOnScreen(loc)
                     val x = ev.rawX; val y = ev.rawY
                     val inside = x >= loc[0] && x < loc[0] + box.width && y >= loc[1] && y < loc[1] + box.height
-                    if (!inside) {
+                    // 0.4.5: tapping a used-tag chip while editing Tag must reach the chip (was swallowed)
+                    val ch = chips
+                    val onChips = ch != null && ch.visibility == View.VISIBLE && ch.width > 0 && run {
+                        val c = IntArray(2); ch.getLocationOnScreen(c)
+                        x >= c[0] && x < c[0] + ch.width && y >= c[1] && y < c[1] + ch.height
+                    }
+                    if (!inside && !onChips) {
                         // IME lives in another window — its taps never reach here.
                         commitActiveFieldEdit()
                         return true
@@ -281,14 +307,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         renderChips()
     }
 
-    private fun tagState(): Pair<List<String>, String> {
-        val s = tags
-        val toks = Tree.parseTags(s)
-        val last = toks.lastOrNull().orEmpty()
-        // still typing a tag (not yet followed by a space and not an existing tag) → filter the chips by it
-        val partial = if (s.isEmpty() || s.last().isWhitespace() || last in allTags) "" else last
-        return (if (partial.isEmpty()) toks else toks.dropLast(1)) to partial
-    }
+    private fun tagState(): Pair<List<String>, String> = io.github.zmlworks.kpexplorer.db.TagEdit.state(tags, allTags)
 
     private fun renderChips() {
         val h = chips ?: return
@@ -303,10 +322,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     fun showTagButtons() { tagsShown = true; chips?.visibility = View.VISIBLE; renderChips() }
 
     fun toggleTag(t: String) {
-        val (have, _) = tagState()
-        val next = if (t in have) have - t else have + t
-        val text = Tree.formatTags(next).let { if (it.isEmpty()) "" else "$it " }
-        editors[Order.F_TAGS]?.let { it.setText(text); it.setSelection(text.length) } ?: run { tags = text; dirty = true }
+        val text = io.github.zmlworks.kpexplorer.db.TagEdit.toggle(tags, allTags, t)
+        editors[Order.F_TAGS]?.let { it.setText(text); if (it.isFocused) it.setSelection(text.length) } ?: run { tags = text; renderChips() }
     }
 
     private fun small(s: String, f: () -> Unit) = W.button(ctx, s) { f() }.apply {
@@ -343,9 +360,18 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         // URL open-in-browser removed (0.4.3); Pass gen removed (0.4.2).
         val trail: View? = null
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(k), f,
-            onSwipe = { copy(copyName(k), f.text.toString(), sensitive) }, icon = glyphFor(k),
+            onSwipe = if (k == Order.F_TAGS) null else ({ copy(copyName(k), f.text.toString(), sensitive) }), icon = glyphFor(k),
             trailing = trail, plain = true)
-        if (k == Order.F_TAGS) box.onLongPress = { showTagButtons() }
+        if (k == Order.F_TAGS) {
+            // 0.4.5: no swipe copy for tags; tap or long-press edits and shows used tags
+            box.onLongPress = { showTagButtons() }
+            box.onTap = { if (!box.editing) box.startEdit() }
+        }
+        if (k == Order.F_URL) {
+            // 0.4.5: LEFT swipe = open in browser (always confirmed); RIGHT swipe = copy
+            box.onSwipeLeft = { confirmOpenUrl(f.text.toString()) }
+            box.setLeftSwipeGlyph(Glyph(Glyph.Kind.OPEN, W.HILITE))
+        }
         if (k == Order.F_PASS) {
             f.typeface = android.graphics.Typeface.MONOSPACE
             io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, !passShown)
@@ -375,6 +401,29 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         body.addView(box, W.lp(W.MATCH, W.WRAP))
         body.addView(View(ctx).apply { setBackgroundColor(W.SHADOW) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
         body.addView(View(ctx).apply { setBackgroundColor(W.HILITE) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
+    }
+
+    /** Last URL actually launched (tests). */
+    var lastOpened: String? = null
+        private set
+
+    /** Confirm dialog showing the target, then ACTION_VIEW for http/https only. */
+    fun confirmOpenUrl(raw: String) {
+        val u = UrlCheck.safe(raw)
+        if (u == null) {
+            Dlg.message(ctx, ctx.getString(R.string.open_url_title), ctx.getString(R.string.open_url_invalid), '!')
+            return
+        }
+        Dlg.confirm(ctx, ctx.getString(R.string.open_url_title), ctx.getString(R.string.open_url_msg, u), '?',
+            yes = ctx.getString(R.string.open_url_yes), no = ctx.getString(R.string.cancel)) {
+            lastOpened = u
+            try {
+                ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(u))
+                    .addCategory(android.content.Intent.CATEGORY_BROWSABLE))
+            } catch (t: Throwable) {
+                Toast.makeText(ctx, ctx.getString(R.string.open_url_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun copy(label: String, s: String, sensitive: Boolean) {

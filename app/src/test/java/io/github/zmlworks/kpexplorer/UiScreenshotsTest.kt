@@ -241,7 +241,7 @@ class UiScreenshotsTest {
         a.show(ks); idle()
         ks.addCustomField("秘密の質問", "初めて飼ったペット: ポチ")
         ks.setOtp("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
-        // compact remaining: "… (Ns)" not "あと N 秒"
+        // compact remaining (0.4.5): "… Ns" small, no parentheses
         val otpTv = ks.boxes["@OTP"]!!.let { b ->
             fun findOtp(v: android.view.View): android.widget.TextView? {
                 if (v is io.github.zmlworks.kpexplorer.KeyFields.OtpView) return v
@@ -250,7 +250,8 @@ class UiScreenshotsTest {
             }
             findOtp(b)!!
         }
-        assertTrue(Regex("""\d{3} \d{3} \(\d+s\)""").containsMatchIn(otpTv.text))
+        assertTrue(Regex("""\d{3} \d{3}  \d+s""").containsMatchIn(otpTv.text))
+        assertFalse(otpTv.text.contains("("))
         assertFalse(otpTv.text.contains("あと"))
         assertTrue(ks.dirty)
         assertTrue(ks.save())

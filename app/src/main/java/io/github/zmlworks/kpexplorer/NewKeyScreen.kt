@@ -106,12 +106,13 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         inputRow(Order.F_USER, "UserName", Glyph(Glyph.Kind.USER), false)
         passRow()
         inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
-        inputRow(Order.F_TAGS, Order.F_TAGS, Glyph(Glyph.Kind.TAG), false, isTags = true)
-        tagPicker()
         inputRow(Order.F_NOTES, "Notes", Glyph(Glyph.Kind.MEMO), true)
         for (name in customs) {
             inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
         }
+        // 0.4.5: Tag below Memo
+        inputRow(Order.F_TAGS, Order.F_TAGS, Glyph(Glyph.Kind.TAG), false, isTags = true)
+        tagPicker()
 
         val add = W.hbox(ctx).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
@@ -267,13 +268,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         renderChips()
     }
 
-    private fun tagState(): Pair<List<String>, String> {
-        val s = tags
-        val toks = Tree.parseTags(s)
-        val last = toks.lastOrNull().orEmpty()
-        val partial = if (s.isEmpty() || s.last().isWhitespace() || last in allTags) "" else last
-        return (if (partial.isEmpty()) toks else toks.dropLast(1)) to partial
-    }
+    private fun tagState(): Pair<List<String>, String> = io.github.zmlworks.kpexplorer.db.TagEdit.state(tags, allTags)
 
     private fun renderChips() {
         val h = chips ?: return
@@ -286,9 +281,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     }
 
     fun toggleTag(t: String) {
-        val (have, _) = tagState()
-        val next = if (t in have) have - t else have + t
-        val text = Tree.formatTags(next).let { if (it.isEmpty()) "" else "$it " }
+        val text = io.github.zmlworks.kpexplorer.db.TagEdit.toggle(tags, allTags, t)
         editors[Order.F_TAGS]?.let { it.setText(text); it.setSelection(text.length) } ?: run { tags = text; renderChips() }
     }
 

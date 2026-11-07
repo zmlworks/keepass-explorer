@@ -77,6 +77,9 @@ class FolderTree(
     }
 
     @SuppressLint("ViewConstructor")
+    /** Icon bitmap used for the row of [id] (tests). */
+    fun iconFor(id: UUID): android.graphics.Bitmap? = (rows.firstOrNull { it.tag == id } as? Row)?.icon
+
     /** Tap the node of [id] (tests). */
     fun tap(id: UUID) { rows.firstOrNull { it.tag == id }?.let { (it as Row).tapLabel() } }
     /** Tap the +/− box of [id] (tests). */
