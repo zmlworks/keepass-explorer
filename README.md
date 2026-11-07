@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.6)
+# KeePass Explorer (v0.4.7)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,13 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.7 の変更
+- Tag はワンタップでは編集に入らない（長押し約 0.32 秒で編集。0.4.6 での退行を修正）。
+- 編集状態をフォーカスやキーボード表示と切り離した。フォーカスが外れただけでは編集は終わらない。キーボードが閉じて編集が終わった直後に、同じ押下の戻るが届いても画面は閉じない（押下時刻で判定。タイムアウトではない）。
+- マニフェストで `enableOnBackInvokedCallback="false"` を明示し、戻るを常にキーイベントとして受け取る。
+- 診断用に「バージョン情報 → 戻る操作ログ」を追加。戻る・キーボード・編集開始/終了のイベント名と時刻だけを端末内メモリに記録する（入力内容・項目名・タグは記録しない。保存も送信もしない）。
+- バージョン情報の表示バージョンを修正。AI エージェントによる作成・テスト（実機検証は未実施）。
 
 ## アプリ 0.4.6 の変更
 - 鍵の値を入力中に OS の戻る（ボタン／ジェスチャー）を 1 回押すと、入力を終えて下書きに残し、キーボードを閉じて鍵画面に留まる（保存確認は出ない）。2 回目の戻るで通常の未保存確認。戻るは IME より先に入力欄で受け取り、同じ押下の DOWN/UP を対で処理する。

@@ -372,10 +372,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             onSwipe = if (k == Order.F_TAGS) null else ({ copy(copyName(k), f.text.toString(), sensitive) }), icon = glyphFor(k),
             trailing = trail, plain = true)
         if (k == Order.F_TAGS) {
-            // 0.4.5: no swipe copy for tags; tap or long-press edits and shows used tags
+            // 0.4.5: no swipe copy for tags; long-press edits and shows used tags
             box.onLongPress = { showTagButtons() }
             box.onEditEnd = { hideTagButtons() }
-            box.onTap = { if (!box.editing) box.startEdit() }
+            // 0.4.7: single tap does nothing; only the ~320ms long press edits (restored)
         }
         if (k == Order.F_URL) {
             // 0.4.5: LEFT swipe = open in browser (always confirmed); RIGHT swipe = copy
@@ -634,7 +634,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /** Keyboard closed by the system (IME consumed Back): end inline edit into the draft, stay here. */
     override fun onImeHidden() {
         val b = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
-        if (b != null && b.editing) io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+        if (b != null && b.editing) {
+            io.github.zmlworks.kpexplorer.ui.FieldEditSession.implicitEndAt = android.os.SystemClock.uptimeMillis()
+            io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+        }
     }
 
     override fun onBack(): Boolean {

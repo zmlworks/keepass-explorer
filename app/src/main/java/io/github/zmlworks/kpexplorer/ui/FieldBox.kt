@@ -29,9 +29,30 @@ object Stars : PasswordTransformationMethod() {
  * At most one [FieldBox] is in inline edit. Outside [ACTION_DOWN] commits via [commitActive]
  * (draft-only unless host sets onCommitted). IME window taps do not reach the host view tree.
  */
+/**
+ * 0.4.7: privacy-safe ring buffer of Back/edit event NAMES only (no field names, values or tags).
+ * Shown in バージョン情報 so a real-device ordering can be read without a debugger.
+ */
+object BackTrace {
+    private val buf = ArrayDeque<String>()
+    fun log(ev: String) {
+        val t = android.os.SystemClock.uptimeMillis() % 100000
+        synchronized(buf) { buf.addLast("$t $ev"); while (buf.size > 40) buf.removeFirst() }
+    }
+    fun dump(): String = synchronized(buf) { buf.joinToString("\n") }
+    fun clear() = synchronized(buf) { buf.clear() }
+}
+
 object FieldEditSession {
     var active: FieldBox? = null
         private set
+    /**
+     * Uptime at which an edit was ended IMPLICITLY (keyboard hidden). A Back whose KeyEvent.downTime is
+     * not later than this belongs to the same physical press that hid the keyboard and must not navigate.
+     * No timeout: compared against the press's own timestamp, and cleared by the next Back DOWN.
+     */
+    var implicitEndAt = 0L
+    val editing: Boolean get() = active?.editing == true
     /** Invoked after a successful commit (text already live in host maps). */
     var onCommitted: (() -> Unit)? = null
     fun begin(box: FieldBox) {
@@ -133,9 +154,10 @@ class FieldBox(
     init {
         (field as? W.BackEditText)?.onPreImeBack = { e ->
             when (e.action) {
-                android.view.KeyEvent.ACTION_DOWN -> { if (e.repeatCount == 0) preImeBackDown = editing; preImeBackDown }
+                android.view.KeyEvent.ACTION_DOWN -> { if (e.repeatCount == 0) preImeBackDown = editing; BackTrace.log("preIme DOWN ed=$editing"); preImeBackDown }
                 android.view.KeyEvent.ACTION_UP -> {
                     val mine = preImeBackDown; preImeBackDown = false
+                    BackTrace.log("preIme UP mine=$mine")
                     if (mine && !e.isCanceled) FieldEditSession.commitActive()
                     mine
                 }
@@ -186,7 +208,9 @@ class FieldBox(
         field.background = null
         field.setPadding(0, W.dp(1), 0, W.dp(1))
         setEditable(false)
-        field.setOnFocusChangeListener { _, has -> if (!has && editing) endEdit(commit = true) }
+        // 0.4.7: focus loss no longer ends the edit — editing is explicit (Back, Done, outside tap,
+        // another field, 戻る/×). Silent focus-loss finalization made the next Back navigate.
+        field.setOnFocusChangeListener { _, has -> if (!has && editing) BackTrace.log("focusLost(editing)") }
         field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { FieldEditSession.commitActive(); true } else false }
         field.imeOptions = field.imeOptions or EditorInfo.IME_ACTION_DONE
         updateHints(0f, false)
@@ -205,6 +229,7 @@ class FieldBox(
     fun startEdit() {
         if (view != null) { onLongPress?.invoke(); return }
         FieldEditSession.begin(this)
+        BackTrace.log("editStart")
         editing = true; setEditable(true)
         frameBg.fill = if (table || plain) EDIT_FILL else W.WINDOW; front.invalidate()
         onLongPress?.invoke()
@@ -218,6 +243,7 @@ class FieldBox(
      */
     fun endEdit(commit: Boolean = true) {
         if (!editing) return
+        BackTrace.log("editEnd")
         editing = false
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
         field.clearFocus(); setEditable(false)

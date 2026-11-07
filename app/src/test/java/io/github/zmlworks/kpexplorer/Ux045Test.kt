@@ -224,7 +224,7 @@ class Ux045Test {
     @Test fun existingKeySingleCharTagsEditSaveReopen() {
         val ks = openKey()
         val box = ks.boxes[Order.F_TAGS]!!
-        box.onTap!!.invoke()           // tap starts edit
+        box.startEdit()               // (long press path; tap no longer edits — 0.4.7)
         assertTrue(box.editing)
         box.field.setText("仕事 a あ web ")
         layoutHost()
@@ -276,7 +276,17 @@ class Ux045Test {
         val tx = loc0[0] + box.width / 2f; val ty = loc0[1] + box.height / 2f
         ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 1, MotionEvent.ACTION_DOWN, tx, ty, 0))
         ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 2, MotionEvent.ACTION_UP, tx, ty, 0)); idle()
-        assertTrue("tap starts tag edit", box.editing)
+        assertFalse("single tap must NOT edit (0.4.7)", box.editing); assertFalse(ks.tagsShown)
+        ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertFalse(box.editing)
+        val t0 = android.os.SystemClock.uptimeMillis()
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t0, t0, MotionEvent.ACTION_DOWN, tx, ty, 0))
+        ShadowLooper.idleMainLooper(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertFalse("not before ~320ms", box.editing)
+        ShadowLooper.idleMainLooper(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertTrue("long press edits", box.editing)
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t0, t0 + 420, MotionEvent.ACTION_UP, tx, ty, 0)); idle()
+        assertTrue(box.editing)
         assertTrue(ks.tagsShown); assertEquals(View.VISIBLE, ks.chips!!.visibility)
         box.field.setText("a あ "); layoutHost()
         val chip = ks.view.findViewWithTagChip("web")!!

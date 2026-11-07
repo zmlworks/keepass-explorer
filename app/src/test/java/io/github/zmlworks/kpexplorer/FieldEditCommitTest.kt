@@ -301,7 +301,9 @@ class FieldEditCommitTest {
     /** Second, distinct Back through the full Activity path must give the normal unsaved prompt. */
     private fun secondBackPrompts(a: MainActivity, ks: KeyScreen) {
         val d = a.window.decorView
-        d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN, 10)); d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP, 10)); idle()
+        ShadowLooper.idleMainLooper(5, TimeUnit.MILLISECONDS)
+        val t = android.os.SystemClock.uptimeMillis()   // a real later press has a later downTime
+        d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN, t)); d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP, t)); idle()
         assertTrue("prompt on 2nd back", Dlg.last != null && Dlg.last!!.isShowing)
         assertTrue(a.screen === ks); assertEquals("u", dbUser())
     }
@@ -362,5 +364,67 @@ class FieldEditCommitTest {
         val up = android.view.KeyEvent.changeFlags(key(android.view.KeyEvent.ACTION_UP), android.view.KeyEvent.FLAG_CANCELED)
         assertTrue(a.dispatchKeyEvent(up)); idle()
         assertTrue(box.editing); assertFalse(a.backDownWhileEditing); assertTrue(a.screen === ks)
+    }
+
+    // ---- 0.4.7: OS-level Back paths ----
+    /** Invoke the window's top OnBackInvokedCallback exactly as the system does for a Back gesture/button
+     *  on API 33+ (legacy apps get ViewRootImpl's compat callback, which injects KEYCODE_BACK DOWN/UP
+     *  through every input stage incl. pre-IME). Returns the callback class name used. */
+    private fun systemBack(a: MainActivity): String {
+        val vri = a.window.decorView.javaClass.getMethod("getViewRootImpl").invoke(a.window.decorView)!!
+        val disp = vri.javaClass.getMethod("getOnBackInvokedDispatcher").invoke(vri)!!
+        val top = disp.javaClass.getDeclaredMethod("getTopCallback").apply { isAccessible = true }.invoke(disp)
+            as android.window.OnBackInvokedCallback
+        top.onBackInvoked(); idle()
+        return top.javaClass.name
+    }
+
+    @Test fun manifestKeepsLegacyBackRouting() {
+        val ai = app().packageManager.getApplicationInfo(app().packageName, 0)
+        val f = ai.javaClass.getMethod("isOnBackInvokedCallbackEnabled").invoke(ai) as Boolean
+        assertFalse("enableOnBackInvokedCallback must be false so Back arrives as KeyEvents", f)
+        assertEquals(35, ai.targetSdkVersion)
+    }
+
+    @Test fun systemBackCallback_firstEndsEdit_secondPrompts() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        a.window.decorView.requestFocus(); box.startEdit(); box.field.setText("s1"); idle()
+        val cb = systemBack(a)
+        println("system back callback = $cb\n" + io.github.zmlworks.kpexplorer.ui.BackTrace.dump())
+        assertFalse("callback=$cb", box.editing); assertTrue(a.screen === ks)
+        assertTrue("no prompt; trace=\n${io.github.zmlworks.kpexplorer.ui.BackTrace.dump()}", Dlg.last == null || !Dlg.last!!.isShowing)
+        assertEquals("s1", ks.values["UserName"]); assertEquals("u", dbUser())
+        systemBack(a)
+        assertTrue("2nd system back prompts; trace=\n${io.github.zmlworks.kpexplorer.ui.BackTrace.dump()}", Dlg.last != null && Dlg.last!!.isShowing)
+        assertEquals("u", dbUser())
+    }
+
+    /** Keyboard hidden (insets) BEFORE the same press's Back reaches the app: downTime precedes the hide. */
+    @Test fun imeHiddenBeforeSamePressBack_doesNotNavigate_distinctBackPrompts() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("r1"); idle()
+        val press = android.os.SystemClock.uptimeMillis()
+        ShadowLooper.idleMainLooper(5, TimeUnit.MILLISECONDS)
+        ks.onImeHidden()                     // insets callback wins the race
+        assertFalse(box.editing)
+        val d = a.window.decorView
+        d.dispatchKeyEvent(android.view.KeyEvent(press, press, 0, android.view.KeyEvent.KEYCODE_BACK, 0))
+        d.dispatchKeyEvent(android.view.KeyEvent(press, press + 40, 1, android.view.KeyEvent.KEYCODE_BACK, 0)); idle()
+        assertStayedDraft(a, ks, box, "r1")
+        ShadowLooper.idleMainLooper(5, TimeUnit.MILLISECONDS)
+        val p2 = android.os.SystemClock.uptimeMillis()
+        d.dispatchKeyEvent(android.view.KeyEvent(p2, p2, 0, android.view.KeyEvent.KEYCODE_BACK, 0))
+        d.dispatchKeyEvent(android.view.KeyEvent(p2, p2, 1, android.view.KeyEvent.KEYCODE_BACK, 0)); idle()
+        assertTrue("distinct back prompts", Dlg.last != null && Dlg.last!!.isShowing)
+    }
+
+    /** Focus loss alone (e.g. a view rebuild) must not silently end the edit. */
+    @Test fun focusLossKeepsEditing_thenBackEnds() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("f1"); box.field.clearFocus(); idle()
+        assertTrue(box.editing)
+        val d = a.window.decorView
+        d.dispatchKeyEvent(key(0, 1)); d.dispatchKeyEvent(key(1, 1)); idle()
+        assertStayedDraft(a, ks, box, "f1")
     }
 }

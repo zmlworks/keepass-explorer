@@ -9,7 +9,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.3.12"
+    const val VERSION = "0.4.7"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)
@@ -25,6 +25,19 @@ object Help {
             "© 2026 zmlworks — MIT License\nKDBX: kotpass (MIT) ほか。詳しくは「ライセンス」を参照。", 14f).apply { setLineSpacing(0f, 1.15f) })
         ClassicDialog(a, "バージョン情報", col, listOf(
             ClassicDialog.Btn("ライセンス...") { licenses(a); false },
+            ClassicDialog.Btn("戻る操作ログ") { backLog(a); false },
+            ClassicDialog.Btn("OK", true))).show()
+    }
+
+    /** 0.4.7 diagnostic: Back/keyboard/edit event names + times only. Never field names or contents. */
+    fun backLog(a: MainActivity) {
+        val log = io.github.zmlworks.kpexplorer.ui.BackTrace.dump().ifEmpty { "(記録なし)" }
+        val tv = W.text(a, "鍵の編集中に OS の戻るを押した時の順序（イベント名と時刻のみ。入力内容は含みません）\n\n$log", 12f)
+        tv.setTextIsSelectable(true); tv.typeface = Typeface.MONOSPACE
+        ClassicDialog(a, "戻る操作ログ", tv, listOf(
+            ClassicDialog.Btn("コピー") {
+                (a.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("back-log", log)); true },
             ClassicDialog.Btn("OK", true))).show()
     }
 
