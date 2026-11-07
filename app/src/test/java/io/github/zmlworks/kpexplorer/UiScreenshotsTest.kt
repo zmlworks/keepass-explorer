@@ -558,7 +558,7 @@ class UiScreenshotsTest {
         a.showExplorer(); a.explorer!!.navigate(ids["メール"]!!); idle()
         val node = a.explorer!!.rows.first { it.uuid == ids["Gmail"] }
         a.explorer!!.selection = null
-        assertTrue(a.explorer!!.bmpFor(node, true).sameAs(io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(a, "wifi", 32)))
+        assertTrue(a.explorer!!.bmpFor(node, true).sameAs(io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(a, "wifi", 32)))
         a.show(ks); idle()
         ks.dirty = false; a.showExplorer(); idle()
         val before = Session.db!!.content.deletedObjects.size
@@ -693,7 +693,7 @@ class UiScreenshotsTest {
         dump(io.github.zmlworks.kpexplorer.ui.Ico.notepad32, "memo-notepad32.png")
         dump(io.github.zmlworks.kpexplorer.ui.Ico.notepad16, "memo-notepad16.png")
         dump(io.github.zmlworks.kpexplorer.ui.Ico.newMemo16, "memo-newMemo16.png")
-        val note = io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(app(), "note", 48)
+        val note = io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(app(), "note", 48)
         dump(note, "selectable-note-material.png")
         assertTrue(note.width == 48)
     }

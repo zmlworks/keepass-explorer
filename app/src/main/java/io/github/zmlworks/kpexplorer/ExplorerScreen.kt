@@ -299,10 +299,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val sz = if (large) 32 else 16
         val b = when {
             isRecycleBinFolder(r) -> if (large) Px.bin32 else Px.bin16
-            ic != null -> io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(ctx, ic, sz)
+            ic != null -> io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(ctx, ic, sz)
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
             r.kind == Order.Kind.MEMO -> if (large) Ico.notepad32 else Ico.notepad16
-            else -> io.github.zmlworks.kpexplorer.ui.MaterialIcons.bitmap(ctx, "key", sz)
+            else -> io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(ctx, "key", sz)
         }
         return when {
             r.uuid == selection -> Px.selected(b)
@@ -339,7 +339,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     private fun unselected(r: Order.Node): Bitmap = when {
-        isBin(r) -> Px.bin32; r.kind == Order.Kind.FOLDER -> Px.folder32; r.kind == Order.Kind.MEMO -> Ico.notepad32; else -> Ico.bigKey32
+        isBin(r) -> Px.bin32; r.kind == Order.Kind.FOLDER -> Px.folder32; r.kind == Order.Kind.MEMO -> Ico.notepad32
+        else -> io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(ctx, (r as? Order.Node.E)?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }, 32)
     }
 
     private fun keyPreview(e: Entry) {

@@ -12,34 +12,58 @@ import io.github.zmlworks.kpexplorer.R
 import io.github.zmlworks.kpexplorer.db.EntryIcon
 
 /**
- * Entry icons: Google Material Symbols Outlined (Apache-2.0, navy).
- * Independent memo items (Order.Kind.MEMO) use [Ico.notepad32], not these.
+ * 0.4.9 entry icons: Fugue Icons 3.5.6 (16px) by Yusuke Kamiyamane, CC BY 3.0
+ * (https://p.yusukekamiyamane.com/). Original colours; enlarged only by integer nearest-neighbour
+ * scaling at draw time (no pixels edited). Independent memos use [Ico.notepad32] (own art), folders Px.folder.
  */
-object MaterialIcons {
+object FugueIcons {
     private val cache = HashMap<String, Bitmap>()
+    private val src = HashMap<String, Bitmap>()
 
     fun resId(id: String?): Int = when (id) {
-        "mail" -> R.drawable.ms_mail
-        "web" -> R.drawable.ms_web
-        "wifi" -> R.drawable.ms_wifi
-        "food" -> R.drawable.ms_food
-        "user" -> R.drawable.ms_user
-        "card" -> R.drawable.ms_card
-        "bank" -> R.drawable.ms_bank
-        "cart" -> R.drawable.ms_cart
-        "game" -> R.drawable.ms_game
-        "phone" -> R.drawable.ms_phone
-        "lock" -> R.drawable.ms_lock
-        "home" -> R.drawable.ms_home
-        "star" -> R.drawable.ms_star
-        "note" -> R.drawable.ms_note
-        else -> R.drawable.ms_key
+        "mail" -> R.drawable.fugue_mail
+        "web" -> R.drawable.fugue_web
+        "wifi" -> R.drawable.fugue_wifi
+        "food" -> R.drawable.fugue_food
+        "user" -> R.drawable.fugue_user
+        "card" -> R.drawable.fugue_card
+        "bank" -> R.drawable.fugue_bank
+        "cart" -> R.drawable.fugue_cart
+        "game" -> R.drawable.fugue_game
+        "phone" -> R.drawable.fugue_phone
+        "lock" -> R.drawable.fugue_lock
+        "home" -> R.drawable.fugue_home
+        "star" -> R.drawable.fugue_star
+        "note" -> R.drawable.fugue_note
+        else -> R.drawable.fugue_key
     }
 
     fun resId(def: EntryIcon.Def?): Int = resId(def?.id)
 
-    fun drawable(ctx: Context, id: String?): Drawable =
-        ctx.getDrawable(resId(id))!!.mutate()
+    /** The untouched 16×16 Fugue bitmap. */
+    fun source(ctx: Context, id: String?): Bitmap = src.getOrPut(id ?: "key") {
+        val o = android.graphics.BitmapFactory.Options().apply { inScaled = false }
+        android.graphics.BitmapFactory.decodeResource(ctx.resources, resId(id), o)
+    }
+
+    /** Drawable that paints the 16px art at the largest integer scale fitting its bounds (crisp pixels). */
+    private class Crisp(val b: Bitmap) : Drawable() {
+        private val paint = android.graphics.Paint().apply { isFilterBitmap = false; isAntiAlias = false }
+        override fun draw(c: Canvas) {
+            val r = bounds; val k = maxOf(1, minOf(r.width() / b.width, r.height() / b.height))
+            val w = b.width * k; val h = b.height * k
+            val l = r.left + (r.width() - w) / 2; val t = r.top + (r.height() - h) / 2
+            c.drawBitmap(b, null, android.graphics.Rect(l, t, l + w, t + h), paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+        override fun getIntrinsicWidth() = b.width * 4
+        override fun getIntrinsicHeight() = b.height * 4
+    }
+
+    fun drawable(ctx: Context, id: String?): Drawable = Crisp(source(ctx, id))
 
     fun drawable(ctx: Context, def: EntryIcon.Def?): Drawable = drawable(ctx, def?.id)
 
@@ -56,7 +80,7 @@ object MaterialIcons {
 
     fun bitmap(ctx: Context, def: EntryIcon.Def?, size: Int): Bitmap = bitmap(ctx, def?.id, size)
 
-    fun clearCache() { cache.clear() }
+    fun clearCache() { cache.clear(); src.clear() }
 
     /**
      * Icon chooser grid: large nearly-square tiles, glyphs only (no visible names).

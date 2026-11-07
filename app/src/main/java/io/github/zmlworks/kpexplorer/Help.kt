@@ -9,7 +9,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.4.8"
+    const val VERSION = "0.4.9"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)
@@ -22,7 +22,7 @@ object Help {
         col.addView(head)
         col.addView(W.hsep(a), W.lp(W.MATCH, 4 * W.px, t = 10, b = 10))
         col.addView(W.text(a, "KeePass (KDBX) 形式のパスワード／メモ帳。\nデータはこの端末の中だけに保存され、通信は一切しません。\n\n" +
-            "© 2026 zmlworks — MIT License\nKDBX: kotpass (MIT) ほか。詳しくは「ライセンス」を参照。", 14f).apply { setLineSpacing(0f, 1.15f) })
+            "© 2026 zmlworks — MIT License\nKDBX: kotpass (MIT) ほか。\nSome icons by Yusuke Kamiyamane. Licensed under a Creative Commons Attribution 3.0 License.\n詳しくは「ライセンス」を参照。", 14f).apply { setLineSpacing(0f, 1.15f) })
         ClassicDialog(a, "バージョン情報", col, listOf(
             ClassicDialog.Btn("ライセンス...") { licenses(a); false },
             ClassicDialog.Btn("戻る操作ログ") { backLog(a); false },

@@ -39,10 +39,15 @@ password manager by Dominik Reichl; this is an independent app that reads and wr
 Modifications to vendored kotpass (KeePass Explorer 0.3.3): BaseKdfProvider made public; added `keepKdfSalt` option to encoding to keep KDF salt/parameters.
 
 
-## Material Symbols (entry icons) — Apache License 2.0
+## Fugue Icons (entry icons) — CC BY 3.0
 
-Subset of [Material Symbols Outlined](https://github.com/google/material-design-icons) (© Google LLC):
-`key`, `mail`, `public`, `wifi`, `restaurant`, `person`, `credit_card`, `account_balance`,
-`shopping_cart`, `sports_esports`, `smartphone`, `lock`, `home`, `star`, `sticky_note_2`.
-Bundled as `app/src/main/res/drawable/ms_*.xml`, tinted navy (`#000080`).
-Full license: [`LICENSES/MaterialSymbols-Apache-2.0.txt`](LICENSES/MaterialSymbols-Apache-2.0.txt).
+Some icons by Yusuke Kamiyamane. Licensed under a [Creative Commons Attribution 3.0 License](https://creativecommons.org/licenses/by/3.0/).
+Source: [Fugue Icons 3.5.6](https://p.yusukekamiyamane.com/) (© 2013 Yusuke Kamiyamane), official archive `fugue-icons-3.5.6.zip`.
+16px icons used: `key`, `mail`, `globe`, `wi-fi`, `plate-cutlery`, `user`, `credit-card`, `bank`, `shopping-basket`, `controller`, `mobile-phone`, `lock`, `home`, `star`, `document-text`.
+Bundled as `app/src/main/res/drawable-nodpi/fugue_<id>.png` (renamed only; pixels/colours unchanged).
+Modification: shown enlarged by integer nearest-neighbour scaling. See [`LICENSES/Fugue-Icons-CC-BY-3.0.txt`](LICENSES/Fugue-Icons-CC-BY-3.0.txt).
+
+## Memo / folder / recycle-bin artwork
+
+Original pixel art by this project (MIT). The memo icon is inspired by the classic notepad motif
+(ruled sheets, top binding, translucent cover); it is not derived from any Microsoft asset.

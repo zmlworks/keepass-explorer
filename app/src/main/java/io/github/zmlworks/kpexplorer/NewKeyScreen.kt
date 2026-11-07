@@ -90,7 +90,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             isClickable = true; setOnClickListener { pickIcon() }
         }
         tile.addView(ImageView(ctx).apply {
-            setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, iconId))
+            setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, iconId))
         }, android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
         iconTile = tile
         head.addView(tile, W.lp(W.dp(84), W.dp(84), r = 10, t = 4))
@@ -139,7 +139,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true
             contentDescription = "作成"; setOnClickListener { create() }
         }
-        sv.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, "key")) }, W.lp(W.dp(24), W.dp(24), r = 8))
+        sv.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, "key")) }, W.lp(W.dp(24), W.dp(24), r = 8))
         sv.addView(W.text(ctx, "作成", 17f, true), W.lp(W.WRAP, W.WRAP))
         foot.addView(sv, W.lp(0, W.dp(56), 1f, l = 6))
         return foot
@@ -287,7 +287,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
     fun pickIcon(): ClassicDialog {
         lateinit var dlg: ClassicDialog
-        val grid = io.github.zmlworks.kpexplorer.ui.MaterialIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
+        val grid = io.github.zmlworks.kpexplorer.ui.FugueIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
         dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
         dlg.show()
         return dlg

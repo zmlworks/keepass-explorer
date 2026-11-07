@@ -232,7 +232,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             })
             setOnTouchListener { _, e -> gd.onTouchEvent(e); true }
         }
-        tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.MaterialIcons.drawable(ctx, iconId)) },
+        tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, iconId)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
         iconTile = tile
         band.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
@@ -293,7 +293,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /** Icon picker: large nearly-square tiles, glyphs only (names via contentDescription). */
     fun pickIcon(): ClassicDialog {
         lateinit var dlg: ClassicDialog
-        val grid = io.github.zmlworks.kpexplorer.ui.MaterialIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
+        val grid = io.github.zmlworks.kpexplorer.ui.FugueIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
         dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
         dlg.show()
         return dlg

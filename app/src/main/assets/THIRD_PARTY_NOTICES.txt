@@ -291,15 +291,12 @@ SOFTWARE.
    limitations under the License.
 
 
---- Material Symbols (Apache-2.0) ---
-Material Symbols (subset) from https://github.com/google/material-design-icons
-Copyright Google LLC. Licensed under the Apache License, Version 2.0.
-Icons used (Outlined): key, mail, public, wifi, restaurant, person, credit_card,
-account_balance, shopping_cart, sports_esports, smartphone, lock, home, star, sticky_note_2.
-Tinted navy (#000080) for this app.
-
-
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apa
-...(see LICENSES/MaterialSymbols-Apache-2.0.txt)
+--- Fugue Icons (CC BY 3.0) ---
+Some icons by Yusuke Kamiyamane. Licensed under a Creative Commons Attribution 3.0 License.
+Fugue Icons 3.5.6, (C) 2013 Yusuke Kamiyamane. https://p.yusukekamiyamane.com/
+License: https://creativecommons.org/licenses/by/3.0/
+Icons used (16px, icons/): key, mail, globe, wi-fi, plate-cutlery, user, credit-card, bank, shopping-basket, controller, mobile-phone, lock, home, star, document-text.
+Bundled as res/drawable-nodpi/fugue_<id>.png, renamed only; pixels and colours unchanged.
+Modification: enlarged on screen by integer nearest-neighbour scaling.
+None of the separately licensed icons listed in the Fugue README (geotag, language, open-share,
+opml, share, xfn) are used.

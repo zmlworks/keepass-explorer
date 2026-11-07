@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.8)
+# KeePass Explorer (v0.4.9)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,13 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.9 の変更
+- 選べる 15 種の鍵アイコンを Fugue Icons（Yusuke Kamiyamane, CC BY 3.0）の 16px 原画に変更。色はそのまま、拡大は整数倍の最近傍補間のみ。保存される ID（key, mail, web …）は変わらないので既存の鍵もそのまま表示される。選択式の「メモ」は文書アイコン（document-text）にして、独立メモと見分けやすくした。
+- 独立メモのアイコンを描き直した（自作ピクセルアート）。罫線入りの白い紙、上部のリング、斜めに浮き上がった半透明の青いカバー。クラシックなメモ帳の意匠を参考にしたもので、Microsoft のアイコンを使ったものではない。
+- フォルダ・メモ・ごみ箱は濃い輪郭線の 32px 自作絵のまま。Fugue（輪郭線のない柔らかい陰影の 16px）とは、見た目でなんとなく区別がつく。
+- Some icons by Yusuke Kamiyamane. Licensed under a Creative Commons Attribution 3.0 License. 詳細は THIRD_PARTY_NOTICES.md。
+- AI エージェントが作成・テストした（実機での確認はまだ）。
 
 ## アプリ 0.4.8 の変更
 - ジェスチャーナビの「戻る」で鍵画面が閉じる問題の修正。端の戻るスワイプは、まずアプリにタッチ開始（DOWN）が届き、その後キャンセルされてから戻るキーが届く。従来は DOWN の時点で「欄外タップ」として編集を終えていたため、続く戻るが通常の戻る（保存確認・画面を閉じる）になっていた。欄外タップの確定を指を離した時（UP）に変え、キャンセル時は編集を続ける。これで 1 回目の戻るは編集終了（下書き保持・画面に留まる）、2 回目で通常の未保存確認。
