@@ -59,6 +59,7 @@ object FieldEditSession {
         if (active === box) return
         val prev = active
         if (prev != null && prev.editing) {
+            BackTrace.log("end by begin(other)")
             prev.endEdit(commit = true)
             active = null
             onCommitted?.invoke()
@@ -211,7 +212,7 @@ class FieldBox(
         // 0.4.7: focus loss no longer ends the edit — editing is explicit (Back, Done, outside tap,
         // another field, 戻る/×). Silent focus-loss finalization made the next Back navigate.
         field.setOnFocusChangeListener { _, has -> if (!has && editing) BackTrace.log("focusLost(editing)") }
-        field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { FieldEditSession.commitActive(); true } else false }
+        field.setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_DONE) { BackTrace.log("end by imeDone"); FieldEditSession.commitActive(); true } else false }
         field.imeOptions = field.imeOptions or EditorInfo.IME_ACTION_DONE
         updateHints(0f, false)
     }
@@ -289,6 +290,7 @@ class FieldBox(
         if (e.actionMasked == MotionEvent.ACTION_DOWN) {
             val other = FieldEditSession.active
             if (other != null && other !== this && other.editing) {
+                BackTrace.log("end by otherField DOWN")
                 FieldEditSession.commitActive()
             }
         }

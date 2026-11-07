@@ -111,7 +111,7 @@ class FieldEditCommitTest {
         val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
         val beforeUser = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
         // Dispatch on KeyScreen root (not activity host padding) so outside-tap interceptor runs.
-        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
+        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f)); ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 20f, 20f))
         idle()
         assertFalse(box.editing)
         assertEquals("new-user", ks.values["UserName"])
@@ -167,7 +167,7 @@ class FieldEditCommitTest {
         val box = ks.boxes["UserName"]!!
         box.startEdit()
         val histBefore = Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size
-        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f))
+        ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 20f, 20f)); ks.view.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 20f, 20f))
         idle()
         assertEquals(histBefore, Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second.history.size)
         assertFalse(ks.dirty)
@@ -426,5 +426,54 @@ class FieldEditCommitTest {
         val d = a.window.decorView
         d.dispatchKeyEvent(key(0, 1)); d.dispatchKeyEvent(key(1, 1)); idle()
         assertStayedDraft(a, ks, box, "f1")
+    }
+
+    // ---- 0.4.8: reproduce the real-device order (synthetic timings only) ----
+    /** Gesture back: system delivers edge DOWN then CANCEL to the app, then a synthesized Back DOWN/UP with
+     *  identical times ~40ms later. Before 0.4.8 the DOWN committed the edit → Back saw ed=false → prompt. */
+    private fun gestureBack(a: MainActivity, ks: KeyScreen) {
+        val t = android.os.SystemClock.uptimeMillis()
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 2f, 1500f, 0))
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t, t + 30, MotionEvent.ACTION_MOVE, 60f, 1500f, 0))
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t, t + 40, MotionEvent.ACTION_CANCEL, 90f, 1500f, 0))
+        ShadowLooper.idleMainLooper(40, TimeUnit.MILLISECONDS)
+        val k = android.os.SystemClock.uptimeMillis()
+        val d = a.window.decorView
+        d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN, k)); d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP, k)); idle()
+    }
+
+    @Test fun gestureBack_realDeviceOrder_firstEndsEdit_secondPrompts() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("g1"); idle()
+        val t = android.os.SystemClock.uptimeMillis()
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 2f, 1500f, 0))
+        assertTrue("edge DOWN alone must not end the edit", box.editing)
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(t, t + 40, MotionEvent.ACTION_CANCEL, 90f, 1500f, 0))
+        assertTrue("CANCEL (pilfered by gesture) keeps editing", box.editing)
+        ShadowLooper.idleMainLooper(40, TimeUnit.MILLISECONDS)
+        val k = android.os.SystemClock.uptimeMillis(); val d = a.window.decorView
+        d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_DOWN, k)); d.dispatchKeyEvent(key(android.view.KeyEvent.ACTION_UP, k)); idle()
+        assertStayedDraft(a, ks, box, "g1")
+        gestureBack(a, ks)
+        assertTrue("2nd gesture back prompts", Dlg.last != null && Dlg.last!!.isShowing)
+        assertEquals("u", dbUser())
+    }
+
+    @Test fun gestureBack_repeatedPairs_neverLoseDraft() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        for (i in 1..3) {
+            box.startEdit(); box.field.setText("p$i"); idle()
+            gestureBack(a, ks)
+            assertStayedDraft(a, ks, box, "p$i")
+        }
+        gestureBack(a, ks)
+        assertTrue(Dlg.last != null && Dlg.last!!.isShowing); assertEquals("u", dbUser())
+    }
+
+    @Test fun imeDone_endsEdit_noNavigation() {
+        val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("d1"); idle()
+        box.field.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE); ks.onImeHidden(); idle()
+        assertStayedDraft(a, ks, box, "d1")
     }
 }

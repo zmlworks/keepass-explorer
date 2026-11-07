@@ -86,7 +86,26 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private val content = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
     /** Intercept outside taps while a [FieldBox] is editing → commit + save (consume so no accidental clicks). */
     private val root = object : android.widget.FrameLayout(ctx) {
+        /** 0.4.8: an outside DOWN only ARMS the commit; it fires on UP. A system back gesture delivers
+         *  DOWN then CANCEL to the app (pointer pilfered) — committing on DOWN ended the edit before the
+         *  Back key arrived, so that Back navigated (real-device log: editEnd → imeHidden → act DOWN ed=false). */
+        private var outsideArmed = false
         override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+            if (outsideArmed) {
+                when (ev.actionMasked) {
+                    android.view.MotionEvent.ACTION_UP -> {
+                        outsideArmed = false
+                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside UP -> end")
+                        commitActiveFieldEdit()
+                        hideTagButtons()
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        outsideArmed = false
+                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside CANCEL (keep editing)")
+                    }
+                }
+                return true
+            }
             if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
                 val box = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
                 if (box != null && box.editing) {
@@ -100,9 +119,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                         x >= c[0] && x < c[0] + ch.width && y >= c[1] && y < c[1] + ch.height
                     }
                     if (!inside && !onChips) {
-                        // IME lives in another window — its taps never reach here.
-                        commitActiveFieldEdit()
-                        hideTagButtons() // 0.4.6: outside tap always collapses used-tag buttons
+                        // IME lives in another window — its taps never reach here. Consume the whole stream.
+                        outsideArmed = true
+                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside DOWN (armed)")
                         return true
                     }
                 } else if (tagsShown) {
@@ -635,6 +654,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     override fun onImeHidden() {
         val b = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
         if (b != null && b.editing) {
+            io.github.zmlworks.kpexplorer.ui.BackTrace.log("end by imeHidden")
             io.github.zmlworks.kpexplorer.ui.FieldEditSession.implicitEndAt = android.os.SystemClock.uptimeMillis()
             io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
         }

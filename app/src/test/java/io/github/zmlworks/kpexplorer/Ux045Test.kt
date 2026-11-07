@@ -236,7 +236,7 @@ class Ux045Test {
         ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 2, MotionEvent.ACTION_UP, x, y, 0)); idle()
         assertEquals(listOf("仕事", "a", "あ"), Tree.parseTags(ks.tags))  // web removed via chip, a/あ kept
         // outside tap → draft only
-        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 3, MotionEvent.ACTION_DOWN, 20f, 20f, 0)); idle()
+        ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 3, MotionEvent.ACTION_DOWN, 20f, 20f, 0)); ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 3, MotionEvent.ACTION_UP, 20f, 20f, 0)); idle()
         assertFalse(box.editing)
         assertEquals(listOf("仕事", "web"), entry().tags)
         assertTrue(ks.save()); idle()
@@ -298,7 +298,8 @@ class Ux045Test {
         assertEquals(listOf("a", "あ", "web"), Tree.parseTags(ks.tags))
         val before = entry().tags
         layoutHost()
-        val consumed = ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 5, MotionEvent.ACTION_DOWN, 20f, 20f, 0)); idle()
+        val consumed = ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 5, MotionEvent.ACTION_DOWN, 20f, 20f, 0)) &&
+            ks.view.dispatchTouchEvent(MotionEvent.obtain(0, 6, MotionEvent.ACTION_UP, 20f, 20f, 0)); idle()
         assertTrue("outside tap consumed", consumed)
         assertFalse(box.editing); assertFalse(box.field.isFocused)
         assertFalse(ks.tagsShown); assertEquals(View.GONE, ks.chips!!.visibility)

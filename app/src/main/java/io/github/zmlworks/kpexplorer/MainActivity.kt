@@ -159,7 +159,7 @@ class MainActivity : Activity() {
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
             val s = io.github.zmlworks.kpexplorer.ui.FieldEditSession
             val ed = s.editing
-            io.github.zmlworks.kpexplorer.ui.BackTrace.log("act ${if (event.action == 0) "DOWN" else "UP"} ed=$ed imeEnd=${s.implicitEndAt != 0L && event.downTime <= s.implicitEndAt}")
+            io.github.zmlworks.kpexplorer.ui.BackTrace.log("act ${if (event.action == 0) "DOWN" else "UP"} dt=${event.downTime % 100000} ed=$ed imeEnd=${s.implicitEndAt != 0L && event.downTime <= s.implicitEndAt}")
             when (event.action) {
                 android.view.KeyEvent.ACTION_DOWN -> {
                     if (event.repeatCount == 0) {
