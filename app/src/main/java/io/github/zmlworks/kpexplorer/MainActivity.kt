@@ -24,6 +24,8 @@ class MainActivity : Activity() {
         /** Desktop screens (setup / logon) sit on the teal desktop. */
         val desktop: Boolean get() = false
         fun onBack(): Boolean = false
+        /** Soft keyboard went from shown to hidden (e.g. Back consumed by the IME). */
+        fun onImeHidden() {}
         fun onShown() {}
         fun onPause() {}
     }
@@ -35,6 +37,7 @@ class MainActivity : Activity() {
         private set
     var explorer: ExplorerScreen? = null
     private var stoppedAt = 0L
+    private var imeShown = false
     private val results = HashMap<Int, (Int, Intent?) -> Unit>()
     private var nextReq = 100
 
@@ -50,6 +53,9 @@ class MainActivity : Activity() {
             val bars: Insets = ins.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
             val ime: Insets = ins.getInsets(WindowInsets.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            val vis = ins.isVisible(WindowInsets.Type.ime())
+            if (imeShown && !vis) screen?.onImeHidden()
+            imeShown = vis
             WindowInsets.CONSUMED
         }
         setContentView(host)

@@ -183,9 +183,49 @@ class NewKeyPassCrashTest {
         assertEquals(0, Tree.root(Session.db!!).entries.size)
     }
 
+    @Test fun generateCancelLeavesPassUnchanged() {
+        val nk = openNewKey()
+        nk.editors[Order.F_PASS]!!.setText("keep-me")
+        nk.genButton!!.performClick(); idle()
+        val d = io.github.zmlworks.kpexplorer.ui.Dlg.last!!
+        assertTrue(d.isShowing)
+        d.buttonViews.last().performClick(); idle()   // キャンセル
+        assertEquals("keep-me", nk.values["Password"])
+        // empty Pass also asks
+        nk.editors[Order.F_PASS]!!.setText("")
+        io.github.zmlworks.kpexplorer.ui.Dlg.last = null
+        nk.genButton!!.performClick(); idle()
+        assertNotNull(io.github.zmlworks.kpexplorer.ui.Dlg.last)
+        io.github.zmlworks.kpexplorer.ui.Dlg.last!!.buttonViews.last().performClick(); idle()
+        assertEquals("", nk.values["Password"])
+    }
+
+    @Test fun backWhileTypingEndsInputAndStays() {
+        val nk = openNewKey()
+        val t = nk.editors["Title"]!!
+        tapFocus(t); typeChars(t, "ab")
+        assertTrue(t.hasFocus())
+        activity.onBackPressed(); idle()
+        assertFalse(t.hasFocus())
+        assertTrue(activity.screen === nk)
+        assertNull("no leave dialog on first back", io.github.zmlworks.kpexplorer.ui.Dlg.last?.takeIf { it.isShowing })
+        activity.onBackPressed(); idle()   // now unsaved guard (dialog) — still on form, nothing created
+        assertEquals(0, Tree.root(Session.db!!).entries.size)
+    }
+
+    @Test fun imeHiddenEndsInput() {
+        val nk = openNewKey()
+        val t = nk.editors["Title"]!!
+        tapFocus(t)
+        nk.onImeHidden()
+        assertFalse(t.hasFocus())
+        assertTrue(activity.screen === nk)
+    }
+
     @Test fun generateStillWorksOnEmptyForm() {
         val nk = openNewKey()
         nk.genButton!!.performClick(); idle()
+        io.github.zmlworks.kpexplorer.ui.Dlg.last!!.buttonViews.first().performClick(); idle()
         assertTrue(nk.passShown)
         assertTrue(nk.values["Password"]!!.length >= 16)
         assertEquals(0, Tree.root(Session.db!!).entries.size)

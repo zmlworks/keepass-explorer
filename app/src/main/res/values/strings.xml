@@ -4,6 +4,9 @@
 
     <!-- Common -->
     <string name="yes">Yes</string>
+    <string name="gen_confirm_title">Generate password</string>
+    <string name="gen_confirm_msg">Replace the password with a newly generated one?</string>
+    <string name="gen_confirm_yes">Generate</string>
     <string name="no">No</string>
     <string name="ok">OK</string>
     <string name="cancel">Cancel</string>

@@ -114,22 +114,23 @@ object Px {
         "..KKKKKKKKKKKK..",
         "................")
 
-    val bin16 get() = art("bin16",
+    /** Recycle-bin wastebasket with green recycling arrows (original pixel art, 0.4.4). */
+    val bin16: Bitmap get() = art("bin16",
         "................",
-        "....KKKKKKK.....",
-        "..KKgWWWWWgKK...",
-        ".KgggggggggggK..",
-        ".KdddddddddddK..",
-        "..KgWgWgWgWgK...",
-        "..KgWgWgWgWgK...",
-        "..KgWgWgWgWgK...",
-        "..KgWgWgWgWgK...",
-        "...KgWgWgWgK....",
-        "...KgWgWgWgK....",
-        "...KgWgWgWgK....",
-        "...KgWgWgWgK....",
-        "....KdddddK.....",
-        ".....KKKKK......",
+        ".KKKKKKKKKKKKKK.",
+        ".KWWWWWWWWWWWdK.",
+        ".KKKKKKKKKKKKKK.",
+        "..KWggggggggdK..",
+        "..KWgggnngggdK..",
+        "..KWggnGgnggdK..",
+        "..KWgnGggGngdK..",
+        "..KWgnggggngdK..",
+        "...KnGggggGnK...",
+        "...KnnnggnnnK...",
+        "...KggggggggK...",
+        "...KggggggggK...",
+        "...KgggggggdK...",
+        "....KKKKKKKK....",
         "................")
 
     val back16 get() = art("back16",
@@ -413,20 +414,50 @@ object Px {
         b
     }
 
-    val bin32: Bitmap get() = cache.getOrPut("bin32") {
-        val p = P(32, 32)
-        p.rect(7, 4, 24, 5, 'K'); p.h(6, 25, 6, 'K'); p.h(7, 24, 7, 'd'); p.rect(6, 5, 6, 6, 'K'); p.rect(25, 5, 25, 6, 'K')
-        p.h(8, 23, 5, 'W')
-        for (y in 8..28) {
-            val off = (y - 8) / 7
-            val x0 = 6 + off; val x1 = 25 - off
+    val bin32: Bitmap get() = cache.getOrPut("bin32") { binArt(32) }
+
+    /** Tapered gray wastebasket (rim, ribs, shading) + 3 chasing green arrows on the front. */
+    private fun binArt(n: Int): Bitmap {
+        val p = P(n, n)
+        val s = n / 16f
+        fun i(v: Float) = Math.round(v * s)
+        val top = i(2f); val rimB = i(3.5f); val bot = n - 1 - i(0.5f)
+        val xl0 = i(2f); val xr0 = n - 1 - i(2f)
+        // rim (lid edge)
+        p.rect(xl0 - 1, top, xr0 + 1, rimB, 'K'); p.h(xl0, xr0, top + 1, 'W')
+        if (rimB - top >= 2) p.h(xl0, xr0, rimB - 1, 'd')
+        // tapered body
+        for (y in rimB + 1..bot) {
+            val off = (y - rimB) * i(2f) / (bot - rimB).coerceAtLeast(1)
+            val x0 = xl0 + off; val x1 = xr0 - off
             p.h(x0, x1, y, 'g'); p.set(x0, y, 'K'); p.set(x1, y, 'K')
-            var x = x0 + 2
-            while (x < x1 - 1) { p.set(x, y, if (y % 6 == 0) 'd' else 'W'); x += 3 }
+            p.set(x0 + 1, y, 'W'); p.set(x1 - 1, y, 'd')
         }
-        p.h(8, 23, 29, 'K'); p.h(8, 23, 28, 'd')
-        p.v(26, 9, 29, 'd')
-        p.bmp()
+        p.h(xl0 + i(2f), xr0 - i(2f), bot, 'K')
+        // recycling triangle of arrows
+        val cx = (n - 1) / 2f
+        val ax = cx; val ay = rimB + i(3f).toFloat()
+        val bx = cx - i(3.5f); val by = bot - i(2.5f).toFloat()
+        val cx2 = cx + i(3.5f); val cy = by
+        fun seg(x0: Float, y0: Float, x1: Float, y1: Float, from: Float, to: Float) {
+            val steps = (maxOf(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2).toInt().coerceAtLeast(1)
+            for (k in 0..steps) {
+                val tt = k / steps.toFloat(); if (tt < from || tt > to) continue
+                val x = x0 + (x1 - x0) * tt; val y = y0 + (y1 - y0) * tt
+                p.set(Math.round(x), Math.round(y), 'n')
+                if (n >= 32) p.set(Math.round(x) + 1, Math.round(y), 'G')
+            }
+        }
+        fun head(x: Float, y: Float) { // small arrowhead blob
+            val r = if (n >= 32) 1 else 0
+            p.rect(Math.round(x) - r, Math.round(y) - r, Math.round(x) + r, Math.round(y) + r, 'n')
+            p.set(Math.round(x), Math.round(y), 'G')
+        }
+        val g = if (n >= 32) 0.18f else 0.22f
+        seg(ax, ay, cx2, cy, g, 1f - g); head(ax + (cx2 - ax) * (1f - g), ay + (cy - ay) * (1f - g))
+        seg(cx2, cy, bx, by, g, 1f - g); head(cx2 + (bx - cx2) * (1f - g), cy)
+        seg(bx, by, ax, ay, g, 1f - g); head(bx + (ax - bx) * (1f - g), by + (ay - by) * (1f - g))
+        return p.bmp()
     }
 
     val computer32: Bitmap get() = cache.getOrPut("computer32") {

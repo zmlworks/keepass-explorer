@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.3)
+# KeePass Explorer (v0.4.4)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -31,6 +31,13 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.4 の変更
+
+- ごみ箱アイコンを、前面に緑のリサイクル矢印があるくずかご（自作ピクセルアート 16/32）に。フォルダーツリー・一覧・場所パスで UUID により判定
+- 欄の編集: 押しただけで下の欄と入れ替わる不具合を修正（押下では開始せず、touchSlop を超えて動かしてからドラッグ開始。指の掴み位置を保持）。≡ と × に枠、≡ は幅約60dp
+- 鍵の画面で欄の入力中に戻る（端末の戻る・下の戻る・×）は、入力を終えて下書きに反映するだけで画面に留まる。もう一度で従来の保存確認。キーボードを戻るで閉じた場合も入力終了
+- 新規鍵画面: 入力中の戻るはまず入力終了。「生成」は確認してから生成（キャンセルで変更なし）
 
 ## アプリ 0.4.3 の変更
 

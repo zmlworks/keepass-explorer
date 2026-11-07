@@ -77,7 +77,7 @@ class FieldArrangeEditor(
             setImageDrawable(Glyph(Glyph.Kind.GRIP, W.SHADOW))
             scaleType = ImageView.ScaleType.CENTER
             contentDescription = "並べ替え"
-        }, W.lp(W.dp(48), W.dp(48), l = 4))
+        }, W.lp(W.dp(60), W.dp(44), l = 4))
         scroll.addView(list)
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         stage.addView(ghost, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -149,42 +149,70 @@ class FieldArrangeEditor(
         // Custom delete × immediately LEFT of the rightmost handle (larger ~48dp hit)
         if (k !in Order.DEFAULT_LAYOUT) {
             row.addView(W.text(ctx, "×", 22f, true).apply {
+                background = W.Bevel(W.Style.BUTTON)
                 gravity = Gravity.CENTER; contentDescription = "欄を削除"
                 minimumWidth = W.dp(48); minimumHeight = W.dp(48)
                 isClickable = true
                 tag = "delete:$k"
                 setOnClickListener {
-                    if (dragKey != null) return@setOnClickListener
+                    if (dragKey != null || pendingKey != null) return@setOnClickListener
                     shown.remove(k); hidden.remove(k); removedCustoms.add(k); render()
                 }
-            }, W.lp(W.dp(48), W.dp(48), r = 2))
+            }, W.lp(W.dp(48), W.dp(44), r = 6))
         }
         val handle = ImageView(ctx).apply {
             setImageDrawable(Glyph(Glyph.Kind.GRIP, W.TEXT))
             contentDescription = "並べ替え"
-            minimumWidth = W.dp(56); minimumHeight = W.dp(48)
+            // 0.4.4: Win-style raised frame so ≡ reads as a button; wider (~60dp)
+            background = W.Bevel(W.Style.BUTTON)
+            minimumWidth = W.dp(60); minimumHeight = W.dp(44)
             scaleType = ImageView.ScaleType.CENTER
-            setPadding(W.dp(8), W.dp(8), W.dp(8), W.dp(8))
+            setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
             isClickable = true
             tag = "handle:$k"
         }
         handle.setOnTouchListener { _, e ->
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    if (dragKey == null) beginDrag(k, e)
+                    if (dragKey == null && pendingKey == null) armDrag(k, e)
                     true
                 }
-                else -> dragKey == k
+                else -> pendingKey == k || dragKey == k
             }
         }
-        row.addView(handle, W.lp(W.dp(56), W.dp(48)))
+        row.addView(handle, W.lp(W.dp(60), W.dp(44), l = 4))
         return row
     }
 
-    private fun beginDrag(key: String, e: MotionEvent) {
-        dragKey = key
+    // -------- drag state (0.4.4) --------
+    // Root cause of "swap on press": drag went live on ACTION_DOWN and each MOVE (even jitter)
+    // rebuilt the rows via render(); the next MOVE then measured freshly-added, not-yet-laid-out
+    // children (top=0,height=0) so the finger looked "below" every row/divider and the item
+    // jumped down. Now: DOWN only arms; drag starts after touchSlop; relocation uses the dragged
+    // row's anchored centre and skips frames whose rows are not laid out yet.
+    private val touchSlop = android.view.ViewConfiguration.get(ctx).scaledTouchSlop
+    var pendingKey: String? = null
+        private set
+    private var downRawY = 0f
+    private var anchorOffset = 0f
+    private var rowH = 0f
+
+    private fun armDrag(key: String, e: MotionEvent) {
+        pendingKey = key
         dragPointerId = e.getPointerId(0)
-        lastRawY = e.rawY
+        downRawY = e.rawY
+        val row = list.findViewWithTag<View>(key)
+        val loc = IntArray(2); row?.getLocationOnScreen(loc)
+        rowH = (row?.height ?: W.dp(52)).toFloat().coerceAtLeast(1f)
+        anchorOffset = (e.rawY - loc[1]).coerceIn(0f, rowH)
+        var p: View? = this
+        while (p != null) { p.parent?.requestDisallowInterceptTouchEvent(true); p = p.parent as? View }
+    }
+
+    private fun beginDrag(key: String, rawY: Float) {
+        pendingKey = null
+        dragKey = key
+        lastRawY = rawY
         ghostLabel.text = KeyFields.label(key).removeSuffix(":")
         ghost.visibility = VISIBLE
         val w = if (stage.width > 0) stage.width else W.dp(320)
@@ -193,21 +221,16 @@ class FieldArrangeEditor(
             MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
         ghostH = ghost.measuredHeight.coerceAtLeast(W.dp(48))
         ghost.layoutParams = FrameLayout.LayoutParams(w, ghostH)
-        positionGhost(e.rawY)
-        var p: View? = this
-        while (p != null) {
-            p.parent?.requestDisallowInterceptTouchEvent(true)
-            p = p.parent as? View
-        }
-        post {
-            if (dragKey == key) render()
-        }
+        positionGhost(rawY)
+        render()
     }
 
     private fun endDrag() {
         handler.removeCallbacks(autoScrollRunnable)
         autoScrollDir = 0
+        val wasDragging = dragKey != null
         dragKey = null
+        pendingKey = null
         dragPointerId = -1
         ghost.visibility = GONE
         var p: View? = this
@@ -215,23 +238,28 @@ class FieldArrangeEditor(
             p.parent?.requestDisallowInterceptTouchEvent(false)
             p = p.parent as? View
         }
-        render()
+        if (wasDragging) render()
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (dragKey != null) {
+        if (pendingKey != null || dragKey != null) {
+            val idx = (0 until ev.pointerCount).firstOrNull { ev.getPointerId(it) == dragPointerId } ?: 0
             when (ev.actionMasked) {
                 MotionEvent.ACTION_MOVE -> {
-                    val idx = (0 until ev.pointerCount).firstOrNull { ev.getPointerId(it) == dragPointerId } ?: 0
-                    lastRawY = ev.getRawY(idx)
+                    val y = ev.getRawY(idx)
+                    val pk = pendingKey
+                    if (pk != null) {
+                        if (kotlin.math.abs(y - downRawY) <= touchSlop) return true  // jitter: nothing
+                        beginDrag(pk, y)
+                        return true
+                    }
+                    lastRawY = y
                     updateAutoScroll(lastRawY)
                     relocateByFinger(lastRawY)
                     positionGhost(lastRawY)
                     return true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    endDrag(); return true
-                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { endDrag(); return true }
                 MotionEvent.ACTION_POINTER_UP -> {
                     if (ev.getPointerId(ev.actionIndex) == dragPointerId) endDrag()
                     return true
@@ -244,7 +272,7 @@ class FieldArrangeEditor(
     private fun positionGhost(rawY: Float) {
         val loc = IntArray(2)
         stage.getLocationOnScreen(loc)
-        val localY = rawY - loc[1] - ghostH / 2f
+        val localY = rawY - loc[1] - anchorOffset * ghostH / rowH.coerceAtLeast(1f)
         val max = (stage.height - ghostH).toFloat().coerceAtLeast(0f)
         ghost.translationY = localY.coerceIn(0f, max)
         ghost.translationX = 0f
@@ -268,8 +296,11 @@ class FieldArrangeEditor(
         }
     }
 
-    private fun relocateByFinger(rawY: Float) {
+    private fun relocateByFinger(fingerY: Float) {
         val key = dragKey ?: return
+        // Not laid out yet after a render() → geometry is bogus (0); wait for next MOVE.
+        if (list.isLayoutRequested || (0 until list.childCount).any { list.getChildAt(it).height == 0 }) return
+        val rawY = fingerY - anchorOffset + rowH / 2f   // dragged row's centre
         val divider = list.findViewWithTag<View>(TAG_DIVIDER) ?: return
         val dLoc = IntArray(2); divider.getLocationOnScreen(dLoc)
         val wantHidden = rawY >= dLoc[1] + divider.height / 2f

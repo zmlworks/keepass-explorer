@@ -29,12 +29,13 @@ object Parts {
     fun pathTree(ctx: Context, path: List<Group>, onTap: ((Group) -> Unit)? = null,
                  lines: MutableList<View>? = null, showCounts: Boolean = false): LinearLayout {
         val box = W.vbox(ctx).apply { setPadding(W.dp(6), W.dp(3), W.dp(6), W.dp(4)) }
+        val binId = io.github.zmlworks.kpexplorer.Session.db?.let { io.github.zmlworks.kpexplorer.db.Tree.recycleBinId(it) }
         path.forEachIndexed { i, g ->
             val name = if (i == 0) "/" else g.name.ifEmpty { "(名前なし)" }
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = g.uuid; minimumHeight = W.dp(26) }
             row.setPadding(W.dp(20) * i, 0, 0, 0)
             if (i > 0) row.addView(W.text(ctx, "└", 15f), W.lp(W.WRAP, W.WRAP))
-            row.addView(W.icon(ctx, Px.folder16, maxOf(1, W.iconScale() - 2)).apply { setPadding(W.dp(2), 0, W.dp(3), 0) }, W.lp(W.WRAP, W.WRAP))
+            row.addView(W.icon(ctx, if (g.uuid == binId) Px.bin16 else Px.folder16, maxOf(1, W.iconScale() - 2)).apply { setPadding(W.dp(2), 0, W.dp(3), 0) }, W.lp(W.WRAP, W.WRAP))
             row.addView(W.text(ctx, name, 15f, bold = i == path.size - 1).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END },
                 W.lp(W.WRAP, W.WRAP))
             if (showCounts) {

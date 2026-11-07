@@ -572,8 +572,19 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             ctx.getString(R.string.confirm_delete_permanent, ctx.getString(R.string.quoted_name, titleText())), '!') { doDelete() }
     }
 
+    /** Keyboard closed by the system (IME consumed Back): end inline edit into the draft, stay here. */
+    override fun onImeHidden() {
+        val b = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
+        if (b != null && b.editing) io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+    }
+
     override fun onBack(): Boolean {
-        io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+        // 0.4.4: first Back while a field is in inline edit only ends the edit (draft) and stays.
+        val b = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
+        if (b != null && b.editing) {
+            io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
+            return true
+        }
         io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = null
         if (!dirty) { a.showExplorer(); return true }
         confirmUnsaved(ctx, { if (save()) a.showExplorer() }, { dirty = false; a.showExplorer() })
@@ -586,6 +597,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             ClassicDialog(ctx, "KeePass Explorer", W.text(ctx, "変更が保存されていません。\n保存しますか?", 15f), listOf(
                 ClassicDialog.Btn("保存する", true) { onSave(); true },
                 ClassicDialog.Btn("保存しない") { onDiscard(); true },
-                ClassicDialog.Btn("キャンセル"))).also { it.show() }
+                ClassicDialog.Btn("キャンセル"))).also { it.show(); Dlg.last = it }
     }
 }

@@ -90,6 +90,89 @@ class FieldArrangeTouchTest {
         ShadowLooper.idleMainLooper()
     }
 
+    private val slop get() = android.view.ViewConfiguration.get(app()).scaledTouchSlop.toFloat()
+
+    /** DOWN on handle + one MOVE past touchSlop → drag active (0.4.4: DOWN alone only arms). */
+    private fun startDrag(key: String): Pair<Float, Float> {
+        val r = ed.rowFor(key)!!
+        if (r.bottom > ed.scroll.height) { ed.scroll.scrollTo(0, r.top - 20); ShadowLooper.idleMainLooper() }
+        val handle = ed.handleFor(key)!!
+        val (hx, hy) = rawOf(handle)
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, ed))
+        assertFalse("DOWN must not start drag", ed.isDragging())
+        assertEquals(key, ed.pendingKey)
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, hx, hy + slop + 2f, ed))
+        ShadowLooper.idleMainLooper()
+        assertTrue(ed.isDragging())
+        return hx to hy
+    }
+
+    private fun mv(x: Float, y: Float) { ed.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, x, y, ed)); ShadowLooper.idleMainLooper() }
+    private fun up(x: Float, y: Float) { ed.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, x, y, ed)); ShadowLooper.idleMainLooper() }
+    private val base = listOf(Order.F_USER, Order.F_PASS, Order.F_URL, Order.F_TAGS, Order.F_NOTES)
+
+    @Test fun stationaryDownUpNoChange() {
+        for (k in base) {
+            val h = ed.handleFor(k)!!; val (hx, hy) = rawOf(h)
+            ed.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, ed)); ShadowLooper.idleMainLooper()
+            assertFalse(ed.isDragging())
+            up(hx, hy)
+            assertEquals(base, ed.shown.toList())
+        }
+    }
+
+    @Test fun jitterBelowSlopNoChange() {
+        val h = ed.handleFor(Order.F_USER)!!; val (hx, hy) = rawOf(h)
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, ed))
+        repeat(6) { mv(hx + (it % 2), hy + (if (it % 2 == 0) slop * 0.8f else -slop * 0.8f)) }
+        assertFalse(ed.isDragging())
+        up(hx, hy)
+        assertEquals(base, ed.shown.toList())
+    }
+
+    @Test fun tapBottomEdgeOfHandleNoSwap() {
+        val h = ed.handleFor(Order.F_USER)!!
+        val loc = IntArray(2); h.getLocationOnScreen(loc)
+        val hx = loc[0] + h.width / 2f; val hy = loc[1] + h.height - 1f
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, ed)); ShadowLooper.idleMainLooper()
+        mv(hx, hy + 1f)
+        up(hx, hy + 1f)
+        assertEquals(base, ed.shown.toList())
+    }
+
+    @Test fun smallIntentionalMoveJustPastSlopDoesNotSwap() {
+        val (hx, hy) = startDrag(Order.F_PASS)
+        mv(hx, hy + slop + 6f); mv(hx, hy + slop + 8f)
+        up(hx, hy + slop + 8f)
+        assertEquals(base, ed.shown.toList())
+    }
+
+    @Test fun upwardSwapAfterIntentionalMotion() {
+        val (hx, hy) = startDrag(Order.F_URL)
+        val pass = ed.rowFor(Order.F_PASS)!!
+        val (_, py) = rawOf(pass)
+        mv(hx, py - pass.height * 0.2f); mv(hx, py - pass.height * 0.3f)
+        up(hx, py)
+        assertTrue("URL before Pass: ${ed.shown}", ed.shown.indexOf(Order.F_URL) < ed.shown.indexOf(Order.F_PASS))
+    }
+
+    @Test fun deleteDoesNotStartDrag() {
+        host.removeAllViews()
+        ed = FieldArrangeEditor(app(), listOf(Order.F_TITLE to true, Order.F_USER to true, "暗証" to true))
+        host.addView(ed, FrameLayout.LayoutParams(411 * 3, 700))
+        host.measure(View.MeasureSpec.makeMeasureSpec(411 * 3, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.EXACTLY))
+        host.layout(0, 0, 411 * 3, 700); ShadowLooper.idleMainLooper()
+        val del = ed.deleteFor("暗証")!!
+        val (dx, dy) = rawOf(del)
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, dx, dy, ed))
+        assertFalse(ed.isDragging()); assertNull(ed.pendingKey)
+        ed.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, dx, dy, ed)); ShadowLooper.idleMainLooper()
+        assertTrue("暗証" in ed.removedCustoms)
+        val h = ed.handleFor(Order.F_USER)!!
+        assertTrue("handle >= 56dp", h.width >= io.github.zmlworks.kpexplorer.ui.W.dp(56))
+        assertNotNull(h.background)
+    }
+
     @Test fun titleIsAbsentFromEditor() {
         assertFalse(Order.F_TITLE in ed.shown)
         assertFalse(Order.F_TITLE in ed.hidden)
@@ -116,12 +199,9 @@ class FieldArrangeTouchTest {
     }
 
     @Test fun handleDragReordersDown() {
-        val handle = ed.handleFor(Order.F_USER)!!
-        val (hx, hy) = rawOf(handle)
         val pass = ed.rowFor(Order.F_PASS)!!
         val (_, passY) = rawOf(pass)
-        handle.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, handle))
-        assertTrue(ed.isDragging())
+        val (hx, _) = startDrag(Order.F_USER)
         assertEquals(Order.F_USER, ed.dragKey)
         // Move well below Pass center so User inserts after Pass
         val targetY = passY + pass.height
@@ -138,10 +218,7 @@ class FieldArrangeTouchTest {
     }
 
     @Test fun multiMoveDragContinuesAfterReorder() {
-        val handle = ed.handleFor(Order.F_NOTES)!!
-        val (hx, hy) = rawOf(handle)
-        handle.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, handle))
-        assertTrue(ed.isDragging())
+        val (hx, hy) = startDrag(Order.F_NOTES)
         // Several MOVE events after list rebuilds — drag must remain active
         repeat(6) { step ->
             assertTrue("drag alive at step $step", ed.isDragging())
@@ -159,9 +236,7 @@ class FieldArrangeTouchTest {
     }
 
     @Test fun dragAcrossDividerHidesAndRestores() {
-        val handle = ed.handleFor(Order.F_URL)!!
-        val (hx, hy) = rawOf(handle)
-        handle.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, hx, hy, handle))
+        val (hx, _) = startDrag(Order.F_URL)
         val div = ed.dividerView()!!
         val (_, dy) = rawOf(div)
         // Below divider → hidden

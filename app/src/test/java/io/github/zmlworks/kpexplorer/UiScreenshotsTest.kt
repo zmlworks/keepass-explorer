@@ -428,6 +428,8 @@ class UiScreenshotsTest {
         n.editors["UserName"]!!.setText("user@example.com")
         assertTrue(n.dirty)
         n.genButton!!.performClick(); idle()
+        save(withDialog(shot(a.host)), "15e-new-key-gen-confirm.png")
+        Dlg.last!!.buttonViews.first().performClick(); idle()
         assertTrue(n.passShown)
         assertTrue(n.values["Password"]!!.length >= 16)
         n.toggleTag("メール"); idle()

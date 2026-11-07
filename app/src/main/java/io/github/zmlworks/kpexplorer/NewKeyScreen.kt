@@ -202,7 +202,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         val gen = W.text(ctx, "生成", 13f, true).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON)
             contentDescription = "パスワードを生成"; setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
-            isClickable = true; setOnClickListener { f.setText(generate()); togglePass(show = true) }
+            isClickable = true; setOnClickListener { askGenerate() }
         }
         genButton = gen
         eyeButton = null
@@ -220,6 +220,25 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         box.addView(gen, W.lp(W.WRAP, W.dp(36), l = 4))
         body.addView(box, W.lp(W.MATCH, W.WRAP, t = 3, b = 3))
     }
+
+    /** 0.4.4: confirm before generating (also when Pass is empty). Cancel leaves Pass unchanged. */
+    fun askGenerate() {
+        Dlg.confirm(ctx, ctx.getString(R.string.gen_confirm_title), ctx.getString(R.string.gen_confirm_msg), '?',
+            yes = ctx.getString(R.string.gen_confirm_yes), no = ctx.getString(R.string.cancel)) {
+            editors[Order.F_PASS]?.setText(generate()); togglePass(show = true)
+        }
+    }
+
+    /** Ends text input (focus + keyboard) without leaving the form. True if something was being edited. */
+    fun endTextInput(): Boolean {
+        val f = view.findFocus() as? EditText ?: return false
+        f.clearFocus()
+        (ctx.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+            .hideSoftInputFromWindow(f.windowToken, 0)
+        return true
+    }
+
+    override fun onImeHidden() { view.findFocus()?.let { if (it is EditText) it.clearFocus() } }
 
     fun togglePass(show: Boolean? = null) {
         passShown = show ?: !passShown
@@ -354,6 +373,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     }
 
     override fun onBack(): Boolean {
+        if (endTextInput()) return true   // first Back: stop typing, stay on the form
         if (!dirty) { a.showExplorer(); return true }
         ClassicDialog(ctx, "KeePass Explorer",
             W.text(ctx, "入力内容がまだ作成されていません。\n作成しますか?", 15f),

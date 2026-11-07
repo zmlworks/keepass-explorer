@@ -121,6 +121,37 @@ class FieldEditCommitTest {
         assertEquals(histBefore, e.history.size)
     }
 
+    @Test fun backWhileEditingEndsEditStaysThenGuard() {
+        val (a, ks) = openKey()
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("typed")
+        val before = Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second)
+        a.onBackPressed(); idle()
+        assertFalse(box.editing)
+        assertTrue("still on key page", a.screen === ks)
+        assertEquals("typed", ks.values["UserName"])
+        assertTrue(ks.dirty)
+        assertEquals("no DB write on first back", before, Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second))
+        assertTrue(Dlg.last == null || !Dlg.last!!.isShowing)
+        a.onBackPressed(); idle()   // second back → unsaved guard
+        assertTrue(Dlg.last!!.isShowing)
+        assertTrue(a.screen === ks)
+        Dlg.last!!.buttonViews[1].performClick(); idle()   // 保存しない
+        assertTrue(a.screen is ExplorerScreen)
+        assertEquals(before, Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second))
+    }
+
+    @Test fun imeHiddenEndsEditIntoDraft() {
+        val (a, ks) = openKey()
+        val box = ks.boxes["UserName"]!!
+        box.startEdit(); box.field.setText("ime")
+        ks.onImeHidden(); idle()
+        assertFalse(box.editing)
+        assertTrue(a.screen === ks)
+        assertEquals("ime", ks.values["UserName"])
+        assertEquals("u", Tree.userName(Tree.findEntry(Session.db!!, ids["Item"]!!)!!.second))
+    }
+
     @Test fun touchInsideEditingFieldDoesNotCommit() {
         val (_, ks) = openKey()
         val box = ks.boxes["UserName"]!!

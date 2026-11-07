@@ -3,6 +3,9 @@
     <string name="app_name">KeePass Explorer</string>
 
     <string name="yes">はい</string>
+    <string name="gen_confirm_title">パスワードの生成</string>
+    <string name="gen_confirm_msg">新しいパスワードを生成して置き換えますか?</string>
+    <string name="gen_confirm_yes">生成する</string>
     <string name="no">いいえ</string>
     <string name="ok">OK</string>
     <string name="cancel">キャンセル</string>
