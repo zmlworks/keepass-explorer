@@ -33,7 +33,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     override val view: View get() = root
 
     val values = LinkedHashMap<String, String>().also {
-        listOf("Title", "UserName", "Password", "URL", "Notes").forEach { k -> it[k] = "" }
+        listOf("Title", "UserName", "Password", "URL", Order.OTP, "Notes").forEach { k -> it[k] = "" }
     }
     var tags = ""
     var iconId: String? = null
@@ -111,6 +111,9 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         inputRow(Order.F_USER, "UserName", Glyph(Glyph.Kind.USER), false)
         passRow()
         inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
+        // 0.4.11: OTP on the create form (otpauth:// URI or Base32 secret); empty = not added (restorable later)
+        inputRow(Order.F_OTP, Order.OTP, Glyph(Glyph.Kind.OTP), false)
+        editors[Order.F_OTP]?.hint = "otpauth://… または Base32 の秘密鍵"
         inputRow(Order.F_NOTES, "Notes", Glyph(Glyph.Kind.MEMO), true)
         for (name in customs) {
             inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
@@ -342,24 +345,41 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
          * put in the key's field layout (same state as deleting it with 「欄を編集」 afterwards; it can be
          * brought back from the hidden zone there). Empty custom fields are not created at all. The five
          * KeePass standard strings stay in the KDBX as empty values (KeePass always has them), but are not
-         * shown. Title always stays ("(無題)" when empty). OTP is never set on this form, so @OTP is left
-         * out too (setting an OTP later re-adds it).
+         * shown. Title always stays ("(無題)" when empty). An empty OTP leaves @OTP out (0.4.11: the form has an
+         * OTP field; it can be added back from 「欄を編集」's hidden zone or set later by long-pressing).
          */
         fun createdFields(values: Map<String, String>, customs: List<String>, tagList: List<String>): Pair<LinkedHashMap<String, String>, List<Pair<String, Boolean>>> {
             val vals = LinkedHashMap<String, String>()
-            for ((k, v) in values) if (k in Order.STANDARD || v.isNotEmpty()) vals[k] = v
+            for ((k, v) in values) if (k in Order.STANDARD || (if (k == Order.OTP) v.isNotBlank() else v.isNotEmpty())) vals[k] = v
             if (vals["Title"].isNullOrBlank()) vals["Title"] = "(無題)"
             val layout = Order.DEFAULT_LAYOUT.filter { k ->
                 when (k) {
                     Order.F_TITLE -> true
                     Order.F_TAGS -> tagList.isNotEmpty()
-                    Order.F_OTP -> false
+                    Order.F_OTP -> values[Order.OTP].orEmpty().isNotBlank()
                     else -> values[k].orEmpty().isNotEmpty()
                 }
             }.map { it to true }.toMutableList()
             val notesAt = layout.indexOfFirst { it.first == Order.F_NOTES }.let { if (it < 0) layout.indexOfFirst { p -> p.first == Order.F_TAGS }.let { t -> if (t < 0) layout.size else t } else it }
             customs.filter { values[it].orEmpty().isNotEmpty() }.forEachIndexed { i, c -> layout.add(notesAt + i, c to true) }
             return vals to layout
+        }
+    }
+
+    /**
+     * OTP to store: "" when empty, an otpauth:// URI as typed, or a bare Base32 secret turned into a URI
+     * (issuer = title, account = user, like the key screen). null (after a message) when it cannot be read.
+     */
+    fun otpValue(): String? {
+        val s = values[Order.OTP].orEmpty().trim()
+        if (s.isEmpty()) return ""
+        return try {
+            val p = io.github.zmlworks.kpexplorer.db.Totp.parse(s)
+            if (s.startsWith("otpauth://", true)) s
+            else io.github.zmlworks.kpexplorer.db.Totp.toUri(p.copy(issuer = values["Title"].orEmpty(), account = values["UserName"].orEmpty()))
+        } catch (t: Exception) {
+            Dlg.message(ctx, "ワンタイムパスワード", "OTP を読み取れませんでした: ${t.message}\n空欄にするか、otpauth:// の URI か Base32 の秘密鍵を入力してください。", 'x')
+            null
         }
     }
 
@@ -373,7 +393,8 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             val e = Order.newKey()
             val id = e.uuid
             val tagList = Tree.parseTags(tags)
-            val (vals, layout) = createdFields(values, customs, tagList)
+            val otp = otpValue() ?: return false
+            val (vals, layout) = createdFields(LinkedHashMap(values).apply { this[Order.OTP] = otp }, customs, tagList)
             val ic = EntryIcon.def(iconId)
             Session.update { db ->
                 var d = Order.appendEntry(db, parent, e)

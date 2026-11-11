@@ -82,7 +82,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val liveRun = Runnable { applyLiveSearch() }
     private val pathLines = ArrayList<View>()
     private val content = FrameLayout(ctx)
-    private val preview = W.vbox(ctx, 8)
+    private val preview = PreviewBox(ctx) { onPreviewTap() }.apply {
+        orientation = LinearLayout.VERTICAL; setPadding(W.dp(8), W.dp(8), W.dp(8), W.dp(8))
+    }
+    /** 0.4.11: the item whose preview was tapped once (next tap on the preview opens it). */
+    var previewActive: UUID? = null
+        private set
+    private var previewTitle: TextView? = null
     private lateinit var previewScroll: ScrollView
     private lateinit var split: View
     private var shownSaveError: String? = null
@@ -330,6 +336,55 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     // ------------------------------------------------------------------ preview pane
 
+    /**
+     * Preview container that watches taps without taking them from its children (Pass tap = show / hide,
+     * selectable text, scrolling keep working). A tap = down/up within the touch slop, shorter than a long
+     * press, not on the Pass value.
+     */
+    @android.annotation.SuppressLint("ViewConstructor")
+    class PreviewBox(ctx: android.content.Context, private val onTap: () -> Unit) : LinearLayout(ctx) {
+        private var x0 = 0f; private var y0 = 0f; private var t0 = 0L; private var candidate = false
+        private fun onPass(v: View, x: Float, y: Float): Boolean {
+            if (v.tag == "pass") return true
+            if (v is ViewGroup) for (i in v.childCount - 1 downTo 0) {
+                val c = v.getChildAt(i)
+                if (c.visibility == View.VISIBLE && x >= c.left && x < c.right && y >= c.top && y < c.bottom &&
+                    onPass(c, x - c.left + c.scrollX, y - c.top + c.scrollY)) return true
+            }
+            return false
+        }
+        override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+            val slop = ViewConfiguration.get(context).scaledTouchSlop
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; t0 = e.eventTime; candidate = !onPass(this, e.x, e.y) }
+                MotionEvent.ACTION_MOVE -> if (abs(e.x - x0) > slop || abs(e.y - y0) > slop) candidate = false
+                MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> candidate = false
+            }
+            val r = super.dispatchTouchEvent(e)
+            if (e.actionMasked == MotionEvent.ACTION_UP && candidate) {
+                candidate = false
+                if (e.eventTime - t0 < ViewConfiguration.getLongPressTimeout()) onTap()
+            }
+            return e.actionMasked == MotionEvent.ACTION_DOWN || r
+        }
+    }
+
+    /** First tap on the preview selects it (title highlighted), the next tap opens the item, like the list. */
+    fun onPreviewTap() {
+        val r = rows.firstOrNull { it.uuid == selection } ?: return
+        if (previewActive == r.uuid) { previewActive = null; open(r); return }
+        previewActive = r.uuid
+        highlightPreview()
+    }
+
+    private fun highlightPreview() {
+        val t = previewTitle ?: return
+        val on = previewActive != null && previewActive == selection
+        t.setBackgroundColor(if (on) W.NAVY else 0)
+        t.setTextColor(if (on) W.HILITE else W.TEXT)
+        preview.setBackgroundColor(if (on) 0xFFE8EEF8.toInt() else W.WINDOW)
+    }
+
     fun updatePreview() {
         preview.removeAllViews()
         val r = rows.firstOrNull { it.uuid == selection }
@@ -337,9 +392,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         previewScroll.visibility = vis; split.visibility = vis
         if (r == null) return
         previewScroll.scrollTo(0, 0)
+        if (previewActive != r.uuid) previewActive = null
         val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(W.icon(ctx, bmpFor(r, true).let { if (r.uuid == selection) unselected(r) else it }, maxOf(1, W.iconScale() - 2)), W.lp(W.WRAP, W.WRAP, r = 8))
-        head.addView(W.text(ctx, label(r), 17f, true), W.lp(0, W.WRAP, 1f))
+        val title = W.text(ctx, label(r), 17f, true).apply { setPadding(W.dp(3), W.dp(1), W.dp(3), W.dp(1)) }
+        previewTitle = title
+        head.addView(FrameLayout(ctx).apply { addView(title, FrameLayout.LayoutParams(W.WRAP, W.WRAP)) }, W.lp(0, W.WRAP, 1f))
         preview.addView(head, W.lp(W.MATCH, W.WRAP, b = 6))
         when (r) {
             is Order.Node.F -> {
@@ -353,6 +411,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 preview.addView(Parts.RuledText(ctx, editable = false).apply { setText(Tree.notes(r.e)); minLines = 4 }, W.lp(W.MATCH, W.WRAP))
             } else keyPreview(r.e)
         }
+        highlightPreview()
     }
 
     private fun unselected(r: Order.Node): Bitmap = when {
@@ -452,6 +511,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /** Folder: open. Key / memo: first tap selects, tapping the selected item again opens it. Empty: deselect. */
     fun tap(r: Order.Node?) {
+        previewActive = null
         when {
             r == null -> select(null)
             r is Order.Node.F -> open(r)

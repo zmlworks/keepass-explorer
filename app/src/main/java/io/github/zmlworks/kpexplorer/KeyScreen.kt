@@ -51,13 +51,16 @@ object KeyFields {
     fun lastModified(e: Entry?): String = "Last Modified: " + (e?.times?.lastModificationTime?.let { fmt.format(it) } ?: "-")
 
     /** Live TOTP text: "123 456 (10s)", refreshed every second while attached. */
-    class OtpView(ctx: Context, private val uri: () -> String?) : TextView(ctx) {
+    class OtpView(ctx: Context, private val placeholder: String = "", private val uri: () -> String?) : TextView(ctx) {
         private val tick = object : Runnable { override fun run() { update(); postDelayed(this, 1000) } }
         init { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 22f); typeface = android.graphics.Typeface.MONOSPACE; setTextColor(W.TEXT); update() }
         fun current(): String? = runCatching { uri()?.let { Totp.code(Totp.parse(it), Instant.now().epochSecond) } }.getOrNull()
         fun update() {
             val u = uri()
-            text = if (u.isNullOrBlank()) "" else runCatching<CharSequence> {
+            text = if (u.isNullOrBlank()) android.text.SpannableString(placeholder).apply {
+                setSpan(android.text.style.RelativeSizeSpan(0.65f), 0, length, 0)
+                setSpan(android.text.style.ForegroundColorSpan(W.SHADOW), 0, length, 0)
+            } else runCatching<CharSequence> {
                 val p = Totp.parse(u); val now = Instant.now().epochSecond
                 val c = Totp.code(p, now)
                 // 0.4.5: "123 456  28s" — countdown smaller, no parentheses; code stays full size/black
@@ -254,7 +257,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         for ((k, vis) in layout) {
             if (!vis) continue
             when (k) {
-                Order.F_OTP -> if (!values[Order.OTP].isNullOrBlank()) otpRow()
+                // 0.4.11: always drawn when visible; empty = "未設定 (長押しで設定)" so OTP can be set up again
+                Order.F_OTP -> otpRow()
                 Order.F_TAGS -> { fieldRow(k, tags, false) { tags = it; renderChips() }; tagPicker() }
                 Order.F_NOTES -> fieldRow(k, values["Notes"].orEmpty(), true) { values["Notes"] = it }
                 else -> fieldRow(k, values[k].orEmpty(), k in multi) { values[k] = it; if (k == "Title") bar.title.text = titleText() }
@@ -420,7 +424,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     private fun otpRow() {
-        val o = KeyFields.OtpView(ctx) { values[Order.OTP] }
+        val o = KeyFields.OtpView(ctx, "未設定 (長押しで設定)") { currentOtpUri() }
         otpView = o
         rowIndex++
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(Order.F_OTP), W.field(ctx), view = o,
@@ -563,7 +567,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         for (k in keys) when (k) {
             Order.F_TITLE -> {}
             Order.F_TAGS -> tags = ""
-            Order.F_OTP -> values.remove(Order.OTP)
+            Order.F_OTP -> { values.remove(Order.OTP); dropOtpExtras() }
             in Order.STANDARD -> values[k] = ""
             else -> { values.remove(k); multi.remove(k) }
         }
@@ -571,10 +575,20 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         dirty = true
     }
 
+    /** OTP of the draft: "otp" field, else KeePass 2 TimeOtp-* / legacy KeePassXC fields ([Order.otpUri]). */
+    fun currentOtpUri(): String? = Order.otpUri { values[it].orEmpty() }
+
+    /** Field names to drop on the next save (other apps' OTP fields after OTP 削除 / replace). */
+    val removedKeys = LinkedHashSet<String>()
+
+    private fun dropOtpExtras() {
+        values.keys.filter { Order.isOtpExtra(it) }.forEach { values.remove(it); removedKeys.add(it) }
+    }
+
     fun setupOtp() {
         val col = W.vbox(ctx)
         col.addView(W.text(ctx, "otpauth:// で始まる URI (QR コードの中身) か、Base32 の秘密鍵を入力してください。\nKeePassXC と同じ「otp」欄に保存します。", 14f).apply { setLineSpacing(0f, 1.1f) })
-        val f = W.field(ctx, "otpauth://totp/...?secret=...").apply { setText(values[Order.OTP].orEmpty()) }
+        val f = W.field(ctx, "otpauth://totp/...?secret=...").apply { setText(currentOtpUri().orEmpty()) }
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 8))
         ClassicDialog(ctx, "ワンタイムパスワード", col, listOf(
             ClassicDialog.Btn("OK", true) {
@@ -589,9 +603,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     /** Validate and store; a bare secret becomes an otpauth URI (issuer = title, account = user). */
     fun setOtp(input: String?) {
-        if (input == null) values.remove(Order.OTP)
+        if (input == null) { values.remove(Order.OTP); dropOtpExtras() }
         else {
+            if (input.trim() == currentOtpUri()) { build(); return }  // unchanged (e.g. KeePass 2 TimeOtp shown as URI)
             val p = Totp.parse(input)
+            dropOtpExtras()  // one secret only: a new OTP replaces other apps' OTP fields
             values[Order.OTP] = if (input.startsWith("otpauth://", true)) input
                 else Totp.toUri(p.copy(issuer = values["Title"].orEmpty(), account = values["UserName"].orEmpty()))
             if (layout.none { it.first == Order.F_OTP }) layout.add(layout.indexOfFirst { it.first == Order.F_NOTES }.coerceAtLeast(0), Order.F_OTP to true)
@@ -620,7 +636,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             Session.update { Order.saveEntry(it, id, vals, tagList, layout.toList(),
                 cdSet = mapOf(io.github.zmlworks.kpexplorer.db.EntryIcon.CD to iconId,
                     Order.CD_MULTI to multi.filter { it in vals }.joinToString("\n")),
-                icon = ic?.std ?: app.keemobile.kotpass.constants.PredefinedIcon.Key) }
+                icon = ic?.std ?: app.keemobile.kotpass.constants.PredefinedIcon.Key, removed = removedKeys.toSet()) }
+            removedKeys.clear()
             Session.flush()
         } catch (t: Throwable) {
             Dlg.message(ctx, "保存", "保存できませんでした。\n$t", 'x'); return false

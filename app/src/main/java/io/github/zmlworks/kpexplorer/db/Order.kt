@@ -126,7 +126,7 @@ object Order {
 
     // ---------------------------------------------------------------- fields
 
-    fun customFieldNames(e: Entry): List<String> = e.fields.keys.filter { it !in STANDARD && it != OTP && !it.startsWith("TimeOtp-") && !it.startsWith("TOTP ") }
+    fun customFieldNames(e: Entry): List<String> = e.fields.keys.filter { it !in STANDARD && it != OTP && !isOtpExtra(it) }
 
     /** (key, visible) for every displayable field, in the stored order; new custom fields are appended. */
     fun layout(e: Entry): List<Pair<String, Boolean>> {
@@ -153,10 +153,36 @@ object Order {
 
     fun string(e: Entry, key: String): String = e.fields[key]?.content.orEmpty()
 
-    fun otpUri(e: Entry): String? {
-        string(e, OTP).takeIf { it.isNotBlank() }?.let { return it }
-        val b32 = string(e, "TimeOtp-Secret-Base32").takeIf { it.isNotBlank() } ?: return null
-        return "otpauth://totp/?secret=$b32"
+    fun otpUri(e: Entry): String? = otpUri { string(e, it) }
+
+    /** OTP-related string fields written by other KeePass apps (kept as they are, not shown as custom fields). */
+    fun isOtpExtra(k: String) = k.startsWith("TimeOtp-") || k.startsWith("TOTP ")
+
+    /**
+     * The TOTP of an entry as an otpauth:// URI, from (in this order) the KeePassXC "otp" field, KeePass 2.47+
+     * TimeOtp-Secret-Base32 / -Hex / -Secret (+ -Period, -Length, -Algorithm), or the legacy KeePassXC
+     * "TOTP Seed" + "TOTP Settings" ("30;6"). null when the entry has no TOTP.
+     */
+    fun otpUri(get: (String) -> String): String? {
+        get(OTP).trim().takeIf { it.isNotEmpty() }?.let { return it }
+        val secret: ByteArray? = runCatching {
+            get("TimeOtp-Secret-Base32").trim().takeIf { it.isNotEmpty() }?.let { Totp.base32Decode(it) }
+                ?: get("TimeOtp-Secret-Hex").trim().takeIf { it.isNotEmpty() }?.let { h ->
+                    val c = h.filter { !it.isWhitespace() }; require(c.length % 2 == 0)
+                    ByteArray(c.length / 2) { i -> c.substring(2 * i, 2 * i + 2).toInt(16).toByte() } }
+                ?: get("TimeOtp-Secret").takeIf { it.isNotEmpty() }?.toByteArray(Charsets.UTF_8)
+        }.getOrNull()
+        if (secret != null && secret.isNotEmpty()) {
+            val period = get("TimeOtp-Period").trim().toIntOrNull() ?: 30
+            val digits = get("TimeOtp-Length").trim().toIntOrNull() ?: 6
+            val alg = when (get("TimeOtp-Algorithm").trim().uppercase()) { "HMAC-SHA-256" -> "SHA256"; "HMAC-SHA-512" -> "SHA512"; else -> "SHA1" }
+            return runCatching { Totp.toUri(Totp.Params(secret, digits, period, alg)) }.getOrNull()
+        }
+        val seed = get("TOTP Seed").trim().takeIf { it.isNotEmpty() } ?: return null
+        val st = get("TOTP Settings").split(';')
+        val period = st.getOrNull(0)?.trim()?.toIntOrNull() ?: 30
+        val digits = st.getOrNull(1)?.trim()?.toIntOrNull()?.takeIf { it in 6..10 } ?: 6
+        return runCatching { Totp.toUri(Totp.Params(Totp.base32Decode(seed), digits, period)) }.getOrNull()
     }
 
     /**
@@ -164,13 +190,17 @@ object Order {
      * [values] maps field names (standard + custom + "otp") to text; missing customs are removed.
      */
     fun saveEntry(db: KeePassDatabase, id: UUID, values: Map<String, String>, tags: List<String>, layout: List<Pair<String, Boolean>>?,
-                  now: Instant = Instant.now(), cdSet: Map<String, String?> = emptyMap(), icon: PredefinedIcon? = null): KeePassDatabase {
+                  now: Instant = Instant.now(), cdSet: Map<String, String?> = emptyMap(), icon: PredefinedIcon? = null,
+                  removed: Set<String> = emptySet()): KeePassDatabase {
         val (parent, old) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
         val protect = setOf("Password", OTP)
-        val keep = old.fields.filterKeys { k -> k in STANDARD || k.startsWith("TimeOtp-") || k.startsWith("TOTP ") }
+        // OTP fields of other apps are kept unless [removed] names them (OTP 「削除」 on the key screen).
+        val keep = old.fields.filterKeys { k -> k in STANDARD || (isOtpExtra(k) && k !in removed) }
         val m = LinkedHashMap<String, EntryValue>()
         keep.forEach { (k, v) -> m[k] = v }
-        for ((k, v) in values) m[k] = if (k in protect) EntryValue.Encrypted(EncryptedValue.fromString(v)) else EntryValue.Plain(v)
+        // a field that was protected in the file stays protected (e.g. KeePass TimeOtp-Secret-*, custom PINs)
+        for ((k, v) in values) if (k !in removed)
+            m[k] = if (k in protect || old.fields[k] is EntryValue.Encrypted) EntryValue.Encrypted(EncryptedValue.fromString(v)) else EntryValue.Plain(v)
         if (values[OTP].isNullOrEmpty()) m.remove(OTP)
         val newFields = EntryFields(m)
         var cd = if (layout != null) old.customData + (CD_FIELDS to CustomDataValue(encodeLayout(layout), now)) else old.customData
