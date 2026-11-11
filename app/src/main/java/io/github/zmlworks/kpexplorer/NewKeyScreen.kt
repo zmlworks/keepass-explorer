@@ -24,7 +24,8 @@ import java.util.UUID
 
 /**
  * Separate create-key screen: plain editable fields (no swipe-to-copy / long-press-to-edit).
- * After 作成, opens the normal [KeyScreen] for the new entry. Empty form discards silently.
+ * After 作成, opens the normal [KeyScreen] for the new entry. Empty form discards silently; empty fields are
+ * not added to the new key (see [createdFields]).
  */
 class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : MainActivity.Screen {
     private val ctx = a
@@ -69,6 +70,10 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             if (Tree.parseTags(tags).isNotEmpty()) return true
             return values.any { (_, v) -> v.isNotEmpty() }
         }
+
+    /** 0.4.10: something was actually typed (a value or a tag). An icon or an empty added field alone is not. */
+    val hasInput: Boolean
+        get() = Tree.parseTags(tags).isNotEmpty() || values.any { (_, v) -> v.isNotEmpty() }
 
     init {
         bar = Parts.appBar(ctx, "新しい鍵", onBack = { onBack() })
@@ -331,21 +336,44 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         build()
     }
 
+    companion object {
+        /**
+         * 0.4.10 (t565u): a field left empty on the create form counts as deleted from the start — it is not
+         * put in the key's field layout (same state as deleting it with 「欄を編集」 afterwards; it can be
+         * brought back from the hidden zone there). Empty custom fields are not created at all. The five
+         * KeePass standard strings stay in the KDBX as empty values (KeePass always has them), but are not
+         * shown. Title always stays ("(無題)" when empty). OTP is never set on this form, so @OTP is left
+         * out too (setting an OTP later re-adds it).
+         */
+        fun createdFields(values: Map<String, String>, customs: List<String>, tagList: List<String>): Pair<LinkedHashMap<String, String>, List<Pair<String, Boolean>>> {
+            val vals = LinkedHashMap<String, String>()
+            for ((k, v) in values) if (k in Order.STANDARD || v.isNotEmpty()) vals[k] = v
+            if (vals["Title"].isNullOrBlank()) vals["Title"] = "(無題)"
+            val layout = Order.DEFAULT_LAYOUT.filter { k ->
+                when (k) {
+                    Order.F_TITLE -> true
+                    Order.F_TAGS -> tagList.isNotEmpty()
+                    Order.F_OTP -> false
+                    else -> values[k].orEmpty().isNotEmpty()
+                }
+            }.map { it to true }.toMutableList()
+            val notesAt = layout.indexOfFirst { it.first == Order.F_NOTES }.let { if (it < 0) layout.indexOfFirst { p -> p.first == Order.F_TAGS }.let { t -> if (t < 0) layout.size else t } else it }
+            customs.filter { values[it].orEmpty().isNotEmpty() }.forEachIndexed { i, c -> layout.add(notesAt + i, c to true) }
+            return vals to layout
+        }
+    }
+
     /** Create the entry, flush, then open the normal key (view) screen. */
     fun create(): Boolean {
-        if (!dirty) {
-            Toast.makeText(ctx, "タイトルを入力してください", Toast.LENGTH_SHORT).show()
+        if (!hasInput) {
+            Toast.makeText(ctx, "何も入力されていないため、作成しません", Toast.LENGTH_SHORT).show()
             return false
         }
         try {
             val e = Order.newKey()
             val id = e.uuid
-            val vals = LinkedHashMap(values)
-            if (vals["Title"].isNullOrBlank()) vals["Title"] = "(無題)"
             val tagList = Tree.parseTags(tags)
-            val layout = Order.DEFAULT_LAYOUT.map { it to true }.toMutableList()
-            val notesAt = layout.indexOfFirst { it.first == Order.F_NOTES }.let { if (it < 0) layout.size else it }
-            customs.forEachIndexed { i, c -> layout.add(notesAt + i, c to true) }
+            val (vals, layout) = createdFields(values, customs, tagList)
             val ic = EntryIcon.def(iconId)
             Session.update { db ->
                 var d = Order.appendEntry(db, parent, e)
@@ -367,7 +395,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
     override fun onBack(): Boolean {
         if (endTextInput()) return true   // first Back: stop typing, stay on the form
-        if (!dirty) { a.showExplorer(); return true }
+        if (!dirty || !hasInput) { a.showExplorer(); return true }  // nothing typed: discard silently
         ClassicDialog(ctx, "KeePass Explorer",
             W.text(ctx, "入力内容がまだ作成されていません。\n作成しますか?", 15f),
             listOf(

@@ -30,7 +30,12 @@ class FolderTree(
     var current: UUID? = null,
     /** When set (main path tree): a single tap on the label navigates into that folder. +/− still expands. */
     private val onJump: ((UUID) -> Unit)? = null,
-    private val rowDp: Int = 38
+    private val rowDp: Int = 38,
+    /**
+     * 0.4.10: long press on a row (screen x, y). Return true when a menu was shown; the release is then
+     * ignored (no navigation). Returning false keeps the normal tap behaviour on release.
+     */
+    private val onLongPress: ((UUID, Int, Int) -> Boolean)? = null
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -82,6 +87,9 @@ class FolderTree(
 
     /** Tap the node of [id] (tests). */
     fun tap(id: UUID) { rows.firstOrNull { it.tag == id }?.let { (it as Row).tapLabel() } }
+    /** Long press the label of [id] (tests): same as holding the finger there past the long-press timeout. */
+    fun longPress(id: UUID): Boolean = (rows.firstOrNull { it.tag == id } as? Row)?.fireLong() ?: false
+
     /** Tap the +/− box of [id] (tests). */
     fun toggle(id: UUID) {
         val v = rows.firstOrNull { it.tag == id } as? Row ?: return
@@ -163,10 +171,37 @@ class FolderTree(
             }
         }
 
+        private var downX = 0f; private var downY = 0f; private var longDone = false
+        private val longRun = Runnable { fireLong() }
+
+        fun fireLong(): Boolean {
+            val cb = onLongPress ?: return false
+            val loc = IntArray(2); getLocationOnScreen(loc)
+            val shown = cb(n.g.uuid, loc[0] + downX.toInt(), loc[1] + downY.toInt())
+            if (shown) {
+                longDone = true
+                try { performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
+            }
+            return shown
+        }
+
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(e: MotionEvent): Boolean {
-            if (e.action == MotionEvent.ACTION_DOWN) return true
-            if (e.action != MotionEvent.ACTION_UP) return true
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.x; downY = e.y; longDone = false
+                    if (onLongPress != null) postDelayed(longRun, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                    if (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop) removeCallbacks(longRun)
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> { removeCallbacks(longRun); return true }
+                MotionEvent.ACTION_UP -> { removeCallbacks(longRun); if (longDone) { longDone = false; return true } }
+                else -> return true
+            }
             val cx = n.depth * indent
             if (hasKids && n.depth > 0 && e.x < cx + indent / 2 + W.dp(2)) {
                 val now = !isExpanded(n.g)

@@ -43,6 +43,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         b(ctx.getString(R.string.browse_backup)) { selected?.let { TempImport.browseBackupFile(a, it) } ?: need() }
         b("外部に書き出す...") { selected?.let { export(it) } ?: need() }
         b("復元...") { selected?.let { restore(it) } ?: need() }
+        b("名前の変更...") { selected?.let { rename(it) } ?: need() }
         b("削除") { selected?.let { delete(it) } ?: need() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         val addr = W.hbox(ctx).apply { setPadding(W.dp(6), W.dp(2), W.dp(4), W.dp(5)) }
@@ -137,6 +138,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
             TempImport.confirmAndImport(a, f.readBytes(), f.name)
         },
         Menus.sep(),
+        Menus.Item("名前の変更...") { rename(f) },
         Menus.Item("削除") { delete(f) }
     )
 
@@ -189,6 +191,17 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
             }
         }
     }
+
+    /** 0.4.10: rename (".kdbx" kept, no separators, no clash with another backup). */
+    fun rename(f: File): io.github.zmlworks.kpexplorer.ui.ClassicDialog =
+        Dlg.prompt(ctx, "名前の変更", "新しい名前 (.kdbx は自動で付きます):", f.nameWithoutExtension) { input ->
+            try {
+                val nf = a.store.renameBackup(f, input)
+                selected = nf; reload(); true
+            } catch (e: io.github.zmlworks.kpexplorer.db.Store.RenameException) {
+                Dlg.message(ctx, "名前の変更", e.message ?: "名前を変更できませんでした。", '!'); false
+            }
+        }
 
     private fun delete(f: File) {
         Dlg.confirm(ctx, "ファイルの削除の確認", "「${f.name}」を削除しますか?", '!') {

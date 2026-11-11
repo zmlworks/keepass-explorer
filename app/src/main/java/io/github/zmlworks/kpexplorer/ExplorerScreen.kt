@@ -90,7 +90,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private var listView: AbsListView? = null
     private val ghost = ImageView(ctx).apply { visibility = View.GONE; alpha = 0.75f }
 
-    companion object { const val LIVE_MS = 150L }
+    companion object {
+        const val LIVE_MS = 150L
+        const val PREF_COL_NAME = "detailColNameDp"; const val PREF_COL_USER = "detailColUserDp"
+        const val MIN_NAME_DP = 64; const val MIN_USER_DP = 40; const val MIN_DATE_DP = 28
+    }
 
     var rows: List<Order.Node> = emptyList()
         private set
@@ -211,7 +215,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d),
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
-                onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32)
+                onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
+                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) })
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
@@ -287,6 +292,18 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     var folderTree: FolderTree? = null
         private set
+
+    /**
+     * 0.4.10: long press in the path tree. Only the recycle bin has a menu there (the same one as its icon in
+     * the list: 開く / ごみ箱を空にする); other folders keep tap-to-open on release.
+     */
+    fun pathLongPress(gid: UUID, x: Int, y: Int): Boolean {
+        val d = db()
+        if (gid != Tree.recycleBinId(d)) return false
+        val g = Tree.findGroup(d, gid) ?: return false
+        Menus.at(pathBox, x, y, itemMenu(Order.Node.F(g)))
+        return true
+    }
     private fun post(f: () -> Unit) { pathBox.post(f) }
 
     /** ScrollView with a maximum height (folder tree pane). */
@@ -379,7 +396,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      *  - no movement: short tap = folder opens / file selected (or opened if it was already selected);
      *    long press = context menu (background menu on empty space).
      */
-    private fun attachGestures(v: AbsListView) {
+    private fun attachGestures(v: AbsListView, dragZone: ((Float) -> Boolean)? = null) {
         listView = v
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop * 0.6f
         val longMs = ViewConfiguration.getLongPressTimeout().toLong()
@@ -400,7 +417,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     x0 = e.x; y0 = e.y; moved = false; longFired = false
                     val inGutter = e.x >= v.width - gutter()
                     downR = if (inGutter) null else rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))
-                    onItem = downR != null
+                    onItem = downR != null && (dragZone == null || dragZone(e.x))
                     if (!inGutter) v.postDelayed(long, longMs)
                     false
                 }
@@ -524,16 +541,127 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return f
     }
 
+    // ------------------------------------------------------------------ details columns (0.4.10)
+
+    /** Current name / user column widths in px (header and rows); the date column takes the rest. */
+    var colName = 0
+        private set
+    var colUser = 0
+        private set
+    private var listHeader: LinearLayout? = null
+
+    /** Width the detail rows can use (pane minus the scrollbar strip). */
+    private fun detailAvail(): Int {
+        val w = if (content.width > 0) content.width - content.paddingLeft - content.paddingRight
+            else ctx.resources.displayMetrics.widthPixels - W.dp(4) - 4 * W.px
+        return (w - gutter()).coerceAtLeast(W.dp(160))
+    }
+
+    private fun clampCols(name: Int, user: Int, avail: Int): Pair<Int, Int> {
+        val n = name.coerceIn(W.dp(MIN_NAME_DP), (avail - W.dp(MIN_USER_DP) - W.dp(MIN_DATE_DP)).coerceAtLeast(W.dp(MIN_NAME_DP)))
+        val u = user.coerceIn(W.dp(MIN_USER_DP), (avail - n - W.dp(MIN_DATE_DP)).coerceAtLeast(W.dp(MIN_USER_DP)))
+        return n to u
+    }
+
+    /** Stored widths (dp) or the old 1.4 : 1 split of what is left beside a 92 dp date column. */
+    private fun loadCols() {
+        val avail = detailAvail()
+        val p = App.prefs(ctx)
+        val nd = p.getInt(PREF_COL_NAME, -1); val ud = p.getInt(PREF_COL_USER, -1)
+        val rest = avail - W.dp(92)
+        val n = if (nd > 0) W.dp(nd) else (rest * 1.4f / 2.4f).toInt()
+        val u = if (ud > 0) W.dp(ud) else rest - (rest * 1.4f / 2.4f).toInt()
+        val (cn, cu) = clampCols(n, u, avail)
+        colName = cn; colUser = cu
+    }
+
+    /** Sets the widths (px), relayouts header and rows; [persist] stores them in dp. */
+    fun setColumnWidths(name: Int, user: Int, persist: Boolean = true) {
+        val (n, u) = clampCols(name, user, detailAvail())
+        colName = n; colUser = u
+        listHeader?.let { h ->
+            (h.getChildAt(0)?.layoutParams as? LinearLayout.LayoutParams)?.width = n
+            (h.getChildAt(1)?.layoutParams as? LinearLayout.LayoutParams)?.width = u
+            h.requestLayout()
+        }
+        notifyList()
+        if (persist) {
+            val d = ctx.resources.displayMetrics.density
+            App.prefs(ctx).edit().putInt(PREF_COL_NAME, (n / d).toInt().coerceAtLeast(1)).putInt(PREF_COL_USER, (u / d).toInt().coerceAtLeast(1)).apply()
+        }
+    }
+
+    fun resetColumnWidths() {
+        App.prefs(ctx).edit().remove(PREF_COL_NAME).remove(PREF_COL_USER).apply()
+        loadCols(); setColumnWidths(colName, colUser, persist = false)
+    }
+
+    /** Header grip at the right edge of a resizable column (two short raised lines like a column divider). */
+    private class Grip : Drawable() {
+        private val dark = Paint().apply { color = W.SHADOW }
+        private val light = Paint().apply { color = W.HILITE }
+        override fun draw(c: Canvas) {
+            val b = bounds; val px = W.px.toFloat(); val x = b.right - 4 * px
+            val t = b.top + b.height() * 0.22f; val bt = b.bottom - b.height() * 0.22f
+            c.drawRect(x - 3 * px, t, x - 2 * px, bt, dark); c.drawRect(x - 2 * px, t, x - px, bt, light)
+            c.drawRect(x, t, x + px, bt, dark); c.drawRect(x + px, t, x + 2 * px, bt, light)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    /** Which divider a header touch at [x] grabs: 1 = after 名前, 2 = after ユーザー名/場所, 0 = none. */
+    fun headerDividerAt(x: Float): Int {
+        val r = W.dp(16)
+        val d1 = abs(x - colName); val d2 = abs(x - (colName + colUser))
+        return when {
+            d1 <= r && d1 <= d2 -> 1
+            d2 <= r -> 2
+            else -> 0
+        }
+    }
+
+    private fun attachHeaderResize(header: LinearLayout) {
+        var which = 0; var x0 = 0f; var n0 = 0; var u0 = 0
+        header.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    which = headerDividerAt(e.x); x0 = e.x; n0 = colName; u0 = colUser
+                    if (which != 0) header.parent?.requestDisallowInterceptTouchEvent(true)
+                    which != 0
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (e.x - x0).toInt()
+                    when (which) { 1 -> setColumnWidths(n0 + dx, u0, persist = false); 2 -> setColumnWidths(n0, u0 + dx, persist = false) }
+                    which != 0
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val w = which; which = 0
+                    if (w != 0) setColumnWidths(colName, colUser, persist = true)
+                    w != 0
+                }
+                else -> which != 0
+            }
+        }
+    }
+
     private fun buildList(): View {
         val col = W.vbox(ctx).apply { setBackgroundColor(W.WINDOW) }
+        loadCols()
         val header = W.hbox(ctx)
-        fun h(s: String, w: Int, weight: Float) = header.addView(W.text(ctx, s, 13f).apply {
-            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(6), W.dp(4), W.dp(6)); isSingleLine = true
+        listHeader = header
+        fun h(s: String, w: Int, weight: Float, grip: Boolean) = header.addView(W.text(ctx, s, 13f).apply {
+            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(8), W.dp(10), W.dp(8)); isSingleLine = true
+            ellipsize = TextUtils.TruncateAt.END
+            if (grip) foreground = Grip()
         }, W.lp(w, W.WRAP, weight))
         val inSearch = search != null
-        h("名前", 0, 1.4f)
-        h(if (inSearch) "場所" else "ユーザー名", 0, 1f)
-        h("更新日時", W.dp(92), 0f)
+        h("名前", colName, 0f, true)
+        h(if (inSearch) "場所" else "ユーザー名", colUser, 0f, true)
+        h("更新日時", 0, 1f, false)
+        header.contentDescription = "列の見出し (境目をドラッグで幅を変更)"
+        attachHeaderResize(header)
         col.addView(header, W.lp())
         val list = ListView(ctx)
         list.setPadding(0, 0, gutter(), 0)
@@ -548,8 +676,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             override fun getItemId(p: Int) = p.toLong()
             override fun getView(p: Int, convert: View?, parent: ViewGroup?): View {
                 val r = rows[p]
-                val row = W.hbox(ctx).apply { setPadding(W.dp(4), 0, 0, 0); minimumHeight = W.dp(40); gravity = Gravity.CENTER_VERTICAL }
-                row.addView(ImageView(ctx).apply { setImageDrawable(Px.drawable(ctx, bmpFor(r, false), W.iconScale())) }, W.lp(W.WRAP, W.WRAP, r = 4))
+                val row = W.hbox(ctx).apply { minimumHeight = W.dp(40); gravity = Gravity.CENTER_VERTICAL }
+                val nameCol = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(W.dp(4), 0, 0, 0) }
+                nameCol.addView(ImageView(ctx).apply { setImageDrawable(Px.drawable(ctx, bmpFor(r, false), W.iconScale())) }, W.lp(W.WRAP, W.WRAP, r = 4))
                 val sel = r.uuid == selection
                 val nameBox = FrameLayout(ctx)
                 nameBox.addView(W.text(ctx, label(r), 15f, color = if (sel) W.HILITE else W.TEXT).apply {
@@ -557,7 +686,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     setPadding(W.dp(3), W.dp(2), W.dp(3), W.dp(2))
                     if (sel) setBackgroundColor(W.NAVY)
                 }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
-                row.addView(nameBox, W.lp(0, W.WRAP, 1.4f))
+                nameCol.addView(nameBox, W.lp(0, W.WRAP, 1f))
+                row.addView(nameCol, W.lp(colName, W.WRAP))
                 val second = when (r) {
                     is Order.Node.E -> if (inSearch) Tree.parentOf(Tree.root(db()), r.uuid)?.name.orEmpty()
                         else if (r.kind == Order.Kind.MEMO) "メモ" else Tree.userName(r.e)
@@ -565,16 +695,18 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 }
                 row.addView(W.text(ctx, second, 14f, color = if (inSearch) W.SHADOW else W.TEXT).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, W.dp(2), 0)
-                }, W.lp(0, W.WRAP, 1f))
+                }, W.lp(colUser, W.WRAP))
                 val t = when (r) { is Order.Node.E -> r.e.times?.lastModificationTime; is Order.Node.F -> r.g.times?.lastModificationTime }
-                row.addView(W.text(ctx, t?.let { dateFmt.format(it) } ?: "", 13f).apply { isSingleLine = true; setPadding(W.dp(6), 0, 0, 0) },
-                    W.lp(W.dp(92), W.WRAP))
+                row.addView(W.text(ctx, t?.let { dateFmt.format(it) } ?: "", 13f).apply {
+                    isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, 0, 0) },
+                    W.lp(0, W.WRAP, 1f))
                 drop?.takeIf { it.target == r.uuid }?.let { row.foreground = Marker(it.mode, true) }
                 return row
             }
         }
         list.isScrollbarFadingEnabled = false
-        attachGestures(list)
+        // 0.4.10: in details, only the name column starts a reorder drag; elsewhere a touch scrolls the list
+        attachGestures(list, dragZone = { x -> x < colName })
         col.addView(if (rows.isEmpty()) empty(list) else list, W.lp(W.MATCH, 0, 1f))
         return col
     }
@@ -586,6 +718,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     data class Drop(val mode: Mode, val target: UUID?, val pathFolder: Boolean = false) { enum class Mode { INTO, BEFORE, AFTER, END } }
 
     private var drag: DragState? = null
+    /** A drag (move / reorder) is in progress (tests). */
+    val dragging: Boolean get() = drag != null
     private var drop: Drop? = null
 
     private fun beginDrag(r: Order.Node, rx: Float, ry: Float) {
@@ -883,8 +1017,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun backgroundMenu(): List<Menus.Item> {
         val ns = search == null
         val ro = Session.readOnlyTemp
+        val cols = if (!iconMode) listOf(Menus.Item("列の幅を元に戻す",
+            App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList()
         return listOf(
-            Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() },
+            Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) + cols + listOf(
             Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) },
             Menus.sep(),
             Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { newFolder() },

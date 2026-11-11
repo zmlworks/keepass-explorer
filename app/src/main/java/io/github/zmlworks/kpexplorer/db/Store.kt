@@ -76,7 +76,48 @@ class Store(dataDir: File, val backupDir: File) {
         return File(backupDir, name).takeIf { it.isFile }
     }
 
+    /** Why a backup rename was refused (shown to the user). */
+    class RenameException(msg: String) : Exception(msg)
+
+    /**
+     * 0.4.10: rename an internal backup. [input] is the new name with or without ".kdbx" (always kept);
+     * no path separators / control characters / reserved names, max 100 chars, no collision with another
+     * backup (case-insensitive, the backup dir can be on a case-insensitive file system). The file's
+     * modification time (list order) is kept. Returns the renamed file (same file when the name is unchanged).
+     */
+    @Synchronized
+    fun renameBackup(f: File, input: String): File {
+        val base = backupBaseName(input)
+        val target = File(backupDir, "$base.kdbx")
+        if (f.parentFile?.canonicalFile != backupDir.canonicalFile || !f.isFile) throw RenameException("バックアップが見つかりません。")
+        if (target.name == f.name) return f
+        val clash = (backupDir.listFiles() ?: emptyArray()).any { it.name.equals(target.name, ignoreCase = true) && it.name != f.name }
+        if (clash) throw RenameException("「${target.name}」は既にあります。別の名前にしてください。")
+        val mtime = f.lastModified()
+        if (target.name.equals(f.name, ignoreCase = true)) {
+            // case-only change: go through a temporary name
+            val tmp = File(backupDir, f.name + ".rename.tmp")
+            if (!f.renameTo(tmp) || !tmp.renameTo(target)) throw RenameException("名前を変更できませんでした。")
+        } else if (!f.renameTo(target)) throw RenameException("名前を変更できませんでした。")
+        if (mtime > 0) target.setLastModified(mtime)
+        return target
+    }
+
     companion object {
+        const val MAX_BACKUP_NAME = 100
+
+        /** Validated base name (without ".kdbx") for [renameBackup]; throws [RenameException]. */
+        fun backupBaseName(input: String): String {
+            var s = input.trim()
+            if (s.endsWith(".kdbx", ignoreCase = true)) s = s.dropLast(5).trimEnd()
+            if (s.isEmpty()) throw RenameException("名前を入力してください。")
+            if (s.any { it == '/' || it == '\\' || it.code < 0x20 || it.code == 0x7F || it in "<>:\"|?*" })
+                throw RenameException("名前に次の文字は使えません: / \\ : * ? \" < > |")
+            if (s == "." || s == ".." || s.startsWith(".")) throw RenameException("「.」で始まる名前は使えません。")
+            if (s.length > MAX_BACKUP_NAME) throw RenameException("名前が長すぎます (${MAX_BACKUP_NAME} 文字まで)。")
+            return s
+        }
+
         fun writeAtomic(target: File, bytes: ByteArray) {
             target.parentFile?.mkdirs()
             val tmp = File(target.parentFile, target.name + ".tmp")
