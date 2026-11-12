@@ -217,7 +217,7 @@ class Ux0410Test {
 
     // ---------------------------------------------------------------- 4: touch outside the name scrolls
 
-    @Test fun detailTouch_onlyNameColumnStartsDrag() {
+    @Test fun detailTouch_swipeNeverStartsDrag() {
         val ex = details()
         val list = find(ex.view, ListView::class.java)!!
         val row = list.getChildAt(4)
@@ -238,11 +238,11 @@ class Ux0410Test {
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, xUser, y, 200))
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, xUser, y, 240)); idle()
         assertEquals(ex.rows[4].uuid, ex.selection)
-        // name column: drag as before
+        // 0.4.12: the name column scrolls too (drag = long press, then move; see Ux0412Test)
         val xName = W.dp(60).toFloat()
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, xName, y, 300))
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, xName, y + W.dp(30), 340))
-        assertTrue(ex.dragging)
+        assertFalse(ex.dragging)
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_CANCEL, xName, y + W.dp(30), 380)); idle()
         assertFalse(ex.dragging)
     }

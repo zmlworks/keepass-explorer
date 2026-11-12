@@ -88,7 +88,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     /** 0.4.11: the item whose preview was tapped once (next tap on the preview opens it). */
     var previewActive: UUID? = null
         private set
-    private var previewTitle: TextView? = null
+
     private lateinit var previewScroll: ScrollView
     private lateinit var split: View
     private var shownSaveError: String? = null
@@ -100,6 +100,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         const val LIVE_MS = 150L
         const val PREF_COL_NAME = "detailColNameDp"; const val PREF_COL_USER = "detailColUserDp"
         const val MIN_NAME_DP = 64; const val MIN_USER_DP = 40; const val MIN_DATE_DP = 28
+        const val DRAG_START_MM = 8f
+        /** 0.4.11 used 0xFFE8EEF8; 0.4.12 a touch deeper. */
+        const val PREVIEW_SELECTED_BG = 0xFFDDE6F4.toInt()
     }
 
     var rows: List<Order.Node> = emptyList()
@@ -377,13 +380,30 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         highlightPreview()
     }
 
-    private fun highlightPreview() {
-        val t = previewTitle ?: return
-        val on = previewActive != null && previewActive == selection
-        t.setBackgroundColor(if (on) W.NAVY else 0)
-        t.setTextColor(if (on) W.HILITE else W.TEXT)
-        preview.setBackgroundColor(if (on) 0xFFE8EEF8.toInt() else W.WINDOW)
+    /** Dotted focus frame inside the preview window (fixed to the window, not scrolled with the content). */
+    class FocusFrame : Drawable() {
+        private val p = Paint().apply {
+            style = Paint.Style.STROKE; strokeWidth = W.px.toFloat(); color = W.TEXT
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(W.px.toFloat(), W.px.toFloat()), 0f)
+        }
+        override fun draw(c: Canvas) {
+            val b = bounds; val i = W.dp(4) + W.px / 2f
+            c.drawRect(b.left + i, b.top + i, b.right - i, b.bottom - i, p)
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
     }
+
+    /** 0.4.12: selected preview = dotted frame + a slightly deeper pale blue; the name is not inverted. */
+    private fun highlightPreview() {
+        val on = previewActive != null && previewActive == selection
+        preview.setBackgroundColor(if (on) PREVIEW_SELECTED_BG else W.WINDOW)
+        previewScroll.foreground = if (on) FocusFrame() else null
+    }
+
+    /** Preview is in the selected (first-tapped) state (tests). */
+    val previewSelected: Boolean get() = previewActive != null && previewActive == selection
 
     fun updatePreview() {
         preview.removeAllViews()
@@ -396,7 +416,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(W.icon(ctx, bmpFor(r, true).let { if (r.uuid == selection) unselected(r) else it }, maxOf(1, W.iconScale() - 2)), W.lp(W.WRAP, W.WRAP, r = 8))
         val title = W.text(ctx, label(r), 17f, true).apply { setPadding(W.dp(3), W.dp(1), W.dp(3), W.dp(1)) }
-        previewTitle = title
         head.addView(FrameLayout(ctx).apply { addView(title, FrameLayout.LayoutParams(W.WRAP, W.WRAP)) }, W.lp(0, W.WRAP, 1f))
         preview.addView(head, W.lp(W.MATCH, W.WRAP, b = 6))
         when (r) {
@@ -449,21 +468,24 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     // ------------------------------------------------------------------ item views
 
     /**
-     * Touch handling (no GestureDetector):
-     *  - finger down on an item and moves past a small slop → drag that item (the list never sees the move);
-     *  - finger down on empty space, or in the scrollbar strip at the right edge ([gutter]) → normal list scrolling;
-     *  - no movement: short tap = folder opens / file selected (or opened if it was already selected);
-     *    long press = context menu (background menu on empty space).
+     * 0.4.12 touch handling, like an Android home launcher (icon and detail views alike):
+     *  - touch and move without a long press → the list scrolls (anywhere; no scrollbar strip any more);
+     *  - long press without moving → context menu (background menu on empty space); releasing keeps it open;
+     *  - after the long press on an item, moving the finger past [dragStartPx] (~8 mm) closes the menu and
+     *    drags the item (drop on a folder = into it, between items = reorder, on the path tree = there);
+     *  - short tap = folder opens / file selected (or opened if it was already selected).
      */
-    private fun attachGestures(v: AbsListView, dragZone: ((Float) -> Boolean)? = null) {
+    private fun attachGestures(v: AbsListView) {
         listView = v
-        val slop = ViewConfiguration.get(ctx).scaledTouchSlop * 0.6f
+        val slop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
         val longMs = ViewConfiguration.getLongPressTimeout().toLong()
-        var downR: Order.Node? = null; var onItem = false; var x0 = 0f; var y0 = 0f; var moved = false; var longFired = false
+        var downR: Order.Node? = null; var x0 = 0f; var y0 = 0f; var rx0 = 0f; var ry0 = 0f
+        var moved = false; var longFired = false
         val long = Runnable {
+            if (moved) return@Runnable
             longFired = true
             val loc = IntArray(2); v.getLocationOnScreen(loc)
-            val cancel = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { v.onTouchEvent(it); it.recycle() }
+            MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0f, 0f, 0).also { v.onTouchEvent(it); it.recycle() }
             try { frame.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
             val r = downR
             if (r == null) { select(null); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), backgroundMenu()) }
@@ -473,41 +495,41 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (drag != null) { dragEvent(e); return@setOnTouchListener true }
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    x0 = e.x; y0 = e.y; moved = false; longFired = false
-                    val inGutter = e.x >= v.width - gutter()
-                    downR = if (inGutter) null else rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))
-                    onItem = downR != null && (dragZone == null || dragZone(e.x))
-                    if (!inGutter) v.postDelayed(long, longMs)
+                    x0 = e.x; y0 = e.y; rx0 = e.rawX; ry0 = e.rawY; moved = false; longFired = false
+                    downR = rowAt(v, v.pointToPosition(e.x.toInt(), e.y.toInt()))
+                    v.postDelayed(long, longMs)
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) {
-                        moved = true; v.removeCallbacks(long)
+                    if (longFired) {
+                        // menu is up: jitter is ignored; a real move turns it into a drag of the pressed item
                         val r = downR
-                        if (onItem && r != null && !longFired) {
-                            // take the gesture away from the list before it starts scrolling
-                            MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it); it.recycle() }
-                            beginDrag(r, e.rawX - (e.x - x0), e.rawY - (e.y - y0))
-                            drag!!.moving = true
-                            dragTo(e.rawX, e.rawY)
-                            return@setOnTouchListener true
+                        if (r != null && !isRecycleBinFolder(r) && !Session.readOnlyTemp &&
+                            (abs(e.x - x0) > dragStartPx() || abs(e.y - y0) > dragStartPx())) {
+                            Menus.dismiss()
+                            beginDrag(r, rx0, ry0)
+                            drag?.let { it.moving = true; dragTo(e.rawX, e.rawY) }
                         }
+                        return@setOnTouchListener true
                     }
+                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) { moved = true; v.removeCallbacks(long) }
                     false
                 }
                 MotionEvent.ACTION_UP -> {
                     v.removeCallbacks(long)
-                    if (!moved && !longFired) tap(downR)
+                    if (longFired) return@setOnTouchListener true   // menu stays open
+                    if (!moved) tap(downR)
                     false
                 }
-                MotionEvent.ACTION_CANCEL -> { v.removeCallbacks(long); false }
-                else -> false
+                MotionEvent.ACTION_CANCEL -> { v.removeCallbacks(long); val f = longFired; longFired = false; f }
+                else -> longFired
             }
         }
     }
 
-    /** Width of the right-edge strip that always scrolls (the list's scrollbar lives there). */
-    private fun gutter() = W.dp(28)
+    /** Finger travel after a long press that turns the open menu into a drag: ~8 mm (at least 32 dp). */
+    fun dragStartPx(): Float = maxOf(W.dp(32).toFloat(),
+        android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_MM, DRAG_START_MM, ctx.resources.displayMetrics))
 
     /** Folder: open. Key / memo: first tap selects, tapping the selected item again opens it. Empty: deselect. */
     fun tap(r: Order.Node?) {
@@ -559,12 +581,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         grid.numColumns = 5
         grid.stretchMode = GridView.STRETCH_COLUMN_WIDTH
         grid.verticalSpacing = W.dp(4)
-        grid.setPadding(W.dp(2), W.dp(6), gutter(), W.dp(6))
-        grid.scrollBarStyle = View.SCROLLBARS_OUTSIDE_INSET
+        grid.setPadding(W.dp(2), W.dp(6), W.dp(2), W.dp(6))
+        // 0.4.12: no scrollbar (launcher-like: touch anywhere and move to scroll)
+        grid.isVerticalScrollBarEnabled = false; grid.isHorizontalScrollBarEnabled = false
         grid.clipToPadding = false
         grid.selector = android.graphics.drawable.ColorDrawable(0)
         grid.setBackgroundColor(W.WINDOW)
-        W.classicScrollbars(grid)
         val iconScale = maxOf(1, W.iconScale() - 1)
         grid.adapter = object : BaseAdapter() {
             override fun getCount() = rows.size
@@ -587,7 +609,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 return cell
             }
         }
-        grid.isScrollbarFadingEnabled = false
         attachGestures(grid)
         return if (rows.isEmpty()) empty(grid) else grid
     }
@@ -614,7 +635,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun detailAvail(): Int {
         val w = if (content.width > 0) content.width - content.paddingLeft - content.paddingRight
             else ctx.resources.displayMetrics.widthPixels - W.dp(4) - 4 * W.px
-        return (w - gutter()).coerceAtLeast(W.dp(160))
+        return w.coerceAtLeast(W.dp(160))
     }
 
     private fun clampCols(name: Int, user: Int, avail: Int): Pair<Int, Int> {
@@ -724,11 +745,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         attachHeaderResize(header)
         col.addView(header, W.lp())
         val list = ListView(ctx)
-        list.setPadding(0, 0, gutter(), 0)
-        list.scrollBarStyle = View.SCROLLBARS_OUTSIDE_INSET
+        list.setPadding(0, 0, 0, 0)
+        list.isVerticalScrollBarEnabled = false; list.isHorizontalScrollBarEnabled = false
         list.divider = null
         list.selector = android.graphics.drawable.ColorDrawable(0)
-        W.classicScrollbars(list)
         val dateFmt = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd").withZone(java.time.ZoneId.systemDefault())
         list.adapter = object : BaseAdapter() {
             override fun getCount() = rows.size
@@ -764,9 +784,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 return row
             }
         }
-        list.isScrollbarFadingEnabled = false
-        // 0.4.10: in details, only the name column starts a reorder drag; elsewhere a touch scrolls the list
-        attachGestures(list, dragZone = { x -> x < colName })
+        // 0.4.12: same launcher-style gestures as the icon view (long press, then move = drag; else scroll)
+        attachGestures(list)
         col.addView(if (rows.isEmpty()) empty(list) else list, W.lp(W.MATCH, 0, 1f))
         return col
     }
