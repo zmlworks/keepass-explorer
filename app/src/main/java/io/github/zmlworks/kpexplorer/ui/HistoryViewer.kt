@@ -93,7 +93,7 @@ object HistoryViewer {
         return dlg.also { current = it; it.show() }
     }
 
-    private fun snapCard(ctx: Context, r: Row, onDelete: (() -> Unit)?): LinearLayout {
+    internal fun snapCard(ctx: Context, r: Row, onDelete: (() -> Unit)?): LinearLayout {
         val card = W.vbox(ctx).apply {
             background = W.Bevel(W.Style.THIN_RAISED, W.FACE)
             setPadding(W.dp(10), W.dp(8), W.dp(10), W.dp(8))

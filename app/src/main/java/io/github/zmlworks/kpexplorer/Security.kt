@@ -6,6 +6,7 @@ import android.net.Uri
 import android.text.InputType
 import android.view.View
 import app.keemobile.kotpass.database.modifiers.modifyContent
+import io.github.zmlworks.kpexplorer.db.Order
 import io.github.zmlworks.kpexplorer.db.Tree
 import android.widget.EditText
 import android.widget.Toast
@@ -41,7 +42,7 @@ object Security {
     fun opened(a: MainActivity, db: KeePassDatabase) {
         Session.open(db)
         val binName = a.getString(R.string.recycle_bin)
-        Session.update { Tree.ensureRecycleBinAtRoot(it, binName) }
+        Session.update { Order.dropEmptyCreationHistory(Tree.ensureRecycleBinAtRoot(it, binName)) }
     }
 
     /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */

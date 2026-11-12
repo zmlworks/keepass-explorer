@@ -4,6 +4,7 @@ import app.keemobile.kotpass.constants.BasicField
 import app.keemobile.kotpass.constants.PredefinedIcon
 import app.keemobile.kotpass.cryptography.EncryptedValue
 import app.keemobile.kotpass.database.KeePassDatabase
+import app.keemobile.kotpass.database.modifiers.modifyContent
 import app.keemobile.kotpass.models.CustomDataValue
 import app.keemobile.kotpass.models.Entry
 import app.keemobile.kotpass.models.EntryFields
@@ -218,7 +219,13 @@ object Order {
         val iconChanged = old.icon != newIcon || old.customData[EntryIcon.CD]?.value != cd[EntryIcon.CD]?.value
         val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
         var hist = old.history
-        if (contentChanged) hist = (old.history + old.copy(history = listOf())).takeLast(max.coerceAtLeast(0))
+        // 0.4.17: an entry with no content yet (a key just created by this app: appendEntry + saveEntry) leaves
+        // no empty History copy. Independent memos of this app keep line diffs (MemoDiff) instead of copies.
+        val hadContent = content(old.fields, old.tags).let { it.first.isNotEmpty() || it.second.isNotEmpty() }
+        if (contentChanged && MemoDiff.isAppMemo(old)) {
+            MemoDiff.record(old, newFields["Title"]?.content.orEmpty(), newFields["Notes"]?.content.orEmpty(), now.toEpochMilli(), max)
+                ?.let { cd = cd + (MemoDiff.CD to CustomDataValue(it, now)) }
+        } else if (contentChanged && hadContent) hist = (old.history + old.copy(history = listOf())).takeLast(max.coerceAtLeast(0))
         val t = if (contentChanged || iconChanged) (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
             else old.times
         val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t, icon = newIcon)
@@ -244,6 +251,39 @@ object Order {
         if (next.size == h.size) return db
         val upd = old.copy(history = next)
         return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
+    }
+
+    /**
+     * 0.4.17: delete diff versions of an app memo ([MemoDiff]) — [indexFromNewest] or all when null. Like
+     * [deleteHistory]: no new history, Last Modified kept. 「全て削除」 also removes standard History copies.
+     */
+    fun deleteMemoVersion(db: KeePassDatabase, id: UUID, indexFromNewest: Int?): KeePassDatabase {
+        val (parent, old) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
+        if (old.customData[MemoDiff.CD] == null && (indexFromNewest != null || old.history.isEmpty())) return db
+        val v = runCatching { MemoDiff.delete(old, indexFromNewest) }.getOrElse { throw Tree.TreeException("no such version") }
+        val cd = if (v == null) old.customData - MemoDiff.CD else old.customData + (MemoDiff.CD to CustomDataValue(v, Instant.now()))
+        val upd = old.copy(customData = cd, history = if (indexFromNewest == null) emptyList() else old.history)
+        return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
+    }
+
+    /**
+     * 0.4.17: removes the empty History copy that 0.4.16 and earlier left on keys / memos created by this app
+     * (the oldest copy, with no field value and no tag, of an entry with KPExplorer.Kind). Nothing else is touched.
+     */
+    fun dropEmptyCreationHistory(db: KeePassDatabase): KeePassDatabase {
+        fun empty(e: Entry) = content(e.fields, e.tags).let { it.first.isEmpty() && it.second.isEmpty() }
+        fun fix(g: Group): Group {
+            var changed = false
+            val es = g.entries.map { e ->
+                val h = e.history
+                if (e.customData[CD_KIND] != null && h.isNotEmpty() && empty(h[0])) { changed = true; e.copy(history = h.drop(1)) } else e
+            }
+            val gs = g.groups.map { c -> fix(c).also { if (it !== c) changed = true } }
+            return if (changed) g.copy(entries = es, groups = gs) else g
+        }
+        val r = db.content.group
+        val nr = fix(r)
+        return if (nr === r) db else db.modifyContent { copy(group = nr) }
     }
 
     fun renameEntry(db: KeePassDatabase, id: UUID, title: String): KeePassDatabase {

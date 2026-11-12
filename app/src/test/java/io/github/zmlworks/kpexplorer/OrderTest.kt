@@ -65,6 +65,6 @@ class OrderTest {
         e = Tree.findEntry(db, k.uuid)!!.second
         assertEquals(emptyList<String>(), Order.customFieldNames(e))
         assertEquals(null, Order.otpUri(e))
-        assertEquals(2, e.history.size)
+        assertEquals("0.4.17: no empty copy of the just-created key", 1, e.history.size)
     }
 }

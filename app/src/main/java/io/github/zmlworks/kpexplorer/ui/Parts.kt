@@ -126,16 +126,17 @@ object Parts {
     }
 
     /** Navy gradient bar: big "←" back button, title, optional right-side tool buttons. */
-    fun appBar(ctx: Context, title: String, onBack: () -> Unit, titleView: TextView? = null): AppBar {
+    fun appBar(ctx: Context, title: String, onBack: () -> Unit, titleView: TextView? = null, back: Boolean = true): AppBar {
         val bar = W.hbox(ctx)
         bar.background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(W.accent1(), W.accent2()))
         bar.setPadding(W.dp(3), W.dp(3), W.dp(3), W.dp(3))
         bar.gravity = Gravity.CENTER_VERTICAL
-        val back = W.text(ctx, "←", 20f, true).apply {
+        val backButton = W.text(ctx, "←", 20f, true).apply {
             background = W.Bevel(W.Style.BUTTON); gravity = Gravity.CENTER; contentDescription = "戻る"
             isClickable = true; setOnClickListener { onBack() }
         }
-        bar.addView(back, W.lp(W.dp(44), W.dp(38), r = 6))
+        if (back) bar.addView(backButton, W.lp(W.dp(44), W.dp(38), r = 6))
+        else bar.minimumHeight = W.dp(44)
         val t = titleView ?: W.text(ctx, title, 17f, true, W.HILITE).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END }
         bar.addView(t, W.lp(0, W.WRAP, 1f))
         return AppBar(bar, t)

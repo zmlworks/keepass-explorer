@@ -427,7 +427,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 val nf = kids.count { it.kind == Order.Kind.FOLDER }; val nk = kids.count { it.kind == Order.Kind.KEY }
                 val nm = kids.count { it.kind == Order.Kind.MEMO }
                 preview.addView(W.text(ctx, "フォルダー ${nf} 個、鍵 ${nk} 個、メモ ${nm} 個", 14f))
-                kids.take(30).forEach { k -> preview.addView(W.text(ctx, "  ・" + label(k), 14f), W.lp(W.MATCH, W.WRAP, t = 2)) }
+                // 0.4.17: each item with its small icon (like the list), instead of a bullet
+                kids.take(30).forEach { k ->
+                    val line = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = "preview-child" }
+                    line.addView(W.icon(ctx, bmpFor(k, false), maxOf(1, W.iconScale() - 1)), W.lp(W.WRAP, W.WRAP, l = 8, r = 6))
+                    line.addView(W.text(ctx, label(k), 14f).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }, W.lp(0, W.WRAP, 1f))
+                    preview.addView(line, W.lp(W.MATCH, W.WRAP, t = 2))
+                }
             }
             is Order.Node.E -> if (r.kind == Order.Kind.MEMO) {
                 preview.addView(Parts.RuledText(ctx, editable = false).apply { setText(Tree.notes(r.e)); minLines = 4 }, W.lp(W.MATCH, W.WRAP))
