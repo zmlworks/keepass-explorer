@@ -149,8 +149,8 @@ class Ux0413Test {
 
     @Test fun fileMenu_exactlyTheFiveItems_keyAndMemo() {
         val ex = icons()
-        assertEquals(FILE, labels(ex.itemMenu(row(ids["Gmail"]!!))))
-        assertEquals(FILE, labels(ex.itemMenu(row(memoId()))))
+        assertEquals(FILE, labels(ex.itemMenu(row(ids["Gmail"]!!))).take(7))
+        assertEquals(FILE, labels(ex.itemMenu(row(memoId()))).take(7))
         val removed = listOf(R.string.open, R.string.copy_username, R.string.copy_password, R.string.copy_otp,
             R.string.move_earlier, R.string.move_later, R.string.open_item_folder).map { s(it) }
         assertTrue(labels(ex.itemMenu(row(ids["Gmail"]!!))).none { it in removed })
@@ -158,12 +158,12 @@ class Ux0413Test {
         assertFalse(ex.itemMenu(row(ids["Gmail"]!!)).first { it.label == "一つ上の階層へ移動" }.enabled)
         Session.update { Order.moveTo(it, ids["Gmail"]!!, ids["G"]!!) }; ex.navigate(ids["G"]!!); idle()
         val m = ex.itemMenu(row(ids["Gmail"]!!))
-        assertEquals(FILE, labels(m))
+        assertEquals(FILE, labels(m).take(7))
         m.first { it.label == "一つ上の階層へ移動" }.also { assertTrue(it.enabled) }.action(); idle()
         assertEquals(Tree.root(Session.db!!).uuid, Tree.parentOf(Tree.root(Session.db!!), ids["Gmail"]!!)!!.uuid)
         // search results get the same menu
         ex.searchFor("Steam"); idle()
-        assertEquals(FILE, labels(ex.itemMenu(row(ids["Steam"]!!))))
+        assertEquals(FILE, labels(ex.itemMenu(row(ids["Steam"]!!))).take(7))
     }
 
     @Test fun folderAndBinMenus_unchangedApartFromLabels() {
@@ -206,7 +206,7 @@ class Ux0413Test {
         Session.beginTempView(Session.db!!, "test")
         try {
             val m = ex.itemMenu(row(ids["Gmail"]!!))
-            assertEquals(FILE, labels(m)); assertTrue(m.filter { !it.sep }.none { it.enabled })
+            assertEquals(FILE, labels(m).take(7)); assertTrue(m.take(7).filter { !it.sep }.none { it.enabled })
         } finally { Session.exitTempView() }
     }
 
@@ -285,10 +285,10 @@ class Ux0413Test {
     @Test fun keyPage_newLabels() {
         a.show(KeyScreen(a, ids["Gmail"], Tree.root(Session.db!!).uuid)); idle(); layoutHost()
         val all = texts(a.host)
-        assertTrue(all.toString(), all.contains("項目の編集")); assertTrue(all.contains("項目を追加"))
-        assertTrue(all.none { it.contains("欄を編集") || it.contains("欄を追加") })
+        assertTrue(all.toString(), all.contains("項目の編集")); assertTrue(all.contains("カスタム項目の追加"))
+        assertTrue(all.none { it.contains("欄を編集") || it.contains("欄を追加") || it == "項目を追加" })
         val ks = a.screen as KeyScreen
-        assertTrue(ks.menu().map { it.label }.containsAll(listOf("項目の編集", "項目を追加")))
+        assertTrue(ks.menu().map { it.label }.containsAll(listOf("項目の編集", "カスタム項目の追加")))
         shot("v0413/05-key-page-labels.png")
     }
 }

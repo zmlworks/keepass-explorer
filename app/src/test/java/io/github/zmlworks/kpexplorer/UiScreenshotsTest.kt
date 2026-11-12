@@ -262,7 +262,7 @@ class UiScreenshotsTest {
         assertNull(findDesc(a.host, "メニュー"))
         assertNotNull(findDesc(a.host, "閉じる"))
         assertNotNull(findDesc(a.host, "項目の編集"))
-        assertNotNull(findDesc(a.host, "項目を追加"))
+        assertNotNull(findDesc(a.host, "カスタム項目の追加"))
         assertNull(findDesc(a.host, "OTP設定を変更"))
         assertNull(findDesc(a.host, "この鍵を削除"))
         assertEquals("Gmail", ks.barTitle())

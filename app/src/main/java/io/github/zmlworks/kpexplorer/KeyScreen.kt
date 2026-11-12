@@ -28,13 +28,32 @@ import java.util.UUID
 
 /** http/https URL validation for the open-in-browser swipe (no other schemes / intents). */
 object UrlCheck {
-    fun safe(raw: String): String? {
+    private val WITH_SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*://")
+    /** "mailto:", "otpauth:", "javascript:" … (a scheme without //); "host:8080" is not one (port digits). */
+    private val OPAQUE_SCHEME = Regex("^[A-Za-z][A-Za-z0-9+.-]*:(?![0-9]+(/|\\?|#|$))")
+
+    /**
+     * 0.4.14: what to open for a stored URL. A value with only the domain onwards ("example.com/login",
+     * "www.example.com", "//example.com") gets "https://" in front; the stored value is not changed.
+     * Values with a scheme are taken as they are, and only http / https are ever opened (others → null).
+     */
+    fun withScheme(raw: String): String {
         val s = raw.trim()
-        if (s.isEmpty() || s.length > 2048 || s.any { it.isWhitespace() || it.code < 0x20 }) return null
+        if (WITH_SCHEME.containsMatchIn(s) || OPAQUE_SCHEME.containsMatchIn(s)) return s
+        return "https://" + s.removePrefix("//")
+    }
+
+    fun safe(raw: String): String? {
+        val s0 = raw.trim()
+        if (s0.isEmpty() || s0.length > 2048 || s0.any { it.isWhitespace() || it.code < 0x20 }) return null
+        val added = !WITH_SCHEME.containsMatchIn(s0) && !OPAQUE_SCHEME.containsMatchIn(s0)
+        val s = withScheme(s0)
         val u = runCatching { java.net.URI(s) }.getOrNull() ?: return null
         val scheme = u.scheme?.lowercase() ?: return null
         if (scheme != "http" && scheme != "https") return null
         if (u.host.isNullOrEmpty()) return null
+        // a bare word ("memo") is not taken for a domain; "localhost" and IP addresses are fine
+        if (added && !u.host.contains('.') && !u.host.equals("localhost", true)) return null
         return s
     }
 }
@@ -140,6 +159,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         }
     }.also { it.addView(content, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH)) }
     override val view: View get() = root
+    /** 0.4.14: bottom buttons — one long [OK] while nothing has changed, 戻る / 保存 as soon as something has. */
+    var footer: Parts.OkFooter? = null
+        private set
     val values = LinkedHashMap<String, String>()
     var tags = ""
     var layout: MutableList<Pair<String, Boolean>> = Order.DEFAULT_LAYOUT.map { it to true }.toMutableList()
@@ -150,7 +172,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
      */
     var dirty: Boolean
         get() = snapshot() != baseline
-        set(v) { if (!v) baseline = snapshot() }
+        set(v) { if (!v) baseline = snapshot(); updateFooter() }
     private var baseline: Any? = null
     private fun snapshot(): Any = listOf(LinkedHashMap(values).toSortedMap(),
         Tree.parseTags(tags), layout.toList(), iconId, multi.toSortedSet())
@@ -212,7 +234,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /**
      * Layout after the KeePassDX entry screen, drawn in Windows 98 style: a flat key icon with folder path
      * (└ tree with counts) and Last Modified beside it, then one sunken well per field (glyph, small label,
-     * value, trailing action) with a ⋮ menu button, 「項目を追加」, and 戻る / 保存 at the bottom.
+     * value, trailing action) with a ⋮ menu button, 「カスタム項目の追加」, and 戻る / 保存 at the bottom.
      */
     private fun build() {
         body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null; tableHost = null
@@ -277,7 +299,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             return chip
         }
         val edit = toolChip("項目の編集", "項目の編集", plus = false) { editLayout() }
-        val add = toolChip("項目を追加", "項目を追加", plus = true) { addCustom() }
+        val add = toolChip("カスタム項目の追加", "カスタム項目の追加", plus = true) { addCustom() }
         editButton = edit; addButton = add
         rowBtns.addView(edit, W.lp(W.WRAP, W.WRAP, r = 8))
         rowBtns.addView(add, W.lp(W.WRAP, W.WRAP))
@@ -285,8 +307,13 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         body.addView(View(ctx), W.lp(W.MATCH, 0, 1f))
         // 0.3.15: removed bottom OTP設定／この鍵を削除 (OTP = OTP欄長押し; 削除 = 一覧のメニュー)
         body.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px, t = 10))
-        body.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp(W.MATCH, W.WRAP))
+        val ft = Parts.okFooter(ctx, onBack = { onBack() }, onSave = { save() }, onOk = { onBack() })
+        footer = ft
+        body.addView(ft.view, W.lp(W.MATCH, W.WRAP))
+        updateFooter()
     }
+
+    fun updateFooter() { footer?.setChanged(dirty) }
 
     private var tableHost: android.widget.LinearLayout? = null
     private var rowIndex = 0
@@ -382,7 +409,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         f.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) { set(s.toString()) }
+            override fun afterTextChanged(s: Editable?) { set(s.toString()); updateFooter() }
         })
         editors[k] = f
         if (multi) { f.minLines = 3; f.gravity = Gravity.TOP or Gravity.START } else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
@@ -473,17 +500,17 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     /**
      * Former titlebar ⋮ inventory (0.3.13: no dropdown). Kept for tests / callers that probe labels.
-     * Relocations: 項目の編集→「項目の編集」chip; 項目を追加→chip; URL open trailing;
+     * Relocations: 項目の編集→「項目の編集」chip; カスタム項目の追加→chip; URL open trailing;
      * icon→tile gestures; OTP／削除→bottom secondary row; missing std fields→項目の編集 hidden zone.
      * Pass generator removed from existing key (0.4.2).
      */
     fun menu(): List<Menus.Item> = listOf(
         Menus.Item("項目の編集") { editLayout() },
-        Menus.Item("項目を追加") { addCustom() },
+        Menus.Item("カスタム項目の追加") { addCustom() },
         Menus.Item("アイコンの変更") { pickIcon() },
     )
 
-    /** 「項目を追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
+    /** 「カスタム項目の追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
     fun addCustom(): ClassicDialog {
         val col = W.vbox(ctx)
         col.addView(W.text(ctx, "欄の名前 (例: 暗証番号、秘密の質問):", 14f))
@@ -495,13 +522,13 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
-        val dlg = ClassicDialog(ctx, "項目を追加", col, listOf(
+        val dlg = ClassicDialog(ctx, "カスタム項目の追加", col, listOf(
             ClassicDialog.Btn("追加", true) {
                 val name = f.text.toString().trim()
                 when {
                     name.isEmpty() -> false
                     name in Order.STANDARD || name == Order.OTP || values.containsKey(name) || name.startsWith("@") || name.startsWith("-") -> {
-                        Dlg.message(ctx, "項目を追加", "その名前は使えません。", '!'); false
+                        Dlg.message(ctx, "カスタム項目の追加", "その名前は使えません。", '!'); false
                     }
                     else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }

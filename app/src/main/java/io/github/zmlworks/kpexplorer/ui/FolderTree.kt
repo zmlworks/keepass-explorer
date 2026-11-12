@@ -147,7 +147,9 @@ class FolderTree(
             val sel = n.g.uuid == selected
             val bmp = if (sel) Px.selected(icon) else icon
             c.drawBitmap(bmp, null, Rect(ix, iy, ix + icon.width * sc, iy + icon.height * sc), Paint())
-            val label = if (n.depth == 0 && n.g.name.isEmpty()) "/" else n.g.name.ifEmpty { "(名前なし)" }
+            // 0.4.14: the root is always "/" (as in the title bar and every other path); imported files whose
+            // root group is called "Root" / "NewDatabase" … used to show that name here only.
+            val label = folderLabel(n.depth, n.g.name)
             val isCur = showCounts && n.g.uuid == current
             p.isFakeBoldText = isCur
             val tx = ix + icon.width * sc + W.dp(5)
@@ -224,3 +226,6 @@ class FolderTree(
         }
     }
 }
+
+/** 0.4.14: tree label — the root is always "/", whatever its group name in the file; unnamed folders "(名前なし)". */
+fun folderLabel(depth: Int, name: String): String = if (depth == 0) "/" else name.ifEmpty { "(名前なし)" }

@@ -191,14 +191,15 @@ class Ux0412Test {
         assertEquals(ids["G"], Tree.parentOf(Tree.root(Session.db!!), gmail)!!.uuid)
     }
 
-    @Test fun recycleBin_longPressThenMove_staysMenu() {
+    @Test fun recycleBin_longPressThenMove_dragsSince0414() {
         val ex = icons()
         val bin = Tree.recycleBinId(Session.db!!)!!
         val (x, y) = cellCenter(grid(), bin)
         touch(MotionEvent.ACTION_DOWN, x, y); hold()
         touch(MotionEvent.ACTION_MOVE, x + W.dp(120), y + W.dp(120))
-        assertFalse("the bin is fixed at the root", ex.dragging); assertTrue(menuShowing())
+        assertTrue("0.4.14: the bin can be reordered", ex.dragging); assertFalse(menuShowing())
         touch(MotionEvent.ACTION_UP, x + W.dp(120), y + W.dp(120)); idle()
+        assertEquals("still in the root", Tree.root(Session.db!!).uuid, Tree.parentOf(Tree.root(Session.db!!), bin)!!.uuid)
     }
 
     @Test fun detailView_sameScheme() {

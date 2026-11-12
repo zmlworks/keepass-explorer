@@ -142,7 +142,7 @@ class Ux045Test {
     @Test fun urlCheckOnlyHttpHttps() {
         assertEquals("https://example.com/a?b=1", UrlCheck.safe(" https://example.com/a?b=1 "))
         assertNotNull(UrlCheck.safe("http://x.jp"))
-        for (bad in listOf("javascript:alert(1)", "file:///sdcard/x", "content://a/b", "intent://x#Intent;end", "example.com", "", "https://", "https://a b.com", "ftp://x.com"))
+        for (bad in listOf("javascript:alert(1)", "file:///sdcard/x", "content://a/b", "intent://x#Intent;end", "", "https://", "https://a b.com", "ftp://x.com"))
             assertNull(bad, UrlCheck.safe(bad))
     }
 

@@ -80,7 +80,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val searchTagHolder = FrameLayout(ctx)
     private val liveHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val liveRun = Runnable { applyLiveSearch() }
-    private val pathLines = ArrayList<View>()
+    val pathLines = ArrayList<View>()
     private val content = FrameLayout(ctx)
     private val preview = PreviewBox(ctx) { onPreviewTap() }.apply {
         orientation = LinearLayout.VERTICAL; setPadding(W.dp(8), W.dp(8), W.dp(8), W.dp(8))
@@ -516,7 +516,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     if (longFired) {
                         // menu is up: jitter is ignored; a real move turns it into a drag of the pressed item
                         val r = downR
-                        if (r != null && !isRecycleBinFolder(r) && !Session.readOnlyTemp &&
+                        if (r != null && !Session.readOnlyTemp &&
                             (abs(e.x - x0) > dragStartPx() || abs(e.y - y0) > dragStartPx())) {
                             Menus.dismiss()
                             beginDrag(r, rx0, ry0)
@@ -814,7 +814,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private var drop: Drop? = null
 
     private fun beginDrag(r: Order.Node, rx: Float, ry: Float) {
-        if (isRecycleBinFolder(r)) return  // recycle bin is root-fixed (0.4.3)
+        // 0.4.14: the recycle bin can be dragged too, but only to reorder it inside the root (see [hit])
         drag = DragState(r.uuid, r, rx, ry)
         ghost.setImageDrawable(Px.drawable(ctx, unselected(r), maxOf(1, W.iconScale() - 1)))
         notifyList()
@@ -865,8 +865,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun hit(dragged: UUID, rx: Float, ry: Float): Drop? {
+        val binDrag = dragged == Tree.recycleBinId(db())
         for (line in pathLines) {
             val l = IntArray(2); line.getLocationOnScreen(l)
+            if (binDrag) continue
             if (rx >= l[0] && rx < l[0] + line.width && ry >= l[1] && ry < l[1] + line.height) {
                 val id = line.tag as UUID
                 return if (id == current) null else Drop(Drop.Mode.INTO, id, pathFolder = true)
@@ -878,12 +880,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (x < 0 || y < 0 || x >= v.width || y >= v.height) return null
         val pos = v.pointToPosition(x.toInt(), y.toInt())
         val r = rowAt(v, pos) ?: return if (search == null) Drop(Drop.Mode.END, null) else null
-        if (search != null) return if (r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
+        if (search != null) return if (!binDrag && r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
         if (r.uuid == dragged) return null
         val cell = v.getChildAt(pos - v.firstVisiblePosition) ?: return null
         val vertical = v is ListView
         val f = if (vertical) (y - cell.top) / cell.height.coerceAtLeast(1) else (x - cell.left) / cell.width.coerceAtLeast(1)
-        return if (r.kind == Order.Kind.FOLDER) when {
+        return if (r.kind == Order.Kind.FOLDER && !binDrag) when {
             f < 0.22f -> Drop(Drop.Mode.BEFORE, r.uuid)
             f > 0.78f -> Drop(Drop.Mode.AFTER, r.uuid)
             else -> Drop(Drop.Mode.INTO, r.uuid)
@@ -891,6 +893,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun performDrop(id: UUID, dr: Drop) {
+        if (id == Tree.recycleBinId(db()) && (dr.mode == Drop.Mode.INTO || current != Tree.root(db()).uuid)) return
         try {
             when (dr.mode) {
                 Drop.Mode.INTO -> Session.update { Order.moveTo(it, id, dr.target!!) }
@@ -1121,8 +1124,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             Menus.Item(ctx.getString(R.string.move_to_folder), w) { moveToDialog(r.uuid) },
             Menus.Item(ctx.getString(R.string.move_up_folder), w && canMoveToParentFolder(r.uuid)) { moveToParentFolder(r.uuid) },
             Menus.sep(),
-            Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) })
+            Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) }) + viewItems()
     }
+
+    /** 0.4.14: the view items of the empty-area menu, also at the bottom of the file menu (after a separator). */
+    private fun viewItems(): List<Menus.Item> = listOf(Menus.sep(),
+        Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) +
+        (if (!iconMode) listOf(Menus.Item("列の幅を元に戻す",
+            App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList())
 
     fun backgroundMenu(): List<Menus.Item> {
         val ns = search == null

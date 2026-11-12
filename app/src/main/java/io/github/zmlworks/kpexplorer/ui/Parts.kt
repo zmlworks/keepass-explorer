@@ -67,6 +67,30 @@ object Parts {
         return foot
     }
 
+    /** 0.4.14 key-page footer: a single long [OK] when unchanged, ← 戻る / 保存 once something changed. */
+    class OkFooter(val view: LinearLayout, val pair: View, val ok: View) {
+        var changed = false
+            private set
+        fun setChanged(c: Boolean) {
+            changed = c
+            pair.visibility = if (c) View.VISIBLE else View.GONE
+            ok.visibility = if (c) View.GONE else View.VISIBLE
+        }
+    }
+
+    fun okFooter(ctx: Context, onBack: () -> Unit, onSave: () -> Unit, onOk: () -> Unit): OkFooter {
+        val box = W.vbox(ctx)
+        val pair = footer(ctx, onBack, onSave)
+        box.addView(pair, W.lp(W.MATCH, W.WRAP))
+        val okRow = W.hbox(ctx).apply { gravity = Gravity.CENTER; setPadding(W.dp(6), W.dp(8), W.dp(6), W.dp(8)) }
+        okRow.addView(W.text(ctx, "OK", 17f, true).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true; contentDescription = "OK"
+            setOnClickListener { onOk() }
+        }, W.lp(W.MATCH, W.dp(56)))
+        box.addView(okRow, W.lp(W.MATCH, W.WRAP))
+        return OkFooter(box, pair, okRow).also { it.setChanged(false) }
+    }
+
     class AppBar(val bar: LinearLayout, val title: TextView)
 
 
@@ -148,11 +172,13 @@ object Parts {
      * Notebook paper. One rule per text line, drawn just under that line's baseline from the real [getLayout]
      * line bounds (so wrapped lines and mixed line heights stay aligned); below the last line the rules continue
      * at [getLineHeight] spacing down to the bottom of the visible area. Everything is drawn in content
-     * coordinates, so the rules scroll together with the text. A red margin line runs down the left side.
+     * coordinates, so the rules scroll together with the text. 0.4.14: dotted rules, no red margin line.
      */
     class RuledText(ctx: Context, editable: Boolean) : EditText(ctx) {
-        private val rule = Paint().apply { color = 0xFF9EB8E0.toInt(); strokeWidth = maxOf(1f, W.px.toFloat()) }
-        private val margin = Paint().apply { color = 0xFFE89090.toInt(); strokeWidth = maxOf(1f, W.px.toFloat()) }
+        private val rule = Paint().apply {
+            color = 0xFF8FAAD6.toInt(); strokeWidth = maxOf(1f, W.px.toFloat())
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(RULE_DOT_DP * W.dp(1), RULE_GAP_DP * W.dp(1)), 0f)
+        }
         private val r = android.graphics.Rect()
         /** Rule positions drawn last (content coordinates) — exposed for tests. */
         val ruleYs = ArrayList<Int>()
@@ -161,7 +187,7 @@ object Parts {
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
             setTextColor(W.TEXT)
             gravity = Gravity.TOP or Gravity.START
-            setPadding(W.dp(22), W.dp(8), W.dp(8), W.dp(8))
+            setPadding(W.dp(12), W.dp(8), W.dp(8), W.dp(8))
             setLineSpacing(W.dp(8).toFloat(), 1f)
             includeFontPadding = false
             isFallbackLineSpacing = false   // keep every line the same height (emoji / CJK fallback fonts)
@@ -190,9 +216,10 @@ object Parts {
             var y = if (last < 0) extendedPaddingTop + (l?.getLineBaseline(0) ?: lineHeight) + gap else last + step
             while (y < bottom) { ruleYs.add(y); y += step }
             for (yy in ruleYs) if (yy >= scrollY) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
-            val mx = (scrollX + W.dp(16)).toFloat()
-            c.drawLine(mx, scrollY.toFloat(), mx, bottom.toFloat(), margin)
             super.onDraw(c)
         }
+        /** The rule's paint (tests: dotted, no margin). */
+        val rulePaint: Paint get() = rule
+        companion object { const val RULE_DOT_DP = 1.5f; const val RULE_GAP_DP = 2.5f }
     }
 }

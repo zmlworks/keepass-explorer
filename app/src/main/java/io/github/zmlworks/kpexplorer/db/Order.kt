@@ -84,8 +84,9 @@ object Order {
     fun moveTo(db: KeePassDatabase, id: UUID, target: UUID, index: Int? = null, now: Instant = Instant.now()): KeePassDatabase {
         val root = Tree.root(db)
         val bin = Tree.recycleBinId(db)
-        if (bin != null && id == bin) throw Tree.TreeException("cannot move the recycle bin")
         val from = Tree.parentOf(root, id) ?: throw Tree.TreeException("item not found")
+        // 0.4.14: the bin may be reordered inside its folder, never moved to another one
+        if (bin != null && id == bin && from.uuid != target) throw Tree.TreeException("cannot move the recycle bin")
         var d = if (from.uuid == target) db else Tree.move(db, id, target, now = now)
         val tg = Tree.findGroup(d, target) ?: throw Tree.TreeException("target not found")
         val ids = children(tg).map { it.uuid }.filter { it != id }.toMutableList()
