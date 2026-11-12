@@ -8,11 +8,12 @@ import android.widget.ScrollView
 import android.widget.TextView
 import app.keemobile.kotpass.models.Entry
 import io.github.zmlworks.kpexplorer.KeyFields
+import io.github.zmlworks.kpexplorer.db.Order
 import io.github.zmlworks.kpexplorer.db.Tree
 import java.util.UUID
 
 /**
- * Read-only viewer of an entry's KeePass [Entry.history] (newest first).
+ * Viewer of an entry's KeePass [Entry.history] (newest first); 0.4.16: items can be deleted (with confirmation).
  * Passwords stay masked unless the user taps 「表示」on that row; no clipboard, no logging of secrets.
  */
 object HistoryViewer {
@@ -44,34 +45,68 @@ object HistoryViewer {
         }
     }
 
-    fun show(ctx: Context, entryId: UUID): ClassicDialog? {
+    /** The viewer last shown (tests). */
+    var current: ClassicDialog? = null
+        private set
+
+    /**
+     * 0.4.16: per-item 「削除」 and 「全て削除」, each behind a confirmation every time. Deleting saves the database
+     * (no history entry, Last Modified unchanged) and re-opens the viewer. Disabled in the read-only temporary view.
+     */
+    fun show(ctx: Context, entryId: UUID, onChanged: () -> Unit = {}): ClassicDialog? {
         val e = Tree.findEntry(io.github.zmlworks.kpexplorer.Session.db ?: return null, entryId)?.second ?: return null
         val snaps = rows(e)
+        val ro = io.github.zmlworks.kpexplorer.Session.readOnlyTemp
         val title = "履歴 — ${Tree.title(e).ifEmpty { "(無題)" }}"
         val body = W.vbox(ctx)
+        lateinit var dlg: ClassicDialog
+        fun delete(index: Int?) {
+            val what = if (index == null) "この鍵の履歴を全て (${snaps.size} 件) 削除します。\n元に戻せません。よろしいですか?"
+                else "履歴 #$index (${snaps.first { it.indexFromNewest == index }.modified}) を削除します。\n元に戻せません。よろしいですか?"
+            Dlg.confirm(ctx, if (index == null) "履歴を全て削除" else "履歴の削除", what, '!', yes = "削除", no = "キャンセル") {
+                io.github.zmlworks.kpexplorer.Session.update { Order.deleteHistory(it, entryId, index) }
+                io.github.zmlworks.kpexplorer.Session.flush()
+                dlg.dismiss()
+                onChanged()
+                show(ctx, entryId, onChanged)
+            }
+        }
         body.addView(W.text(ctx,
-            if (snaps.isEmpty()) "履歴はありません (保存のたびに最大 ${Tree.HISTORY_MAX} 件まで残ります)。"
-            else "新しい順。パスワードは隠したままです。読取専用です。",
+            if (snaps.isEmpty()) "履歴はありません (中身を変えて保存したときに、最大 ${Tree.HISTORY_MAX} 件まで残ります)。"
+            else if (ro) "新しい順。パスワードは隠したままです。読取専用です。"
+            else "新しい順 (最大 ${Tree.HISTORY_MAX} 件)。パスワードは隠したままです。",
             13f).apply { setPadding(0, 0, 0, W.dp(8)) }, W.lp(W.MATCH, W.WRAP))
+        val buttons = ArrayList<ClassicDialog.Btn>()
+        if (snaps.isNotEmpty() && !ro) buttons.add(ClassicDialog.Btn("全て削除") { delete(null); false })
+        buttons.add(ClassicDialog.Btn("閉じる", true))
         if (snaps.isEmpty()) {
-            return ClassicDialog(ctx, title, body, listOf(ClassicDialog.Btn("閉じる", true))).also { it.show() }
+            dlg = ClassicDialog(ctx, title, body, buttons)
+            return dlg.also { current = it; it.show() }
         }
         val list = W.vbox(ctx)
         for (r in snaps) {
-            list.addView(snapCard(ctx, r), W.lp(W.MATCH, W.WRAP, b = 8))
+            list.addView(snapCard(ctx, r, if (ro) null else ({ delete(r.indexFromNewest) })), W.lp(W.MATCH, W.WRAP, b = 8))
         }
         val sv = ScrollView(ctx).apply { W.classicScrollbars(this); addView(list) }
         body.addView(sv, W.lp(W.MATCH, W.dp(360)))
-        return ClassicDialog(ctx, title, body, listOf(ClassicDialog.Btn("閉じる", true)), scroll = false).also { it.show() }
+        dlg = ClassicDialog(ctx, title, body, buttons, scroll = false)
+        return dlg.also { current = it; it.show() }
     }
 
-    private fun snapCard(ctx: Context, r: Row): LinearLayout {
+    private fun snapCard(ctx: Context, r: Row, onDelete: (() -> Unit)?): LinearLayout {
         val card = W.vbox(ctx).apply {
             background = W.Bevel(W.Style.THIN_RAISED, W.FACE)
             setPadding(W.dp(10), W.dp(8), W.dp(10), W.dp(8))
             tag = "history-snap-${r.indexFromNewest}"
         }
-        card.addView(W.text(ctx, "#${r.indexFromNewest}  ${r.modified}", 14f, true, W.NAVY), W.lp(W.MATCH, W.WRAP))
+        val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        head.addView(W.text(ctx, "#${r.indexFromNewest}  ${r.modified}", 14f, true, W.NAVY), W.lp(0, W.WRAP, 1f))
+        if (onDelete != null) head.addView(W.text(ctx, "削除", 13f, true).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true
+            contentDescription = "履歴 #${r.indexFromNewest} を削除"; tag = "history-delete-${r.indexFromNewest}"
+            setPadding(W.dp(14), W.dp(6), W.dp(14), W.dp(6)); setOnClickListener { onDelete() }
+        }, W.lp(W.WRAP, W.WRAP, l = 8))
+        card.addView(head, W.lp(W.MATCH, W.WRAP))
         fun line(label: String, value: String, secret: Boolean = false): View {
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
             row.addView(W.text(ctx, label, 12f, color = W.LABEL_DARK), W.lp(W.dp(56), W.WRAP))

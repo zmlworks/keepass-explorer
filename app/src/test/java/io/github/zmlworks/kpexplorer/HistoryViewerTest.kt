@@ -18,10 +18,10 @@ import org.robolectric.annotation.Config
 class HistoryViewerTest {
     private val key = Kdbx.compositeKey("sample")
 
-    @Test fun historyMaxIsTenAndListingUsesRealSnapshots() {
+    @Test fun historyMaxIsFiveAndListingUsesRealSnapshots() {
         var db = Kdbx.create("hist", key)
-        assertEquals(10, db.content.meta.historyMaxItems)
-        assertEquals(10, Tree.HISTORY_MAX)
+        assertEquals(5, db.content.meta.historyMaxItems)
+        assertEquals(5, Tree.HISTORY_MAX)
         val e = Order.newKey()
         db = Order.appendEntry(db, Tree.root(db).uuid, e)
         val id = e.uuid
@@ -29,18 +29,18 @@ class HistoryViewerTest {
             db = Order.saveEntry(db, id, mapOf("Title" to "T$i", "Password" to "secret-$i", "UserName" to "u$i"), emptyList(), null)
         }
         val cur = Tree.findEntry(db, id)!!.second
-        assertEquals(10, cur.history.size)
+        assertEquals(5, cur.history.size)
         assertEquals("T11", Tree.title(cur))
         val rows = HistoryViewer.rows(cur)
-        assertEquals(10, rows.size)
+        assertEquals(5, rows.size)
         // newest first
         assertEquals("T10", rows[0].title)
-        assertEquals("T1", rows.last().title)
+        assertEquals("T6", rows.last().title)
         // passwords not auto-exposed in default masked path — Row holds value but UI masks
         assertTrue(rows[0].password.startsWith("secret-"))
         // read-only: listing must not mutate
         val again = Tree.findEntry(db, id)!!.second
-        assertEquals(10, again.history.size)
+        assertEquals(5, again.history.size)
         assertEquals(cur.history.map { Tree.title(it) }, again.history.map { Tree.title(it) })
     }
 

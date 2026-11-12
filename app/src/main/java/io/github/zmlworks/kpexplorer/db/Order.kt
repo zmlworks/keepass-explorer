@@ -211,11 +211,38 @@ object Order {
         val same = old.fields.keys == newFields.keys && old.fields.all { (k, v) -> newFields[k]?.content == v.content } &&
             old.tags == nt && old.customData.mapValues { it.value.value } == cd.mapValues { it.value.value } && old.icon == newIcon
         if (same) return db
+        // 0.4.16: History only for a change of content (field values incl. OTP, and tags). Showing / hiding /
+        // reordering fields, adding an empty field, multi-line flags (all CustomData) make no history entry and
+        // keep Last Modified; an icon change keeps no history but does count as a modification.
+        val contentChanged = content(old.fields, old.tags) != content(newFields, nt)
+        val iconChanged = old.icon != newIcon || old.customData[EntryIcon.CD]?.value != cd[EntryIcon.CD]?.value
         val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
-        var hist = old.history + old.copy(history = listOf())
-        if (max >= 0) hist = hist.takeLast(max)
-        val t = (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
+        var hist = old.history
+        if (contentChanged) hist = (old.history + old.copy(history = listOf())).takeLast(max.coerceAtLeast(0))
+        val t = if (contentChanged || iconChanged) (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
+            else old.times
         val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t, icon = newIcon)
+        return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
+    }
+
+    /** What counts as an entry's content for History: non-empty field values (by name) and the tags. */
+    fun content(fields: Map<String, EntryValue>, tags: List<String>): Pair<Map<String, String>, List<String>> =
+        fields.mapValues { it.value.content }.filterValues { it.isNotEmpty() } to tags
+
+    /**
+     * 0.4.16: delete history copies of an entry — [indexFromNewest] (1 = newest, as in the viewer) or all when
+     * null. Only the History list changes: no new history entry, Last Modified kept.
+     */
+    fun deleteHistory(db: KeePassDatabase, id: UUID, indexFromNewest: Int?): KeePassDatabase {
+        val (parent, old) = Tree.findEntry(db, id) ?: throw Tree.TreeException("entry not found")
+        val h = old.history
+        val next = if (indexFromNewest == null) emptyList() else {
+            val i = h.size - indexFromNewest
+            if (i !in h.indices) throw Tree.TreeException("no such history item")
+            h.filterIndexed { j, _ -> j != i }
+        }
+        if (next.size == h.size) return db
+        val upd = old.copy(history = next)
         return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
     }
 

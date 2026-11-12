@@ -241,8 +241,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val d = Session.db ?: return
         val path = Tree.path(Tree.root(d), parent)
         // Proposal #3: navy header band with icon tile + light path / Last Modified
-        val band = W.hbox(ctx).apply {
-            setBackgroundColor(W.BAND_SOFT); gravity = Gravity.TOP
+        val band = W.vbox(ctx).apply {
+            setBackgroundColor(W.BAND_SOFT)
             setPadding(W.dp(12), W.dp(12), W.dp(12), W.dp(14))
         }
         val tile = android.widget.FrameLayout(ctx).apply {
@@ -260,7 +260,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, iconId)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
         iconTile = tile
-        band.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
+        // 0.4.16: icon + path on top, then Last Modified under the icon with 「- 履歴」 to its right
+        val top = W.hbox(ctx).apply { gravity = Gravity.TOP }
+        top.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
         val info = W.vbox(ctx)
         path.forEachIndexed { i, g ->
             val name = if (i == 0) "/" else "└ ${g.name.ifEmpty { "(名前なし)" }}"
@@ -269,11 +271,25 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 setPadding(W.dp(12) * i, 0, 0, W.dp(2))
             }, W.lp(W.MATCH, W.WRAP))
         }
-        info.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"),
+        top.addView(info, W.lp(0, W.WRAP, 1f))
+        band.addView(top, W.lp(W.MATCH, W.WRAP))
+        val modRow = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        modRow.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"),
             13f, color = 0xFFD6E4F7.toInt()).apply {
             isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
-        }.also { lastMod = it }, W.lp(W.MATCH, W.WRAP, t = 8))
-        band.addView(info, W.lp(0, W.WRAP, 1f))
+        }.also { lastMod = it }, W.lp(W.WRAP, W.WRAP))
+        if (entryId != null) {
+            val n = entry()?.history?.size ?: 0
+            val label = android.text.SpannableString("- 履歴").apply {
+                setSpan(android.text.style.UnderlineSpan(), 2, length, 0)
+            }
+            modRow.addView(W.text(ctx, "", 14f, true, W.HILITE).apply {
+                text = label; contentDescription = "履歴 ($n 件)"; isClickable = true
+                setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
+                setOnClickListener { openHistory() }
+            }.also { historyLink = it }, W.lp(W.WRAP, W.WRAP, l = 2))
+        }
+        band.addView(modRow, W.lp(W.MATCH, W.WRAP, t = 6))
         body.addView(band, W.lp(W.MATCH, W.WRAP, b = 4))
         // Plain rows (no cream/white boxes)
         for ((k, vis) in layout) {
@@ -333,6 +349,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     fun setIcon(id: String) { iconId = if (id == "key") null else id; build() }
 
     private var lastMod: TextView? = null
+    /** 「- 履歴」 beside Last Modified (0.4.16). */
+    var historyLink: TextView? = null
+        private set
+
+    /** Opens the history viewer of this entry (deleting there rebuilds this page's header). */
+    fun openHistory(): io.github.zmlworks.kpexplorer.ui.ClassicDialog? {
+        val id = entryId ?: return null
+        return io.github.zmlworks.kpexplorer.ui.HistoryViewer.show(ctx, id) { if (Session.db != null) build() }
+    }
     var addButton: View? = null
         private set
     var editButton: View? = null

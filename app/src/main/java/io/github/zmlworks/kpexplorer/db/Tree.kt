@@ -26,8 +26,8 @@ import java.util.UUID
  * edits push the old version to the entry History.
  */
 object Tree {
-    /** At most this many history copies per entry (KeePass default; also written to Meta.HistoryMaxItems). */
-    const val HISTORY_MAX = 10
+    /** At most this many history copies per entry (0.4.16: 5; also written to Meta.HistoryMaxItems). */
+    const val HISTORY_MAX = 5
 
     /** Group CustomData key for the per-folder view override (icons / list / auto). */
     const val CD_VIEW = "KPExplorer.View"

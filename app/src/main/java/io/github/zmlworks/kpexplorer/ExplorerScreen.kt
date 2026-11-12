@@ -1037,8 +1037,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun mainMenu(): List<Menus.Item> {
         val p = App.prefs(ctx)
         val lockMin = a.autoLockMinutes()
-        val selEntry = selection?.let { id -> rows.find { it.uuid == id } as? Order.Node.E }
-        val histEnabled = selEntry != null
         val ro = Session.readOnlyTemp
         val out = ArrayList<Menus.Item>()
         if (ro) {
@@ -1046,11 +1044,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             out.add(Menus.sep())
         }
         out.add(Menus.Item(ctx.getString(R.string.menu_lock)) { a.lock() })
-        out.add(Menus.Item(ctx.getString(R.string.menu_history), histEnabled) {
-            val id = selEntry?.uuid ?: return@Item
-            io.github.zmlworks.kpexplorer.ui.HistoryViewer.show(ctx, id)
-                ?: Dlg.message(ctx, ctx.getString(R.string.history_title), ctx.getString(R.string.history_missing), '!')
-        })
+        // 0.4.16: 履歴 moved to the key page (「- 履歴」 next to Last Modified)
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.browse_external), !ro) { TempImport.browseExternal(a) })
         out.add(Menus.Item(ctx.getString(R.string.import_menu), !ro) { TempImport.showImportMenu(a) })

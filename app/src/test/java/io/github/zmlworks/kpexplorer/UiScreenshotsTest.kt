@@ -324,7 +324,7 @@ class UiScreenshotsTest {
         Dlg.last?.dismiss(); idle()
         ks.toggleTag("仕事"); assertTrue(ks.dirty)
         val gm = Tree.findEntry(Session.db!!, ids["Gmail"]!!)!!.second
-        assertEquals(2, gm.history.size)
+        assertEquals("0.4.16: the icon-only save makes no history entry", 1, gm.history.size)
         assertEquals(listOf("秘密の質問"), io.github.zmlworks.kpexplorer.db.Order.customFieldNames(gm))
         assertTrue(io.github.zmlworks.kpexplorer.db.Order.otpUri(gm)!!.contains("issuer=Gmail"))
         ks.addCustomField("一時", "x"); idle()
@@ -582,12 +582,12 @@ class UiScreenshotsTest {
         assertNull(Tree.findEntry(Session.db!!, ids["Gmail"]!!))
     }
 
-    @Test fun historyIsCappedAtTen() {
+    @Test fun historyIsCappedAtFive() {
         var db = sample()
         val id = ids["Gmail"]!!
         repeat(15) { i -> db = io.github.zmlworks.kpexplorer.db.Order.saveEntry(db, id, mapOf("Title" to "Gmail $i"), listOf(), null) }
-        assertEquals(10, Tree.findEntry(db, id)!!.second.history.size)
-        assertEquals(10, Kdbx.create("x", key).content.meta.historyMaxItems)
+        assertEquals(5, Tree.findEntry(db, id)!!.second.history.size)
+        assertEquals(5, Kdbx.create("x", key).content.meta.historyMaxItems)
     }
 
     @Test fun debouncedSavesCoalesce() {
