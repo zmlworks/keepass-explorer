@@ -124,11 +124,11 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
         val add = W.hbox(ctx).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-            contentDescription = "欄を追加"; setPadding(W.dp(12), W.dp(6), W.dp(12), W.dp(6))
+            contentDescription = "項目を追加"; setPadding(W.dp(12), W.dp(6), W.dp(12), W.dp(6))
             setOnClickListener { addCustom() }
         }
         add.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.PLUS)) }, W.lp(W.dp(22), W.dp(22), r = 6))
-        add.addView(W.text(ctx, "欄を追加", 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
+        add.addView(W.text(ctx, "項目を追加", 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         addButton = add
         body.addView(add, W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.CENTER_HORIZONTAL })
 
@@ -314,14 +314,14 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
-        val dlg = ClassicDialog(ctx, "欄を追加", col, listOf(
+        val dlg = ClassicDialog(ctx, "項目を追加", col, listOf(
             ClassicDialog.Btn("追加", true) {
                 val name = f.text.toString().trim()
                 when {
                     name.isEmpty() -> false
                     name in Order.STANDARD || name == Order.OTP || values.containsKey(name) ||
                         name in customs || name.startsWith("@") || name.startsWith("-") -> {
-                        Dlg.message(ctx, "欄を追加", "その名前は使えません。", '!'); false
+                        Dlg.message(ctx, "項目を追加", "その名前は使えません。", '!'); false
                     }
                     else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }
@@ -342,11 +342,11 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     companion object {
         /**
          * 0.4.10 (t565u): a field left empty on the create form counts as deleted from the start — it is not
-         * put in the key's field layout (same state as deleting it with 「欄を編集」 afterwards; it can be
+         * put in the key's field layout (same state as deleting it with 「項目の編集」 afterwards; it can be
          * brought back from the hidden zone there). Empty custom fields are not created at all. The five
          * KeePass standard strings stay in the KDBX as empty values (KeePass always has them), but are not
          * shown. Title always stays ("(無題)" when empty). An empty OTP leaves @OTP out (0.4.11: the form has an
-         * OTP field; it can be added back from 「欄を編集」's hidden zone or set later by long-pressing).
+         * OTP field; it can be added back from 「項目の編集」's hidden zone or set later by long-pressing).
          */
         fun createdFields(values: Map<String, String>, customs: List<String>, tagList: List<String>): Pair<LinkedHashMap<String, String>, List<Pair<String, Boolean>>> {
             val vals = LinkedHashMap<String, String>()

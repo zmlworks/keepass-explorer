@@ -72,7 +72,7 @@ object Parts {
 
     /**
      * Key detail title bar (0.3.13): navy gradient; physically centered title; flat × only on the right
-     * (no ⋮ — actions live on fields / 「欄を編集」 / bottom secondary row).
+     * (no ⋮ — actions live on fields / 「項目の編集」 / bottom secondary row).
      */
     fun keyDetailBar(ctx: Context, title: String, onClose: () -> Unit): AppBar {
         val bar = W.hbox(ctx)

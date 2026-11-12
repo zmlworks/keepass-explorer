@@ -107,8 +107,9 @@
     <string name="open_item_folder">この項目のフォルダーを開く</string>
     <string name="cut">切り取り</string>
     <string name="paste_here">ここに貼り付け</string>
-    <string name="move_to_folder">フォルダーへ移動…</string>
-    <string name="move_up_folder">一つ上のフォルダへ移動</string>
+    <string name="move_to_folder">フォルダーを指定して移動</string>
+    <string name="move_up_folder">一つ上の階層へ移動</string>
+    <string name="cancel_cut">切り取りの取り消し</string>
     <string name="move_earlier">前へ移動</string>
     <string name="move_later">後ろへ移動</string>
     <string name="view_details">表示: 詳細</string>

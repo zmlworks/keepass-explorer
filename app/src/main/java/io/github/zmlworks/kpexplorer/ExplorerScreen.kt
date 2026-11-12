@@ -101,6 +101,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         const val PREF_COL_NAME = "detailColNameDp"; const val PREF_COL_USER = "detailColUserDp"
         const val MIN_NAME_DP = 64; const val MIN_USER_DP = 40; const val MIN_DATE_DP = 28
         const val DRAG_START_MM = 8f
+        /** 0.4.13: preview frame dashes (longer than 0.4.12's 1px dots). */
+        const val DASH_ON_DP = 4f
+        const val DASH_OFF_DP = 3f
         /** 0.4.11 used 0xFFE8EEF8; 0.4.12 a touch deeper. */
         const val PREVIEW_SELECTED_BG = 0xFFDDE6F4.toInt()
     }
@@ -384,7 +387,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     class FocusFrame : Drawable() {
         private val p = Paint().apply {
             style = Paint.Style.STROKE; strokeWidth = W.px.toFloat(); color = W.TEXT
-            pathEffect = android.graphics.DashPathEffect(floatArrayOf(W.px.toFloat(), W.px.toFloat()), 0f)
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(DASH_ON_DP * W.dp(1), DASH_OFF_DP * W.dp(1)), 0f)
         }
         override fun draw(c: Canvas) {
             val b = bounds; val i = W.dp(4) + W.px / 2f
@@ -489,7 +492,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             try { frame.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) } catch (_: Throwable) {}
             val r = downR
             if (r == null) { select(null); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), backgroundMenu()) }
-            else { if (r !is Order.Node.F) select(r.uuid); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r)) }
+            else {
+                if (r !is Order.Node.F) select(r.uuid)
+                // 0.4.13: beside / below / above the pressed cell, never over it
+                val c = v.getChildAt(v.pointToPosition(x0.toInt(), y0.toInt()) - v.firstVisiblePosition)
+                if (c == null) Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r))
+                else {
+                    val cl = IntArray(2); c.getLocationOnScreen(cl)
+                    Menus.beside(v, android.graphics.Rect(cl[0], cl[1], cl[0] + c.width, cl[1] + c.height), (loc[0] + x0).toInt(), itemMenu(r))
+                }
+            }
         }
         v.setOnTouchListener { _, e ->
             if (drag != null) { dragEvent(e); return@setOnTouchListener true }
@@ -1056,6 +1068,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val inBin = Tree.isInRecycleBin(db(), r.uuid) && !binFolder
         val ro = Session.readOnlyTemp
         val idx = rows.indexOfFirst { it.uuid == r.uuid }
+        if (r is Order.Node.E && !inBin) return fileMenu(r)
         val out = ArrayList<Menus.Item>()
         out.add(Menus.Item(ctx.getString(R.string.open)) { open(r) })
         if (r is Order.Node.E && r.kind == Order.Kind.KEY) {
@@ -1093,6 +1106,24 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return out
     }
 
+    /**
+     * 0.4.13: long-press menu of a file (key or memo) — exactly these, as the user specified:
+     * 名前の変更 | 切り取り, フォルダーを指定して移動, 一つ上の階層へ移動 | 削除.
+     * Open = tap (again), copy = swipe on the key page, reorder = long press + drag.
+     * Read-only temporary view shows the same items disabled.
+     */
+    fun fileMenu(r: Order.Node.E): List<Menus.Item> {
+        val w = !Session.readOnlyTemp
+        return listOf(
+            Menus.Item(ctx.getString(R.string.rename), w) { rename(r) },
+            Menus.sep(),
+            Menus.Item(ctx.getString(R.string.cut), w) { cut(r.uuid) },
+            Menus.Item(ctx.getString(R.string.move_to_folder), w) { moveToDialog(r.uuid) },
+            Menus.Item(ctx.getString(R.string.move_up_folder), w && canMoveToParentFolder(r.uuid)) { moveToParentFolder(r.uuid) },
+            Menus.sep(),
+            Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) })
+    }
+
     fun backgroundMenu(): List<Menus.Item> {
         val ns = search == null
         val ro = Session.readOnlyTemp
@@ -1100,7 +1131,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList()
         return listOf(
             Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) + cols + listOf(
-            Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) },
+            Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) }) +
+            (if (cut != null) listOf(Menus.Item(ctx.getString(R.string.cancel_cut)) { cancelCut() }) else emptyList()) + listOf(
             Menus.sep(),
             Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { newFolder() },
             Menus.Item(ctx.getString(R.string.tool_new_key), ns && !ro) { newKey() },
@@ -1142,6 +1174,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         cut = id; refresh()
         Toast.makeText(ctx, "切り取りました。移動先で「貼り付け」を選んでください。", Toast.LENGTH_SHORT).show()
     }
+
+    /** 0.4.13: drop the pending cut (the item is no longer shown dimmed). */
+    fun cancelCut() { cut = null; refresh() }
 
     fun paste(target: UUID) {
         val id = cut ?: return

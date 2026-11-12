@@ -168,10 +168,10 @@ class UiScreenshotsTest {
         val gmailId = ids["Gmail"]!!
         assertTrue(ex.canMoveToParentFolder(gmailId))
         assertFalse(ex.canMoveToParentFolder(ids["Wi-Fi (自宅)"]!!))
-        assertFalse(ex.itemMenu(row).any { it.label == "一つ上のフォルダへ移動" }) // row is folder メール
+        assertFalse(ex.itemMenu(row).any { it.label == "一つ上の階層へ移動" }) // row is folder メール
         ex.navigate(ids["メール"]!!); idle()
         val gRow = ex.rows.first { it.uuid == gmailId }
-        assertTrue(ex.itemMenu(gRow).any { it.label == "一つ上のフォルダへ移動" && it.enabled })
+        assertTrue(ex.itemMenu(gRow).any { it.label == "一つ上の階層へ移動" && it.enabled })
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(gRow)) {}, 120, 480, 720), "03f-move-up-folder-menu.png")
         Menus.dismiss(); idle()
         ex.moveToParentFolder(gmailId); idle()
@@ -261,8 +261,8 @@ class UiScreenshotsTest {
         // 0.3.13 key title bar: centered title, flat 閉じる (×) only — no メニュー
         assertNull(findDesc(a.host, "メニュー"))
         assertNotNull(findDesc(a.host, "閉じる"))
-        assertNotNull(findDesc(a.host, "欄を編集"))
-        assertNotNull(findDesc(a.host, "欄を追加"))
+        assertNotNull(findDesc(a.host, "項目の編集"))
+        assertNotNull(findDesc(a.host, "項目を追加"))
         assertNull(findDesc(a.host, "OTP設定を変更"))
         assertNull(findDesc(a.host, "この鍵を削除"))
         assertEquals("Gmail", ks.barTitle())
@@ -501,7 +501,7 @@ class UiScreenshotsTest {
         assertNotNull(ks.editButton)
         assertNotNull(ks.addButton)
         val labels = ks.menu().map { it.label }
-        assertTrue(labels.containsAll(listOf("欄を編集", "アイコンの変更")))
+        assertTrue(labels.containsAll(listOf("項目の編集", "アイコンの変更")))
         assertFalse(labels.contains("URL をブラウザで開く"))
         assertFalse(labels.contains("パスワードを生成"))
         assertFalse(labels.contains("OTPを設定"))

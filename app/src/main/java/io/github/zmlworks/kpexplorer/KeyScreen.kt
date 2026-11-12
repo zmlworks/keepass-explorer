@@ -212,7 +212,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /**
      * Layout after the KeePassDX entry screen, drawn in Windows 98 style: a flat key icon with folder path
      * (└ tree with counts) and Last Modified beside it, then one sunken well per field (glyph, small label,
-     * value, trailing action) with a ⋮ menu button, 「欄を追加」, and 戻る / 保存 at the bottom.
+     * value, trailing action) with a ⋮ menu button, 「項目を追加」, and 戻る / 保存 at the bottom.
      */
     private fun build() {
         body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null; tableHost = null
@@ -276,8 +276,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             chip.addView(W.text(ctx, label, 14f, true, W.NAVY).apply { isSingleLine = true }, W.lp(W.WRAP, W.WRAP))
             return chip
         }
-        val edit = toolChip("欄を編集", "欄を編集", plus = false) { editLayout() }
-        val add = toolChip("欄を追加", "欄を追加", plus = true) { addCustom() }
+        val edit = toolChip("項目の編集", "項目の編集", plus = false) { editLayout() }
+        val add = toolChip("項目を追加", "項目を追加", plus = true) { addCustom() }
         editButton = edit; addButton = add
         rowBtns.addView(edit, W.lp(W.WRAP, W.WRAP, r = 8))
         rowBtns.addView(add, W.lp(W.WRAP, W.WRAP))
@@ -473,17 +473,17 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     /**
      * Former titlebar ⋮ inventory (0.3.13: no dropdown). Kept for tests / callers that probe labels.
-     * Relocations: 欄の編集→「欄を編集」chip; 欄を追加→chip; URL open trailing;
-     * icon→tile gestures; OTP／削除→bottom secondary row; missing std fields→欄の編集 hidden zone.
+     * Relocations: 項目の編集→「項目の編集」chip; 項目を追加→chip; URL open trailing;
+     * icon→tile gestures; OTP／削除→bottom secondary row; missing std fields→項目の編集 hidden zone.
      * Pass generator removed from existing key (0.4.2).
      */
     fun menu(): List<Menus.Item> = listOf(
-        Menus.Item("欄を編集") { editLayout() },
-        Menus.Item("欄を追加") { addCustom() },
+        Menus.Item("項目の編集") { editLayout() },
+        Menus.Item("項目を追加") { addCustom() },
         Menus.Item("アイコンの変更") { pickIcon() },
     )
 
-    /** 「欄を追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
+    /** 「項目を追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
     fun addCustom(): ClassicDialog {
         val col = W.vbox(ctx)
         col.addView(W.text(ctx, "欄の名前 (例: 暗証番号、秘密の質問):", 14f))
@@ -495,13 +495,13 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
-        val dlg = ClassicDialog(ctx, "欄を追加", col, listOf(
+        val dlg = ClassicDialog(ctx, "項目を追加", col, listOf(
             ClassicDialog.Btn("追加", true) {
                 val name = f.text.toString().trim()
                 when {
                     name.isEmpty() -> false
                     name in Order.STANDARD || name == Order.OTP || values.containsKey(name) || name.startsWith("@") || name.startsWith("-") -> {
-                        Dlg.message(ctx, "欄を追加", "その名前は使えません。", '!'); false
+                        Dlg.message(ctx, "項目を追加", "その名前は使えません。", '!'); false
                     }
                     else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }
@@ -536,7 +536,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         // Fixed height so drag has room inside the dialog scroll area
         val wrap = W.vbox(ctx)
         wrap.addView(editor, W.lp(W.MATCH, W.dp(480)))
-        val dlg = ClassicDialog(ctx, "欄の編集", wrap, listOf(
+        val dlg = ClassicDialog(ctx, "項目の編集", wrap, listOf(
             ClassicDialog.Btn("OK", true) {
                 applyArrangement(editor.snapshot(), editor.removedCustoms.toList())
                 true

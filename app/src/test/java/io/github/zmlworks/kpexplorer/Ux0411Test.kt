@@ -142,10 +142,8 @@ class Ux0411Test {
         val e = entry(ids["Gmail"]!!)
         assertTrue(e.fields[Order.OTP] is app.keemobile.kotpass.models.EntryValue.Encrypted)
         assertNotNull(Order.otpUri(e))
-        // copy from the list's long-press menu
+        // 0.4.13: the list menu no longer copies; the key page's OTP row (swipe) does
         a.showExplorer(); idle()
-        val r = a.explorer!!.rows.first { it.uuid == ids["Gmail"] }
-        assertTrue(a.explorer!!.itemMenu(r).any { it.label == app().getString(R.string.copy_otp) })
         // reopen: code shown, not the placeholder
         val ks2 = openKey(ids["Gmail"]!!)
         assertFalse(texts(ks2.boxes[Order.F_OTP]!!).any { it.contains("長押しで設定") })
@@ -205,8 +203,7 @@ class Ux0411Test {
         assertEquals(u0, entry(ids["Amazon"]!!).fields[Order.OTP]!!.content)
         Session.update { Order.renameEntry(it, ids["Amazon"]!!, "Amazon.co.jp") }; idle()
         assertEquals(u0, entry(ids["Amazon"]!!).fields[Order.OTP]!!.content)
-        assertTrue("menu copy still offered while hidden", a.explorer!!.let { ex -> a.showExplorer(); idle()
-            ex.itemMenu(ex.rows.first { it.uuid == ids["Amazon"] }).any { it.label == app().getString(R.string.copy_otp) } })
+        assertNotNull("OTP still readable while hidden", Order.otpUri(entry(ids["Amazon"]!!)))
     }
 
     // ---------------------------------------------------------------- 2: OTP on the create form
