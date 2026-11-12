@@ -158,6 +158,8 @@ class UiScreenshotsTest {
         assertTrue(a.screen is KeyScreen)
         a.showExplorer(); idle()
         ex.tap(ex.rows.first { it.uuid == ids["メール"] }); idle()
+        assertEquals("0.4.15: first tap on a folder selects it", ids["メール"], ex.selection)
+        ex.tap(ex.rows.first { it.uuid == ids["メール"] }); idle()
         assertEquals(ids["メール"], ex.current)
         ex.navigate(Tree.root(Session.db!!).uuid); idle()
         ex.select(ids["Wi-Fi (自宅)"]); idle()

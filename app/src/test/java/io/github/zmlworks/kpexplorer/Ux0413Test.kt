@@ -149,8 +149,8 @@ class Ux0413Test {
 
     @Test fun fileMenu_exactlyTheFiveItems_keyAndMemo() {
         val ex = icons()
-        assertEquals(FILE, labels(ex.itemMenu(row(ids["Gmail"]!!))).take(7))
-        assertEquals(FILE, labels(ex.itemMenu(row(memoId()))).take(7))
+        assertEquals(FILE, labels(ex.itemMenu(row(ids["Gmail"]!!))).let { l -> l.drop(l.indexOf("|") + 1) }.take(7))
+        assertEquals(FILE, labels(ex.itemMenu(row(memoId()))).let { l -> l.drop(l.indexOf("|") + 1) }.take(7))
         val removed = listOf(R.string.open, R.string.copy_username, R.string.copy_password, R.string.copy_otp,
             R.string.move_earlier, R.string.move_later, R.string.open_item_folder).map { s(it) }
         assertTrue(labels(ex.itemMenu(row(ids["Gmail"]!!))).none { it in removed })
@@ -158,18 +158,19 @@ class Ux0413Test {
         assertFalse(ex.itemMenu(row(ids["Gmail"]!!)).first { it.label == "一つ上の階層へ移動" }.enabled)
         Session.update { Order.moveTo(it, ids["Gmail"]!!, ids["G"]!!) }; ex.navigate(ids["G"]!!); idle()
         val m = ex.itemMenu(row(ids["Gmail"]!!))
-        assertEquals(FILE, labels(m).take(7))
+        assertEquals(FILE, labels(m).let { l -> l.drop(l.indexOf("|") + 1) }.take(7))
         m.first { it.label == "一つ上の階層へ移動" }.also { assertTrue(it.enabled) }.action(); idle()
         assertEquals(Tree.root(Session.db!!).uuid, Tree.parentOf(Tree.root(Session.db!!), ids["Gmail"]!!)!!.uuid)
         // search results get the same menu
         ex.searchFor("Steam"); idle()
-        assertEquals(FILE, labels(ex.itemMenu(row(ids["Steam"]!!))).take(7))
+        assertEquals(FILE, labels(ex.itemMenu(row(ids["Steam"]!!))).let { l -> l.drop(l.indexOf("|") + 1) }.take(7))
     }
 
     @Test fun folderAndBinMenus_unchangedApartFromLabels() {
         val ex = icons()
         val f = labels(ex.itemMenu(row(ids["G"]!!)))
-        assertTrue(f.containsAll(listOf(s(R.string.open), "名前の変更", "切り取り", s(R.string.paste_here), "フォルダーを指定して移動", "削除")))
+        assertTrue(f.containsAll(listOf("名前の変更", "切り取り", s(R.string.paste_here), "フォルダーを指定して移動", "削除")))
+        assertFalse("0.4.15: no 開く in the folder menu", f.contains(s(R.string.open)))
         val bin = labels(ex.itemMenu(row(Tree.recycleBinId(Session.db!!)!!)))
         assertTrue(bin.contains(s(R.string.empty_recycle_bin)))
     }
@@ -206,7 +207,7 @@ class Ux0413Test {
         Session.beginTempView(Session.db!!, "test")
         try {
             val m = ex.itemMenu(row(ids["Gmail"]!!))
-            assertEquals(FILE, labels(m).take(7)); assertTrue(m.take(7).filter { !it.sep }.none { it.enabled })
+            assertEquals(FILE, labels(m).let { l -> l.drop(l.indexOf("|") + 1) }.take(7)); assertTrue(m.drop(m.indexOfFirst { it.sep } + 1).take(7).filter { !it.sep }.none { it.enabled })
         } finally { Session.exitTempView() }
     }
 

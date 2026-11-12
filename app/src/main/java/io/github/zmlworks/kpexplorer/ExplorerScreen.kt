@@ -146,9 +146,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         tool("up", Px.up16, "上へ") { goUp() }
         tool("view", if (iconMode) Ico.viewDetails16 else Ico.viewIcons16, "表示") { toggleView() }
         sep()
-        tool("newFolder", Px.newFolder16, "フォルダ") { newFolder() }
+        tool("newFolder", Px.newFolder16, "フォルダ") { askNewFolder() }
         tool("newKey", Ico.newKey16, "鍵") { newKey() }
-        tool("newMemo", Ico.newMemo16, "メモ") { newMemo() }
+        tool("newMemo", Ico.newMemo16, "メモ") { askNewMemo() }
         sep()
         tool("save", Px.floppy16, "保存") { Security.saveDialog(a) }
         tool("menu", Ico.menu16, "メニュー") { Menus.dropDown(tools["menu"]!!, mainMenu()) }
@@ -478,7 +478,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      *    drags the item (drop on a folder = into it, between items = reorder, on the path tree = there);
      *  - short tap = folder opens / file selected (or opened if it was already selected).
      */
-    private fun attachGestures(v: AbsListView) {
+    private fun attachGestures(v: AbsListView, dragZone: ((Float) -> Boolean)? = null) {
         listView = v
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
         val longMs = ViewConfiguration.getLongPressTimeout().toLong()
@@ -493,7 +493,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val r = downR
             if (r == null) { select(null); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), backgroundMenu()) }
             else {
-                if (r !is Order.Node.F) select(r.uuid)
+                select(r.uuid)
                 // 0.4.13: beside / below / above the pressed cell, never over it
                 val c = v.getChildAt(v.pointToPosition(x0.toInt(), y0.toInt()) - v.firstVisiblePosition)
                 if (c == null) Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r))
@@ -524,7 +524,17 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                         }
                         return@setOnTouchListener true
                     }
-                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) { moved = true; v.removeCallbacks(long) }
+                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) {
+                        moved = true; v.removeCallbacks(long)
+                        // 0.4.15: detail view, name column — touch and move drags at once (as in 0.4.10)
+                        val r = downR
+                        if (r != null && dragZone != null && dragZone(x0) && !Session.readOnlyTemp) {
+                            MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it); it.recycle() }
+                            beginDrag(r, rx0, ry0)
+                            drag?.let { it.moving = true; dragTo(e.rawX, e.rawY) }
+                            return@setOnTouchListener true
+                        }
+                    }
                     false
                 }
                 MotionEvent.ACTION_UP -> {
@@ -548,7 +558,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         previewActive = null
         when {
             r == null -> select(null)
-            r is Order.Node.F -> open(r)
+            // 0.4.15: folders (and the recycle bin) too — first tap selects, the next tap opens
             r.uuid == selection -> open(r)
             else -> select(r.uuid)
         }
@@ -797,7 +807,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             }
         }
         // 0.4.12: same launcher-style gestures as the icon view (long press, then move = drag; else scroll)
-        attachGestures(list)
+        attachGestures(list, dragZone = { x -> x < colName })
         col.addView(if (rows.isEmpty()) empty(list) else list, W.lp(W.MATCH, 0, 1f))
         return col
     }
@@ -1070,42 +1080,37 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val binFolder = isRecycleBinFolder(r)
         val inBin = Tree.isInRecycleBin(db(), r.uuid) && !binFolder
         val ro = Session.readOnlyTemp
-        val idx = rows.indexOfFirst { it.uuid == r.uuid }
         if (r is Order.Node.E && !inBin) return fileMenu(r)
-        val out = ArrayList<Menus.Item>()
-        out.add(Menus.Item(ctx.getString(R.string.open)) { open(r) })
-        if (r is Order.Node.E && r.kind == Order.Kind.KEY) {
-            out.add(Menus.Item(ctx.getString(R.string.copy_username), Tree.userName(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_username), Tree.userName(r.e), false) })
-            out.add(Menus.Item(ctx.getString(R.string.copy_password), Tree.password(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_password), Tree.password(r.e), true) })
-            Order.otpUri(r.e)?.let { u -> out.add(Menus.Item(ctx.getString(R.string.copy_otp)) {
-                runCatching { io.github.zmlworks.kpexplorer.db.Totp.code(io.github.zmlworks.kpexplorer.db.Totp.parse(u), java.time.Instant.now().epochSecond) }
-                    .onSuccess { copy(ctx.getString(R.string.copy_otp), it, true) } }) }
+        val out = ArrayList<Menus.Item>(viewHead())
+        if (inBin || binFolder) {
+            // recycle bin and items inside it: as before (open / restore / delete permanently / empty)
+            out.add(Menus.Item(ctx.getString(R.string.open)) { open(r) })
+            if (r is Order.Node.E && r.kind == Order.Kind.KEY) {
+                out.add(Menus.Item(ctx.getString(R.string.copy_username), Tree.userName(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_username), Tree.userName(r.e), false) })
+                out.add(Menus.Item(ctx.getString(R.string.copy_password), Tree.password(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_password), Tree.password(r.e), true) })
+                Order.otpUri(r.e)?.let { u -> out.add(Menus.Item(ctx.getString(R.string.copy_otp)) {
+                    runCatching { io.github.zmlworks.kpexplorer.db.Totp.code(io.github.zmlworks.kpexplorer.db.Totp.parse(u), java.time.Instant.now().epochSecond) }
+                        .onSuccess { copy(ctx.getString(R.string.copy_otp), it, true) } }) }
+            }
+            if (ro) return out
+            out.add(Menus.sep())
+            if (inBin) {
+                out.add(Menus.Item(ctx.getString(R.string.restore)) { restoreItem(r.uuid) })
+                out.add(Menus.Item(ctx.getString(R.string.delete_permanently)) { askDelete(r.uuid) })
+            } else out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(db()) > 0) { askEmptyBin() })
+            return out
         }
+        // 0.4.15 folder menu: no 開く (tap twice) and no 前へ／後ろへ移動 (long press + drag)
+        val w = !ro
+        out.add(Menus.Item(ctx.getString(R.string.rename), w && !bin) { rename(r) })
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.cut), w && !bin) { cut(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.paste_here), w && cut != null && cut != r.uuid) { paste(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.move_to_folder), w && !bin) { moveToDialog(r.uuid) })
         if (inSearch) out.add(Menus.Item(ctx.getString(R.string.open_item_folder)) {
             Tree.parentOf(Tree.root(db()), r.uuid)?.let { navigate(it.uuid); select(r.uuid) } })
-        if (ro) return out  // copy/open only in read-only
         out.add(Menus.sep())
-        if (inBin) {
-            out.add(Menus.Item(ctx.getString(R.string.restore)) { restoreItem(r.uuid) })
-            out.add(Menus.Item(ctx.getString(R.string.delete_permanently)) { askDelete(r.uuid) })
-            return out
-        }
-        if (binFolder) {
-            out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(db()) > 0) { askEmptyBin() })
-            return out
-        }
-        out.add(Menus.Item(ctx.getString(R.string.rename), !bin) { rename(r) })
-        out.add(Menus.Item(ctx.getString(R.string.cut), !bin) { cut(r.uuid) })
-        if (r is Order.Node.F) out.add(Menus.Item(ctx.getString(R.string.paste_here), cut != null && cut != r.uuid) { paste(r.uuid) })
-        out.add(Menus.Item(ctx.getString(R.string.move_to_folder), !bin) { moveToDialog(r.uuid) })
-        if (r is Order.Node.E && !bin) {
-            val canUp = canMoveToParentFolder(r.uuid)
-            out.add(Menus.Item(ctx.getString(R.string.move_up_folder), canUp) { moveToParentFolder(r.uuid) })
-        }
-        out.add(Menus.Item(ctx.getString(R.string.move_earlier), !inSearch && idx > 0) { moveIndex(r.uuid, idx - 1) })
-        out.add(Menus.Item(ctx.getString(R.string.move_later), !inSearch && idx in 0 until rows.size - 1) { moveIndex(r.uuid, idx + 1) })
-        out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.delete)) { askDelete(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) })
         return out
     }
 
@@ -1117,51 +1122,67 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      */
     fun fileMenu(r: Order.Node.E): List<Menus.Item> {
         val w = !Session.readOnlyTemp
-        return listOf(
+        return viewHead() + listOf(
             Menus.Item(ctx.getString(R.string.rename), w) { rename(r) },
             Menus.sep(),
             Menus.Item(ctx.getString(R.string.cut), w) { cut(r.uuid) },
             Menus.Item(ctx.getString(R.string.move_to_folder), w) { moveToDialog(r.uuid) },
             Menus.Item(ctx.getString(R.string.move_up_folder), w && canMoveToParentFolder(r.uuid)) { moveToParentFolder(r.uuid) },
             Menus.sep(),
-            Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) }) + viewItems()
+            Menus.Item(ctx.getString(R.string.delete), w) { askDelete(r.uuid) })
     }
 
-    /** 0.4.14: the view items of the empty-area menu, also at the bottom of the file menu (after a separator). */
-    private fun viewItems(): List<Menus.Item> = listOf(Menus.sep(),
+    /**
+     * 0.4.15: top of every list context menu — 表示: 詳細 (icon view) or 表示: アイコン + 列の幅を元に戻す (detail
+     * view), then a separator.
+     */
+    fun viewHead(): List<Menus.Item> = listOf(
         Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) +
-        (if (!iconMode) listOf(Menus.Item("列の幅を元に戻す",
-            App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList())
+        (if (!iconMode) listOf(Menus.Item(ctx.getString(R.string.reset_columns),
+            App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList()) +
+        listOf(Menus.sep())
 
     fun backgroundMenu(): List<Menus.Item> {
         val ns = search == null
         val ro = Session.readOnlyTemp
-        val cols = if (!iconMode) listOf(Menus.Item("列の幅を元に戻す",
-            App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList()
-        return listOf(
-            Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) + cols + listOf(
+        return viewHead() + listOf(
             Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) }) +
             (if (cut != null) listOf(Menus.Item(ctx.getString(R.string.cancel_cut)) { cancelCut() }) else emptyList()) + listOf(
             Menus.sep(),
-            Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { newFolder() },
+            Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { askNewFolder() },
             Menus.Item(ctx.getString(R.string.tool_new_key), ns && !ro) { newKey() },
-            Menus.Item(ctx.getString(R.string.tool_new_memo), ns && !ro) { newMemo() }
+            Menus.Item(ctx.getString(R.string.tool_new_memo), ns && !ro) { askNewMemo() }
         )
     }
 
     // ------------------------------------------------------------------ operations
 
-    fun newFolder(): UUID {
+    /** 0.4.15: ask for the name first (default name pre-selected); キャンセル creates nothing; blank = default. */
+    fun askNewFolder(): ClassicDialog? {
+        if (Session.readOnlyTemp || search != null) return null
+        val def = Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default))
+        return Dlg.prompt(ctx, ctx.getString(R.string.tool_new_folder), ctx.getString(R.string.new_name_label), def) { n ->
+            newFolder(n.trim().ifEmpty { def }); true }
+    }
+
+    fun askNewMemo(): ClassicDialog? {
+        if (Session.readOnlyTemp || search != null) return null
+        val def = Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default))
+        return Dlg.prompt(ctx, ctx.getString(R.string.tool_new_memo), ctx.getString(R.string.new_name_label), def) { n ->
+            newMemo(n.trim().ifEmpty { def }); true }
+    }
+
+    fun newFolder(name: String? = null): UUID {
         if (Session.readOnlyTemp) throw IllegalStateException("read-only")
-        val g = Tree.newGroup(Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default)))
+        val g = Tree.newGroup(name ?: Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default)))
         Session.update { Order.appendGroup(it, current, g) }
         selection = g.uuid; refresh()
         return g.uuid
     }
 
-    fun newMemo(): UUID {
+    fun newMemo(name: String? = null): UUID {
         if (Session.readOnlyTemp) throw IllegalStateException("read-only")
-        val e = Order.newMemo(Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default)))
+        val e = Order.newMemo(name ?: Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default)))
         Session.update { Order.appendEntry(it, current, e) }
         selection = e.uuid; refresh()
         return e.uuid

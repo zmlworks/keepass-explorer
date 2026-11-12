@@ -269,19 +269,14 @@ class Ux0414Test {
     }
 
     // ---------------------------------------------------------------- 6 view items in the file menu
-    @Test fun fileMenu_viewItemsAfterTheFive() {
+    @Test fun fileMenu_viewItemsOnTopSince0415() {
         val ex = icons()
         val five = listOf("名前の変更", "|", "切り取り", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除")
-        assertEquals(five + listOf("|", "表示: 詳細"), labels(ex.itemMenu(row(ids["Gmail"]!!))))
-        assertEquals(five + listOf("|", "表示: 詳細"), labels(ex.itemMenu(row(memoId()))))
-        val p = longPressAt(grid(), ids["家のWi-Fi"]!!)
-        shot("v0414/03-file-menu-view.png", menuAt = p.left to p.top)
-        Menus.dismiss(); idle()
+        assertEquals(listOf("表示: 詳細", "|") + five, labels(ex.itemMenu(row(ids["Gmail"]!!))))
+        assertEquals(listOf("表示: 詳細", "|") + five, labels(ex.itemMenu(row(memoId()))))
         ex.itemMenu(row(ids["Gmail"]!!)).first { it.label == "表示: 詳細" }.action(); idle()
         assertFalse(ex.iconMode)
-        assertEquals(five + listOf("|", "表示: アイコン", "列の幅を元に戻す"), labels(ex.itemMenu(row(ids["Gmail"]!!))))
-        // folder menu unchanged (no view items)
-        assertTrue(labels(ex.itemMenu(row(ids["G"]!!))).none { it.startsWith("表示:") })
+        assertEquals(listOf("表示: アイコン", "列の幅を元に戻す", "|") + five, labels(ex.itemMenu(row(ids["Gmail"]!!))))
     }
 
     // ---------------------------------------------------------------- 7 memo page

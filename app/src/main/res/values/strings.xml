@@ -118,6 +118,8 @@
     <string name="move_to_folder">Move to a chosen folder</string>
     <string name="move_up_folder">Move up one level</string>
     <string name="cancel_cut">Cancel cut</string>
+    <string name="reset_columns">Reset column widths</string>
+    <string name="new_name_label">Name:</string>
     <string name="move_earlier">Move earlier</string>
     <string name="move_later">Move later</string>
     <string name="view_details">View: details</string>
