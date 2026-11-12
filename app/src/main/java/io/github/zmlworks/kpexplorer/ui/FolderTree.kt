@@ -25,7 +25,7 @@ class FolderTree(
     private val disabled: Set<UUID> = emptySet(),
     private val onToggle: (UUID, Boolean) -> Unit,
     private val onSelect: (UUID) -> Unit,
-    /** Main-screen mode (Registry Editor-like): "(subfolders,files)" counts, current folder bold on a band. */
+    /** Main-screen mode (Registry Editor-like): "(folders,keys,memos)" counts, current folder bold on a band. */
     private val showCounts: Boolean = false,
     var current: UUID? = null,
     /** When set (main path tree): a single tap on the label navigates into that folder. +/− still expands. */
@@ -169,7 +169,7 @@ class FolderTree(
             c.drawText(label, tx.toFloat(), cy + W.dp(5).toFloat(), p)
             if (showCounts) {
                 val cp = Paint(p).apply { color = W.SHADOW; isFakeBoldText = false; textSize = W.dp(13).toFloat() }
-                c.drawText(" (${n.g.groups.size},${n.g.entries.size})", tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
+                c.drawText(" " + io.github.zmlworks.kpexplorer.db.Order.counts(n.g), tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
             }
         }
 

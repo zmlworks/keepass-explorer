@@ -176,25 +176,8 @@ class Ux0417Test {
     private val dv get() = io.github.zmlworks.kpexplorer.ui.MemoDiffViewer
     private fun openMemo(id: UUID): MemoScreen { val ms = MemoScreen(a, id); a.show(ms); idle(); layoutHost(); return ms }
     private fun saveMemo(ms: MemoScreen, s: String) { ms.text.setText(s); assertTrue(ms.save()); idle(); later() }
-    private fun versions(id: UUID) = io.github.zmlworks.kpexplorer.db.MemoDiff.versions(entry(id))
     private val V = listOf("牛乳\n卵\nパン", "牛乳\n卵2個\nパン\nバター", "牛乳\n卵2個\nバター", "豆乳\n卵2個\nバター\n\nメモ", "豆乳\n卵2個\nバター\n\nメモ\n追記",
         "豆乳\n卵3個\nバター\n\nメモ\n追記", "トマト\n豆乳\n卵3個\nバター\n\nメモ\n追記")
-
-    // ---------------------------------------------------------------- diff engine
-    @Test fun memoDiff_roundTrip_andEncoding() {
-        val D = io.github.zmlworks.kpexplorer.db.MemoDiff
-        val rnd = java.util.Random(7)
-        repeat(300) {
-            fun r() = (0 until rnd.nextInt(8)).joinToString("\n") { listOf("a", "b", "c", "", "\\x", "日本\r", "+=-@T").random(kotlin.random.Random(rnd.nextInt())) }
-            val x = r(); val y = r()
-            assertEquals(y, D.apply(x, D.diff(x, y)))
-            val rec = io.github.zmlworks.kpexplorer.db.MemoDiff.Rec(123L, D.hash(x), if (rnd.nextBoolean()) "t\\i\ntle" else null, D.diff(x, y))
-            assertEquals(listOf(rec), D.decode(D.encode(listOf(rec))))
-        }
-        assertEquals(emptyList<Any>(), D.decode("garbage")); assertEquals(emptyList<Any>(), D.decode(null))
-        // a diff that does not fit is refused, not applied wrongly
-        assertTrue(runCatching { D.apply("a", D.diff("a\nb\nc", "a\nc")) }.isFailure)
-    }
 
     // ---------------------------------------------------------------- 1 memo page
     @Test fun memoPage_noBackButton_boldTitleNotEditable_diffLinkAtRightEnd() {
@@ -215,122 +198,21 @@ class Ux0417Test {
         shot("v0417/01-memo-page-diff-link.png")
         ms.historyLink.performClick(); idle()
         val v = dv.current!!; assertTrue(v.isShowing)
-        assertNotNull(findTag<View>(v.frame, "diff-version-1")); v.dismiss()
+        assertNotNull(findTag<View>(v.frame, "change-1")); v.dismiss()
         // the back key still leaves the page (bottom 戻る too)
         a.onBackPressed(); idle(); assertTrue(a.screen is ExplorerScreen)
     }
 
-    // ---------------------------------------------------------------- 2 diffs only, max 5
-    @Test fun memoHistory_diffsOnly_max5_rebuildsVersions_highlights() {
-        val id = memoId()
-        // the first save of a new (empty) memo leaves nothing: an empty page is nothing to go back to
-        saveMemo(openMemo(id), V[0])
-        assertTrue(versions(id).isEmpty()); assertEquals(0, hist(id).size)
-        for (s in V.drop(1)) saveMemo(openMemo(id), s)
-        assertEquals("no standard History copies for app memos", 0, hist(id).size)
-        val vs = versions(id)
-        assertEquals(5, vs.size)
-        assertEquals(V.drop(1).dropLast(1).reversed(), vs.map { it.text })   // newest first; the oldest (V[0]) trimmed
-        val cd = entry(id).customData[io.github.zmlworks.kpexplorer.db.MemoDiff.CD]!!.value
-        assertFalse("not full copies", cd.contains("卵3個\nバター"))
-        run { openMemo(id).openHistory(); idle()
-            Dlg.last = dv.current; shot("v0417/02-memo-diff-viewer.png", dialog = true); dv.current!!.dismiss(); a.showExplorer(); idle() }
-        // a layout-free, unchanged save adds nothing; a rename adds a title-only version
-        assertTrue(openMemo(id).save()); assertEquals(5, versions(id).size)
-        val t0 = mtime(id)
-        Session.update { Order.renameEntry(it, id, "買い物リスト") }; idle()
-        val r = versions(id)[0]
-        assertEquals("買い物メモ", r.title); assertEquals("買い物リスト", r.newerTitle); assertEquals(V.last(), r.text)
-        assertNotEquals(t0, mtime(id))
-        // highlighting: in V[5] vs V[6] nothing of V[5] was removed, 1 line was added
-        val v5 = versions(id)[1]
-        assertEquals(V[5], v5.text)
-        val hl = dv.highlighted(v5) as android.text.Spanned
-        assertEquals(0, hl.getSpans(0, hl.length, android.text.style.BackgroundColorSpan::class.java).size)
-        assertTrue(hl.toString().contains("1 行が加わりました"))
-        val v4 = versions(id)[2]   // V[4] → V[5]: 卵2個 became 卵3個
-        val h4 = dv.highlighted(v4) as android.text.Spanned
-        val sp = h4.getSpans(0, h4.length, android.text.style.BackgroundColorSpan::class.java).single()
-        assertEquals("卵2個", h4.subSequence(h4.getSpanStart(sp), h4.getSpanEnd(sp)).toString())
-        // reopened from the file
-        Session.flush(); idle()
-        val disk = Kdbx.open(a.store.read(), key)
-        assertEquals(versions(id).map { it.text }, io.github.zmlworks.kpexplorer.db.MemoDiff.versions(Tree.findEntry(disk, id)!!.second).map { it.text })
-    }
-
-    @Test fun memoHistory_deleteOneAndAll_confirm_noNewHistory() {
-        val id = memoId()
-        for (s in V.take(5)) saveMemo(openMemo(id), s)
-        val texts0 = versions(id).map { it.text }   // V3, V2, V1, V0
-        assertEquals(listOf(V[3], V[2], V[1], V[0]), texts0)
-        val t0 = mtime(id)
-        val ms = openMemo(id); ms.openHistory(); idle()
-        var v = dv.current!!
-        findTag<View>(v.frame, "history-delete-2")!!.performClick(); idle()
-        var c = latestDialog(); assertTrue(texts(c.frame).any { it.contains("差分 #2") })
-        Dlg.last = c; shot("v0417/03-memo-confirm-delete.png", dialog = true)
-        clickButton(c, "キャンセル"); assertEquals(texts0, versions(id).map { it.text })
-        findTag<View>(v.frame, "history-delete-2")!!.performClick(); idle(); clickButton(latestDialog(), "削除")
-        assertEquals("middle one removed, the rest still rebuild", listOf(V[3], V[1], V[0]), versions(id).map { it.text })
-        assertEquals(t0, mtime(id)); assertEquals(0, hist(id).size); assertEquals(V[4], Tree.notes(entry(id)))
-        v = dv.current!!
-        findTag<View>(v.frame, "history-delete-1")!!.performClick(); idle(); clickButton(latestDialog(), "削除")
-        assertEquals(listOf(V[1], V[0]), versions(id).map { it.text })
-        findTag<View>(dv.current!!.frame, "history-delete-2")!!.performClick(); idle(); clickButton(latestDialog(), "削除")
-        assertEquals(listOf(V[1]), versions(id).map { it.text })
-        clickButton(dv.current!!, "全て削除"); c = latestDialog(); assertTrue(texts(c.frame).any { it.contains("全て (1 件)") }); clickButton(c, "削除")
-        assertTrue(versions(id).isEmpty()); assertNull(entry(id).customData[io.github.zmlworks.kpexplorer.db.MemoDiff.CD])
-        assertTrue(texts(dv.current!!.frame).any { it.startsWith("履歴はありません") })
-        assertEquals(t0, mtime(id)); assertFalse(ms.dirty)
-    }
-
-    @Test fun memoHistory_editedByAnotherApp_reanchorsOrDegrades() {
-        val id = memoId()
-        for (s in V.take(3)) saveMemo(openMemo(id), s)   // versions: V1, V0
-        // KeePassXC-like edit: keeps a full copy of our version in <History>, changes Notes
-        fun external(notes: String, keepCopy: Boolean) = Session.update { d -> Tree.modifyGroup(d, Tree.root(d).uuid) { g -> g.copy(entries = g.entries.map {
-            if (it.uuid != id) it else it.copy(history = if (keepCopy) it.history + it.copy(history = listOf()) else it.history,
-                fields = it.fields + ("Notes" to app.keemobile.kotpass.models.EntryValue.Plain(notes))) }) } }
-        external("他アプリで編集", keepCopy = true); idle()
-        var vs = versions(id)
-        assertEquals(listOf(V[1], V[0]), vs.map { it.text }); assertTrue(vs[0].anchored)
-        // our next save continues the chain from the other app's text
-        saveMemo(openMemo(id), "また編集")
-        vs = versions(id)
-        assertEquals(listOf("他アプリで編集", V[1], V[0]), vs.map { it.text })
-        // the viewer also lists the other app's full copy
-        openMemo(id).openHistory(); idle()
-        assertNotNull(findTag<View>(dv.current!!.frame, "std-delete-1")); dv.current!!.dismiss()
-        // without a copy to anchor on, older versions are reported as not restorable (never applied to the wrong text)
-        external("履歴なしで編集", keepCopy = false); idle()
-        Session.update { Order.deleteHistory(it, id, null) }; idle()
-        vs = versions(id)
-        assertTrue(vs.all { it.text == null })
-        assertTrue(dv.highlighted(vs[0]).toString().contains("復元できません"))
-    }
-
+    // ---------------------------------------------------------------- 2 foreign memo
     @Test fun foreignMemo_showsStandardHistoryLikeKeys() {
         val id = ids["foreign"]!!
         val ms = openMemo(id)
         assertFalse(ms.appMemo); assertEquals("- 履歴", ms.historyLink.text.toString())
         saveMemo(ms, "一行目\n変更")
-        assertEquals(1, hist(id).size); assertNull(entry(id).customData[io.github.zmlworks.kpexplorer.db.MemoDiff.CD])
+        assertEquals(1, hist(id).size); assertNull(entry(id).customData[io.github.zmlworks.kpexplorer.db.MemoDiff.LEGACY_CD])
         val v = openMemo(id).openHistory()!!; idle()
         assertSame(io.github.zmlworks.kpexplorer.ui.HistoryViewer.current, v)
         assertNotNull(findTag<View>(v.frame, "history-delete-1")); v.dismiss()
-    }
-
-    @Test fun memoViewer_readOnly_noDelete() {
-        val id = memoId()
-        for (s in V.take(3)) saveMemo(openMemo(id), s)
-        Session.beginTempView(Session.db!!, "t")
-        try {
-            val v = dv.show(a, id)!!
-            assertNotNull(findTag<View>(v.frame, "diff-version-1"))
-            assertNull(findTag<View>(v.frame, "history-delete-1"))
-            assertTrue(v.buttonViews.none { it.text.toString() == "全て削除" })
-            v.dismiss()
-        } finally { Session.exitTempView() }
     }
 
     // ---------------------------------------------------------------- 3 folder preview icons

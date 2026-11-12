@@ -1,30 +1,126 @@
 package io.github.zmlworks.kpexplorer.db
 
+import app.keemobile.kotpass.models.CustomDataValue
 import app.keemobile.kotpass.models.Entry
+import app.keemobile.kotpass.models.EntryValue
 import java.security.MessageDigest
+import java.time.Instant
 
 /**
- * 0.4.17: history of an independent memo made by this app (Entry CustomData KPExplorer.Kind = memo), kept as
- * line diffs instead of full copies.
+ * 0.4.18: history of an independent memo made by this app (Entry CustomData KPExplorer.Kind = memo).
  *
- * Stored in Entry CustomData [CD] ("KPExplorer.MemoDiffs"); no standard KDBX <History> copies are made for these
- * memos by this app. The records are *reverse* diffs, newest first: record 0 turns the current Notes into the
- * text before the last save, record 1 turns that into the one before, and so on (at most [Tree.HISTORY_MAX]).
- * Each record carries a short SHA-256 of the text it applies to, so when another app has edited the memo the
- * chain is not applied to the wrong text: it is re-anchored on a standard History copy with that text (KeePass /
- * KeePassXC keep one when they edit), or else the older versions are shown as 「復元できません」.
+ * Every content edit adds an ordinary KDBX <History> copy of the memo as it was (same times, title, other
+ * fields), except that its Notes hold only what changed instead of the whole text ([changeText]): per change one
+ * line `- <before>` and one line `+ <after>`, each with one character of the unchanged text around it, newlines
+ * shown as ↵, several changes separated by an empty line. No marker and no restoring: other KeePass apps just
+ * see a history copy whose notes are that text.
  *
- * Text format (plain lines, values escaped with \\ \n \r):
- * ```
- * KPXD1
- * @<epoch ms> <hash16>
- * T<old title>          (only when the title changed in that save)
- * =<n>   keep n lines    -<n>  drop n lines    +<line>  insert a line
- * ```
+ * The viewer shows such copies as changes when the memo is an app memo and the copy has no field value besides
+ * Title / Notes ([isChangeEntry]); anything else (other apps' copies, memos of other apps) is shown like a key's.
+ *
+ * The 0.4.17 format (CustomData KPExplorer.MemoDiffs, reverse line diffs) is converted once by [migrate].
  */
 object MemoDiff {
-    const val CD = "KPExplorer.MemoDiffs"
+    const val LEGACY_CD = "KPExplorer.MemoDiffs"
     private const val MAGIC = "KPXD1"
+    const val NL = "↵"
+    /** Characters of unchanged text kept on each side of a change. */
+    const val CONTEXT = 1
+    /** Above this (middle length product) the middle part is one change (no character diff). */
+    private const val LCS_LIMIT = 2_000_000L
+
+    fun isAppMemo(e: Entry): Boolean = e.customData[Order.CD_KIND]?.value == "memo"
+
+    /** A history copy of an app memo that holds only Title / Notes (shown as a change, not as a key-like copy). */
+    fun isChangeEntry(memo: Entry, snap: Entry): Boolean =
+        isAppMemo(memo) && snap.fields.all { (k, v) -> k == "Title" || k == "Notes" || v.content.isEmpty() }
+
+    private fun cps(s: String): IntArray = s.codePoints().toArray()
+    private fun str(a: IntArray, from: Int, to: Int): String = String(a, from, to - from)
+    private fun vis(s: String) = s.replace("\r\n", "\n").replace("\n", NL)
+
+    /**
+     * What changed from [old] to [new], e.g. 「卵3個」→「卵2個」 = "- 卵3個\n+ 卵2個". Empty when nothing changed.
+     * Character diff (code points) of the part between the common head and tail; changes whose unchanged gap is at
+     * most 2 × [CONTEXT] characters are joined. A side that is empty (text added to / removed from an empty memo)
+     * has no line.
+     */
+    fun changeText(old: String, new: String): String {
+        if (old == new) return ""
+        val a = cps(old); val b = cps(new)
+        var p = 0
+        while (p < a.size && p < b.size && a[p] == b[p]) p++
+        var s = 0
+        while (s < a.size - p && s < b.size - p && a[a.size - 1 - s] == b[b.size - 1 - s]) s++
+        // edits as (old range, new range) in full coordinates
+        val edits = ArrayList<IntArray>()
+        val n = a.size - p - s; val m = b.size - p - s
+        if (n.toLong() * m > LCS_LIMIT || n == 0 || m == 0) edits.add(intArrayOf(p, p + n, p, p + m))
+        else {
+            val L = Array(n + 1) { IntArray(m + 1) }
+            for (i in n - 1 downTo 0) for (j in m - 1 downTo 0)
+                L[i][j] = if (a[p + i] == b[p + j]) L[i + 1][j + 1] + 1 else maxOf(L[i + 1][j], L[i][j + 1])
+            var i = 0; var j = 0; var oi = -1; var oj = -1
+            fun close() { if (oi >= 0) { edits.add(intArrayOf(p + oi, p + i, p + oj, p + j)); oi = -1 } }
+            while (i < n || j < m) {
+                if (i < n && j < m && a[p + i] == b[p + j]) { close(); i++; j++; continue }
+                if (oi < 0) { oi = i; oj = j }
+                if (j < m && (i == n || L[i][j + 1] >= L[i + 1][j])) j++ else i++
+            }
+            close()
+        }
+        // join edits that are close together
+        val hunks = ArrayList<IntArray>()
+        for (e in edits) {
+            val l = hunks.lastOrNull()
+            if (l != null && e[0] - l[1] <= 2 * CONTEXT) { l[1] = e[1]; l[3] = e[3] } else hunks.add(e.copyOf())
+        }
+        return hunks.joinToString("\n\n") { h ->
+            val before = str(a, maxOf(0, h[0] - CONTEXT), minOf(a.size, h[1] + CONTEXT))
+            val after = str(b, maxOf(0, h[2] - CONTEXT), minOf(b.size, h[3] + CONTEXT))
+            listOfNotNull(before.takeIf { it.isNotEmpty() }?.let { "- " + vis(it) }, after.takeIf { it.isNotEmpty() }?.let { "+ " + vis(it) })
+                .joinToString("\n")
+        }
+    }
+
+    /**
+     * The History copy for a save of app memo [old] to [newTitle] / [newNotes], or null when nothing is worth
+     * keeping: no change of title or text, or a first text written into an empty memo (same title).
+     */
+    fun changeEntry(old: Entry, newTitle: String, newNotes: String): Entry? {
+        val on = Tree.notes(old); val ot = Tree.title(old)
+        if (on == newNotes && ot == newTitle) return null
+        if (on.isEmpty() && ot == newTitle) return null
+        return old.copy(history = listOf(), customData = old.customData - LEGACY_CD,
+            fields = old.fields + ("Notes" to EntryValue.Plain(changeText(on, newNotes))))
+    }
+
+    /**
+     * Converts 0.4.17 data (CustomData [LEGACY_CD]) of [e] into change copies in <History> and removes the
+     * CustomData. Versions that can't be rebuilt are dropped. null = nothing to do.
+     */
+    fun migrate(e: Entry): Entry? {
+        if (e.customData[LEGACY_CD] == null) return null
+        val recs = records(e)
+        val vs = runCatching { versions(e) }.getOrDefault(emptyList())
+        val made = ArrayList<Entry>()
+        for ((k, v) in vs.withIndex()) {
+            val text = v.text ?: continue; val newer = v.newer ?: continue
+            // version k was written by the save of record k+1 (the oldest one: just before its replacement)
+            val at = recs.getOrNull(k + 1)?.at?.let { Instant.ofEpochMilli(it) } ?: Instant.ofEpochMilli(v.at - 1000)
+            val t = e.times?.copy(lastModificationTime = at, lastAccessTime = at)
+            made.add(e.copy(history = listOf(), customData = e.customData - LEGACY_CD, times = t,
+                fields = e.fields + ("Title" to EntryValue.Plain(v.title)) + ("Notes" to EntryValue.Plain(changeText(text, newer)))))
+        }
+        val all = (e.history + made).sortedBy { it.times?.lastModificationTime ?: Instant.MIN }.takeLast(Tree.HISTORY_MAX)
+        return e.copy(customData = e.customData - LEGACY_CD, history = all)
+    }
+
+    // ------------------------------------------------------------ 0.4.17 format (read only, for [migrate])
+
+    fun hash(s: String): String = MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }.take(16)
+    private fun lines(s: String): List<String> = s.split("\n")
 
     sealed class Op {
         data class Keep(val n: Int) : Op()
@@ -39,13 +135,6 @@ object MemoDiff {
         val index: Int, val at: Long, val title: String, val newerTitle: String,
         val text: String?, val newer: String?, val anchored: Boolean, val rec: Rec,
     )
-
-    fun isAppMemo(e: Entry): Boolean = e.customData[Order.CD_KIND]?.value == "memo"
-
-    fun hash(s: String): String = MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }.take(16)
-
-    private fun lines(s: String): List<String> = s.split("\n")
 
     /** Ops that turn [from] into [to] (line based; common head / tail trimmed, LCS in between). */
     fun diff(from: String, to: String): List<Op> {
@@ -89,13 +178,6 @@ object MemoDiff {
         }
         require(i == a.size) { "diff does not fit" }
         return out.joinToString("\n")
-    }
-
-    /** For highlighting: indexes of lines of [older] that are not in [newer], and how many lines [newer] added. */
-    fun changedLines(newer: String, older: String): Pair<Set<Int>, Int> {
-        val ops = diff(newer, older); val changed = HashSet<Int>(); var k = 0; var added = 0
-        for (o in ops) when (o) { is Op.Keep -> k += o.n; is Op.Del -> added += o.n; is Op.Ins -> { changed.add(k); k++ } }
-        return changed to added
     }
 
     private fun esc(s: String) = s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
@@ -145,9 +227,9 @@ object MemoDiff {
         }.getOrDefault(emptyList())
     }
 
-    fun records(e: Entry): List<Rec> = decode(e.customData[CD]?.value)
+    fun records(e: Entry): List<Rec> = decode(e.customData[LEGACY_CD]?.value)
 
-    /** Rebuilds the past versions of [e], newest first (see the class comment for re-anchoring). */
+    /** Rebuilds the 0.4.17 versions of [e], newest first (re-anchored on a standard History copy when another app edited it). */
     fun versions(e: Entry): List<Version> {
         val out = ArrayList<Version>()
         var cur: String? = Tree.notes(e); var curTitle = Tree.title(e)
@@ -165,34 +247,4 @@ object MemoDiff {
         return out
     }
 
-    /**
-     * The new [CD] value after a save of [old] to [newTitle] / [newNotes] (null = leave as is). An earlier text with
-     * an empty body (e.g. a just-created memo) under the same title is nothing to go back to, so it is not kept.
-     */
-    fun record(old: Entry, newTitle: String, newNotes: String, now: Long, max: Int = Tree.HISTORY_MAX): String? {
-        val on = Tree.notes(old); val ot = Tree.title(old)
-        if (on == newNotes && ot == newTitle) return null
-        if (on.isEmpty() && ot == newTitle) return null
-        val rec = Rec(now, hash(newNotes), ot.takeIf { it != newTitle }, if (on == newNotes) listOf(Op.Keep(lines(on).size)) else diff(newNotes, on))
-        return encode((listOf(rec) + records(old)).take(max.coerceAtLeast(1)))
-    }
-
-    /** The new [CD] value without version [index] (1 = newest) or without any when null; null = remove the key. */
-    fun delete(e: Entry, index: Int?): String? {
-        if (index == null) return null
-        val vs = versions(e)
-        require(index in 1..vs.size) { "no such version" }
-        val d = vs[index - 1]
-        val kept = ArrayList<Rec>()
-        for (v in vs) {
-            if (v.index == index) continue
-            val after = v.index == index + 1
-            if (after && v.text != null && d.text != null && d.newer != null && v.newer == d.text) {
-                // the deleted one sat between: diff straight from the deleted version's newer text
-                val nt = d.newerTitle
-                kept.add(Rec(v.at, hash(d.newer), v.title.takeIf { it != nt }, diff(d.newer, v.text)))
-            } else kept.add(v.rec)
-        }
-        return if (kept.isEmpty()) null else encode(kept)
-    }
 }
