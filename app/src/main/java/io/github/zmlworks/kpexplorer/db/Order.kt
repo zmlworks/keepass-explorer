@@ -227,12 +227,45 @@ object Order {
             cd = cd - MemoDiff.LEGACY_CD
             MemoDiff.changeEntry(old, newFields["Title"]?.content.orEmpty(), newFields["Notes"]?.content.orEmpty())
                 ?.let { hist = (old.history + it).takeLast(max.coerceAtLeast(0)) }
-        } else if (contentChanged && hadContent) hist = (old.history + old.copy(history = listOf())).takeLast(max.coerceAtLeast(0))
+        } else if (contentChanged && hadContent) hist = (old.history + changedOnlyCopy(old, newFields, nt)).takeLast(max.coerceAtLeast(0))
         val t = if (contentChanged || iconChanged) (old.times ?: TimeData.create(now)).copy(lastModificationTime = now, lastAccessTime = now)
             else old.times
         val upd = old.copy(fields = newFields, tags = nt, customData = cd, history = hist, times = t, icon = newIcon)
         return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
     }
+
+    /**
+     * 0.4.19: the History copy of a key (or another app's memo) for a save to [newFields] / [newTags]: an ordinary
+     * KDBX history entry that holds only what changed.
+     *  - Title: always the title before the save (a label for KeePass / KeePassXC lists; a rename shows as old → new).
+     *  - other string fields (UserName, Password, URL, custom fields, otp, TimeOtp-*, ...): only those whose value
+     *    changed, with the previous value and its protected flag; a field that was empty / absent before is kept as an
+     *    empty value (so "added" is visible). Unchanged fields are left out.
+     *  - Notes: when changed, the 1-character-context change text of [MemoDiff.changeText] (protected stays protected).
+     *  - Tags: the previous tags when they changed, otherwise none.
+     *  - icon, colours and times as before; no CustomData (layout etc.), no attachments (never edited here), no history.
+     */
+    fun changedOnlyCopy(old: Entry, newFields: Map<String, EntryValue>, newTags: List<String>): Entry {
+        val m = LinkedHashMap<String, EntryValue>()
+        m["Title"] = old.fields["Title"] ?: EntryValue.Plain("")
+        for (k in LinkedHashSet(old.fields.keys + newFields.keys)) {
+            if (k == "Title") continue
+            val ov = old.fields[k]?.content.orEmpty(); val nv = newFields[k]?.content.orEmpty()
+            if (ov == nv) continue
+            val was = old.fields[k]
+            m[k] = when {
+                k == "Notes" -> MemoDiff.changeText(ov, nv).let { if (was is EntryValue.Encrypted) EntryValue.Encrypted(EncryptedValue.fromString(it)) else EntryValue.Plain(it) }
+                was != null -> was
+                newFields[k] is EntryValue.Encrypted -> EntryValue.Encrypted(EncryptedValue.fromString(""))
+                else -> EntryValue.Plain("")
+            }
+        }
+        return old.copy(fields = EntryFields(m), tags = if (old.tags != newTags) old.tags else emptyList(),
+            customData = emptyMap(), binaries = emptyList(), history = emptyList(), autoType = null, previousParentGroup = null)
+    }
+
+    /** A history copy made by [changedOnlyCopy] (not a full copy): it lacks one of the standard fields. */
+    fun isChangedOnly(snap: Entry): Boolean = !snap.fields.keys.containsAll(STANDARD)
 
     /** What counts as an entry's content for History: non-empty field values (by name) and the tags. */
     fun content(fields: Map<String, EntryValue>, tags: List<String>): Pair<Map<String, String>, List<String>> =

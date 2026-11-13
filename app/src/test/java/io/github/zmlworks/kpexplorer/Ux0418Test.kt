@@ -280,11 +280,12 @@ class Ux0418Test {
         } finally { Session.exitTempView() }
     }
 
-    @Test fun foreignMemo_keepsFullHistoryCopies() {
+    @Test fun foreignMemo_historyLikeKeys() {
         val id = ids["foreign"]!!
         val ms = openMemo(id); assertEquals("- 履歴", ms.historyLink.text.toString())
         saveMemo(ms, "一行目\n変更")
-        assertEquals("一行目\n二行目", Tree.notes(hist(id).single()))
+        // 0.4.19: like a key, the copy holds only what changed (Notes as the change text)
+        assertEquals("- ↵二行目\n+ ↵変更", Tree.notes(hist(id).single()))
     }
 
     // ---------------------------------------------------------------- 0.4.17 data

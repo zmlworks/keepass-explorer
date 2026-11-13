@@ -173,6 +173,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         content.background = W.Bevel(W.Style.FIELD)
         content.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
         root.addView(content, W.lp(W.MATCH, 0, 1.15f, l = 2, r = 2))
+        content.addOnLayoutChangeListener { _, _, t, _, b, _, ot, _, ob ->
+            if (b - t != ob - ot && selection != null) content.post { ensureSelectionVisible() }
+        }
 
         // splitter (drag to resize the two panes)
         split = View(ctx).apply { background = W.Bevel(W.Style.RAISED) }
@@ -579,6 +582,41 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun select(id: UUID?) {
         selection = id
         notifyList(); updatePreview(); updateStatus()
+        // 0.4.19: the preview pane takes space from the list; once laid out, bring the selected item above it
+        if (id != null) content.post { ensureSelectionVisible() }
+    }
+
+    /**
+     * 0.4.19: scrolls the list / grid just enough that the selected item is fully inside it (above the preview
+     * pane). Called after a selection and whenever the list area changes height (preview shown, splitter dragged).
+     */
+    fun ensureSelectionVisible() {
+        val v = listView ?: return
+        val id = selection ?: return
+        val pos = rows.indexOfFirst { it.uuid == id }.takeIf { it >= 0 } ?: return
+        if (v.height <= 0) return
+        val lp = if (v is ListView) pos + v.headerViewsCount else pos
+        val top = v.paddingTop; val bottom = v.height - v.paddingBottom
+        val c = v.getChildAt(lp - v.firstVisiblePosition)
+        val margin = W.dp(4)
+        if (c == null) {
+            // off screen: jump to it (rows below → align to the bottom edge, rows above → to the top)
+            if (lp > v.lastVisiblePosition) {
+                if (v is ListView) v.setSelectionFromTop(lp, (bottom - (v.getChildAt(0)?.height ?: W.dp(40)) - margin).coerceAtLeast(0)) else v.setSelection(lp)
+            } else v.setSelection(lp)
+            v.post { ensureSelectionVisibleOnce(v, lp, top, margin) }
+            return
+        }
+        when {
+            c.bottom > bottom -> v.scrollListBy(minOf(c.bottom - bottom + margin, c.top - top))
+            c.top < top -> v.scrollListBy(c.top - top - margin)
+        }
+    }
+
+    private fun ensureSelectionVisibleOnce(v: AbsListView, lp: Int, top: Int, margin: Int) {
+        val c = v.getChildAt(lp - v.firstVisiblePosition) ?: return
+        val bottom = v.height - v.paddingBottom
+        if (c.bottom > bottom) v.scrollListBy(minOf(c.bottom - bottom + margin, c.top - top))
     }
 
     private fun notifyList() {
@@ -1176,7 +1214,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (Session.readOnlyTemp) throw IllegalStateException("read-only")
         val g = Tree.newGroup(name ?: Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default)))
         Session.update { Order.appendGroup(it, current, g) }
-        selection = g.uuid; refresh()
+        selection = g.uuid; refresh(); content.post { ensureSelectionVisible() }
         return g.uuid
     }
 
@@ -1184,7 +1222,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (Session.readOnlyTemp) throw IllegalStateException("read-only")
         val e = Order.newMemo(name ?: Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default)))
         Session.update { Order.appendEntry(it, current, e) }
-        selection = e.uuid; refresh()
+        selection = e.uuid; refresh(); content.post { ensureSelectionVisible() }
         return e.uuid
     }
 

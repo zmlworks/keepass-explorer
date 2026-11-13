@@ -74,7 +74,7 @@ object HistoryViewer {
         body.addView(W.text(ctx,
             if (snaps.isEmpty()) "履歴はありません (中身を変えて保存したときに、最大 ${Tree.HISTORY_MAX} 件まで残ります)。"
             else if (ro) "新しい順。パスワードは隠したままです。読取専用です。"
-            else "新しい順 (最大 ${Tree.HISTORY_MAX} 件)。パスワードは隠したままです。",
+            else "新しい順 (最大 ${Tree.HISTORY_MAX} 件)。変わった欄だけを、変更前の値で表示します。パスワードは隠したままです。",
             13f).apply { setPadding(0, 0, 0, W.dp(8)) }, W.lp(W.MATCH, W.WRAP))
         val buttons = ArrayList<ClassicDialog.Btn>()
         if (snaps.isNotEmpty() && !ro) buttons.add(ClassicDialog.Btn("全て削除") { delete(null); false })
@@ -84,13 +84,82 @@ object HistoryViewer {
             return dlg.also { current = it; it.show() }
         }
         val list = W.vbox(ctx)
-        for (r in snaps) {
-            list.addView(snapCard(ctx, r, if (ro) null else ({ delete(r.indexFromNewest) })), W.lp(W.MATCH, W.WRAP, b = 8))
+        val hist = e.history
+        for ((k, r) in snaps.withIndex()) {
+            val snap = hist[hist.size - 1 - k]
+            val onDelete: (() -> Unit)? = if (ro) null else ({ delete(r.indexFromNewest) })
+            // 0.4.19: copies that hold only the changed fields get their own card; full copies (older versions,
+            // KeePass / KeePassXC) are shown as before
+            val card = if (Order.isChangedOnly(snap)) {
+                val newerTitle = if (k == 0) Tree.title(e) else Tree.title(hist[hist.size - k])
+                changedCard(ctx, r.indexFromNewest, r.modified, snap, newerTitle, onDelete)
+            } else snapCard(ctx, r, onDelete)
+            list.addView(card, W.lp(W.MATCH, W.WRAP, b = 8))
         }
         val sv = ScrollView(ctx).apply { W.classicScrollbars(this); addView(list) }
         body.addView(sv, W.lp(W.MATCH, W.dp(360)))
         dlg = ClassicDialog(ctx, title, body, buttons, scroll = false)
         return dlg.also { current = it; it.show() }
+    }
+
+    /** Display name of a field in the history cards. */
+    fun label(k: String): String = when (k) {
+        "UserName" -> "User"; "Password" -> "Pass"; "Notes" -> "Memo"; Order.OTP -> "OTP"; else -> k
+    }
+
+    /**
+     * 0.4.19: card of a changed-only copy ([Order.changedOnlyCopy]): the title (old → new on a rename), then each
+     * changed field with its previous value (「(空)」 = it was empty or not there), Memo as a coloured change, Tag.
+     */
+    internal fun changedCard(ctx: Context, index: Int, modified: String, snap: Entry, newerTitle: String, onDelete: (() -> Unit)?): LinearLayout {
+        val card = W.vbox(ctx).apply {
+            background = W.Bevel(W.Style.THIN_RAISED, W.FACE)
+            setPadding(W.dp(10), W.dp(8), W.dp(10), W.dp(8))
+            tag = "history-changed-$index"
+        }
+        val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        head.addView(W.text(ctx, "#$index  $modified", 14f, true, W.NAVY), W.lp(0, W.WRAP, 1f))
+        if (onDelete != null) head.addView(W.text(ctx, "削除", 13f, true).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true
+            contentDescription = "履歴 #$index を削除"; tag = "history-delete-$index"
+            setPadding(W.dp(14), W.dp(6), W.dp(14), W.dp(6)); setOnClickListener { onDelete() }
+        }, W.lp(W.WRAP, W.WRAP, l = 8))
+        card.addView(head, W.lp(W.MATCH, W.WRAP))
+        val title = Tree.title(snap)
+        val names = ArrayList<String>()
+        fun row(label: String, value: CharSequence, secret: String? = null, tagName: String? = null) {
+            val r = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+            r.addView(W.text(ctx, label, 12f, color = W.LABEL_DARK).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END },
+                W.lp(W.dp(64), W.WRAP))
+            val tv = W.text(ctx, "", 14f).apply { text = if (secret != null && secret.isNotEmpty()) "******" else value; tag = tagName }
+            r.addView(tv, W.lp(0, W.WRAP, 1f))
+            if (secret != null && secret.isNotEmpty()) r.addView(W.text(ctx, "表示", 12f, true, W.NAVY).apply {
+                isClickable = true; contentDescription = "一時表示"
+                setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
+                setOnClickListener {
+                    if (text.toString() == "表示") { tv.text = secret; text = "隠す" } else { tv.text = "******"; text = "表示" }
+                }
+            }, W.lp(W.WRAP, W.WRAP))
+            card.addView(r, W.lp(W.MATCH, W.WRAP, t = 2))
+        }
+        if (title != newerTitle) { row("Title", "$title → $newerTitle", tagName = "changed-Title"); names.add("Title") }
+        else row("Title", title.ifEmpty { "—" })
+        val rank = mapOf("UserName" to 0, "Password" to 1, "URL" to 2, "Notes" to 9)
+        for ((k, v) in snap.fields.entries.sortedBy { rank[it.key] ?: 5 }) {
+            if (k == "Title") continue
+            names.add(label(k))
+            val c = v.content
+            when {
+                k == "Notes" -> row(label(k), MemoDiffViewer.colored(c).let { if (c.isEmpty()) "(空)" else it }, tagName = "changed-Notes")
+                k == "Password" || k == Order.OTP || v is app.keemobile.kotpass.models.EntryValue.Encrypted ->
+                    if (c.isEmpty()) row(label(k), "(空)", tagName = "changed-$k") else row(label(k), "", secret = c, tagName = "changed-$k")
+                else -> row(label(k), c.ifEmpty { "(空)" }, tagName = "changed-$k")
+            }
+        }
+        if (snap.tags.isNotEmpty()) { names.add("Tag"); row("Tag", snap.tags.joinToString(", "), tagName = "changed-Tags") }
+        card.addView(W.text(ctx, if (names.isEmpty()) "変わった欄: なし (アイコンなど)" else "変わった欄: " + names.joinToString("、"), 12f, color = W.SHADOW).apply {
+            tag = "changed-summary-$index" }, W.lp(W.MATCH, W.WRAP, t = 4))
+        return card
     }
 
     internal fun snapCard(ctx: Context, r: Row, onDelete: (() -> Unit)?): LinearLayout {
