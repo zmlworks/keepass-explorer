@@ -32,22 +32,22 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         private set
     var selected: File? = null
     private val listHolder = FrameLayout(ctx)
-    private val fmt = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm").withZone(ZoneId.systemDefault())
+    private val fmt: DateTimeFormatter get() = L.dateTime(false)
 
     init {
-        val cap = W.titleBar(ctx, "バックアップ - KeePass Explorer", Px.floppy16, onClose = { a.showExplorer() })
+        val cap = W.titleBar(ctx, L.t("バックアップ - KeePass Explorer", "Backup - KeePass Explorer"), Px.floppy16, onClose = { a.showExplorer() })
         root.addView(cap.bar, W.lp())
         val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
         fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
-        b("今すぐ作成") { create() }
+        b(L.t("今すぐ作成", "Create now")) { create() }
         b(ctx.getString(R.string.browse_backup)) { selected?.let { TempImport.browseBackupFile(a, it) } ?: need() }
-        b("外部に書き出す...") { selected?.let { export(it) } ?: need() }
-        b("復元...") { selected?.let { restore(it) } ?: need() }
-        b("名前の変更...") { selected?.let { rename(it) } ?: need() }
-        b("削除") { selected?.let { delete(it) } ?: need() }
+        b(L.t("外部に書き出す...", "Export...")) { selected?.let { export(it) } ?: need() }
+        b(L.t("復元...", "Restore...")) { selected?.let { restore(it) } ?: need() }
+        b(L.t("名前の変更...", "Rename...")) { selected?.let { rename(it) } ?: need() }
+        b(L.t("削除", "Delete")) { selected?.let { delete(it) } ?: need() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         val addr = W.hbox(ctx).apply { setPadding(W.dp(6), W.dp(2), W.dp(4), W.dp(5)) }
-        addr.addView(W.text(ctx, "場所", 14f), W.lp(W.WRAP, W.WRAP, r = 6))
+        addr.addView(W.text(ctx, L.t("場所", "Location"), 14f), W.lp(W.WRAP, W.WRAP, r = 6))
         addr.addView(W.text(ctx, displayPath(), 14f).apply {
             background = W.Bevel(W.Style.FIELD); setPadding(W.dp(6), W.dp(7), W.dp(6), W.dp(7)); isSingleLine = true
             ellipsize = TextUtils.TruncateAt.START
@@ -60,10 +60,10 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     private fun displayPath(): String {
-        return "アプリ内 / backups"
+        return L.t("アプリ内 / backups", "In app / backups")
     }
 
-    private fun need() = Dlg.message(ctx, "バックアップ", "先に一覧からバックアップを選んでください。", 'i')
+    private fun need() = Dlg.message(ctx, L.t("バックアップ", "Backup"), L.t("先に一覧からバックアップを選んでください。", "Select a backup in the list first."), 'i')
 
     fun reload() {
         files = a.store.backups()
@@ -74,7 +74,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         fun h(s: String, w: Int, weight: Float) = header.addView(W.text(ctx, s, 13f).apply {
             background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(6), W.dp(4), W.dp(6))
         }, W.lp(w, W.WRAP, weight))
-        h("名前", 0, 1f); h("サイズ", W.dp(70), 0f); h("更新日時", W.dp(122), 0f)
+        h(L.t("名前", "Name"), 0, 1f); h(L.t("サイズ", "Size"), W.dp(70), 0f); h(L.t("更新日時", "Modified"), W.dp(122), 0f)
         col.addView(header)
         val list = ListView(ctx)
         list.divider = null
@@ -120,7 +120,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         list.setOnTouchListener { _, e -> gd.onTouchEvent(e); false }
         if (files.isEmpty()) {
             val f = FrameLayout(ctx); f.addView(list)
-            f.addView(W.text(ctx, "バックアップはまだありません。\n「今すぐ作成」またはツールバーの「保存」で作成できます。", 14f, color = W.SHADOW).apply {
+            f.addView(W.text(ctx, L.t("バックアップはまだありません。\n「今すぐ作成」またはツールバーの「保存」で作成できます。", "No backups yet.\nCreate one with \"Create now\" or with \"Save\" in the toolbar."), 14f, color = W.SHADOW).apply {
                 gravity = Gravity.CENTER
             }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(60); leftMargin = W.dp(16); rightMargin = W.dp(16) })
             col.addView(f, W.lp(W.MATCH, 0, 1f))
@@ -131,25 +131,25 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun menuFor(f: File) = listOf(
         Menus.Item(ctx.getString(R.string.browse_backup)) { TempImport.browseBackupFile(a, f) },
-        Menus.Item("外部に書き出す (パスワード付き)...") { export(f) },
+        Menus.Item(L.t("外部に書き出す (パスワード付き)...", "Export (with password)...")) { export(f) },
         Menus.sep(),
-        Menus.Item("このバックアップから復元...") { restore(f) },
+        Menus.Item(L.t("このバックアップから復元...", "Restore from this backup...")) { restore(f) },
         Menus.Item(ctx.getString(R.string.import_menu)) {
             TempImport.confirmAndImport(a, f.readBytes(), f.name)
         },
         Menus.sep(),
-        Menus.Item("名前の変更...") { rename(f) },
-        Menus.Item("削除") { delete(f) }
+        Menus.Item(L.t("名前の変更...", "Rename...")) { rename(f) },
+        Menus.Item(L.t("削除", "Delete")) { delete(f) }
     )
 
     private fun updateStatus() {}
 
     fun create() {
-        val busy = Dlg.busy(ctx, "バックアップ", "保存してからバックアップしています…")
+        val busy = Dlg.busy(ctx, L.t("バックアップ", "Backup"), L.t("保存してからバックアップしています…", "Saving, then backing up…"))
         Session.afterSave({ a.store.backup() }) { r ->
             busy.dismiss()
-            r.onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, "バックアップ: ${f.name}", Toast.LENGTH_SHORT).show() }
-             .onFailure { Dlg.message(ctx, "バックアップ", "作成できませんでした。\n${it.message ?: it}", 'x') }
+            r.onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, L.t("バックアップ: ${f.name}", "Backup: ${f.name}"), Toast.LENGTH_SHORT).show() }
+             .onFailure { Dlg.message(ctx, L.t("バックアップ", "Backup"), L.t("作成できませんでした。\n${it.message ?: it}", "Could not create it.\n${it.message ?: it}"), 'x') }
         }
     }
 
@@ -162,9 +162,9 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     private fun restore(f: File) {
-        Dlg.confirm(ctx, "バックアップから復元", "現在のデータベースを「${f.name}」の内容で置き換えますか?\n\n置き換える前に、現在の内容も自動でバックアップします。", '!') {
+        Dlg.confirm(ctx, L.t("バックアップから復元", "Restore from backup"), L.t("現在のデータベースを「${f.name}」の内容で置き換えますか?\n\n置き換える前に、現在の内容も自動でバックアップします。", "Replace the current database with the contents of \"${f.name}\"?\n\nThe current contents are backed up automatically first."), '!') {
             val key = Session.compositeCopy() ?: return@confirm
-            val busy = Dlg.busy(ctx, "復元", "バックアップを確認しています…")
+            val busy = Dlg.busy(ctx, L.t("復元", "Restore"), L.t("バックアップを確認しています…", "Checking the backup…"))
             Session.afterSave({
                 try {
                     val bytes = f.readBytes()
@@ -180,12 +180,12 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
                     Security.opened(a, db)
                     a.explorer = null
                     reload()
-                    Dlg.message(ctx, "復元", "復元しました。\n(復元前の内容は ${safety.name} に保存しました)", 'i')
+                    Dlg.message(ctx, L.t("復元", "Restore"), L.t("復元しました。\n(復元前の内容は ${safety.name} に保存しました)", "Restored.\n(The previous contents were saved as ${safety.name})"), 'i')
                 }.onFailure { t ->
-                    Dlg.message(ctx, "復元", when (t) {
-                        is Kdbx.WrongPasswordException -> "このファイルは今のマスターパスワードでは開けないため、復元できません (変更前のパスワードで作られたファイルです)。"
-                        is Session.SaveFailedException -> "現在の変更を保存できなかったため、復元を中止しました。\n${t.message}"
-                        else -> "復元できませんでした。\n$t"
+                    Dlg.message(ctx, L.t("復元", "Restore"), when (t) {
+                        is Kdbx.WrongPasswordException -> L.t("このファイルは今のマスターパスワードでは開けないため、復元できません (変更前のパスワードで作られたファイルです)。", "This file cannot be opened with the current master password, so it cannot be restored (it was made with an earlier password).")
+                        is Session.SaveFailedException -> L.t("現在の変更を保存できなかったため、復元を中止しました。\n${t.message}", "The current changes could not be saved, so the restore was cancelled.\n${t.message}")
+                        else -> L.t("復元できませんでした。\n$t", "Could not restore.\n$t")
                     }, 'x')
                 }
             }
@@ -194,17 +194,17 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /** 0.4.10: rename (".kdbx" kept, no separators, no clash with another backup). */
     fun rename(f: File): io.github.zmlworks.kpexplorer.ui.ClassicDialog =
-        Dlg.prompt(ctx, "名前の変更", "新しい名前 (.kdbx は自動で付きます):", f.nameWithoutExtension) { input ->
+        Dlg.prompt(ctx, L.t("名前の変更", "Rename"), L.t("新しい名前 (.kdbx は自動で付きます):", "New name (.kdbx is added automatically):"), f.nameWithoutExtension) { input ->
             try {
                 val nf = a.store.renameBackup(f, input)
                 selected = nf; reload(); true
             } catch (e: io.github.zmlworks.kpexplorer.db.Store.RenameException) {
-                Dlg.message(ctx, "名前の変更", e.message ?: "名前を変更できませんでした。", '!'); false
+                Dlg.message(ctx, L.t("名前の変更", "Rename"), e.message ?: L.t("名前を変更できませんでした。", "Could not rename it."), '!'); false
             }
         }
 
     private fun delete(f: File) {
-        Dlg.confirm(ctx, "ファイルの削除の確認", "「${f.name}」を削除しますか?", '!') {
+        Dlg.confirm(ctx, L.t("ファイルの削除の確認", "Confirm File Delete"), L.t("「${f.name}」を削除しますか?", "Delete \"${f.name}\"?"), '!') {
             f.delete(); selected = null; reload()
         }
     }

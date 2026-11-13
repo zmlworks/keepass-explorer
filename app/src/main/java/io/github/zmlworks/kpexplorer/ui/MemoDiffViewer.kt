@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.L
 import android.content.Context
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
@@ -29,7 +30,7 @@ object MemoDiffViewer {
 
     /** The change text of a copy, coloured (tests read it). */
     fun colored(notes: String): CharSequence {
-        if (notes.isEmpty()) return "(本文の変更なし)"
+        if (notes.isEmpty()) return L.t("(本文の変更なし)", "(text unchanged)")
         val sb = SpannableStringBuilder()
         val ls = notes.split("\n")
         for ((i, l) in ls.withIndex()) {
@@ -48,26 +49,23 @@ object MemoDiffViewer {
         val e = Tree.findEntry(Session.db ?: return null, entryId)?.second ?: return null
         val hist = e.history
         val ro = Session.readOnlyTemp
-        val title = "差分 — ${Tree.title(e).ifEmpty { "(無題)" }}"
+        val title = L.t("差分 — ${Tree.title(e).ifEmpty { "(無題)" }}", "Changes — ${Tree.title(e).ifEmpty { "(Untitled)" }}")
         val body = W.vbox(ctx)
         lateinit var dlg: ClassicDialog
         fun delete(index: Int?) {
-            val what = if (index == null) "このメモの履歴を全て (${hist.size} 件) 削除します。\n元に戻せません。よろしいですか?"
-                else "履歴 #$index (${time(hist[hist.size - index])}) を削除します。\n元に戻せません。よろしいですか?"
-            Dlg.confirm(ctx, if (index == null) "履歴を全て削除" else "履歴の削除", what, '!', yes = "削除", no = "キャンセル") {
+            val what = if (index == null) L.t("このメモの履歴を全て (${hist.size} 件) 削除します。\n元に戻せません。よろしいですか?", "Delete all history of this memo (${hist.size})?\nThis cannot be undone.")
+                else L.t("履歴 #$index (${time(hist[hist.size - index])}) を削除します。\n元に戻せません。よろしいですか?", "Delete history #$index (${time(hist[hist.size - index])})?\nThis cannot be undone.")
+            Dlg.confirm(ctx, if (index == null) L.t("履歴を全て削除", "Delete All History") else L.t("履歴の削除", "Delete History"), what, '!', yes = L.t("削除", "Delete"), no = L.t("キャンセル", "Cancel")) {
                 Session.update { Order.deleteHistory(it, entryId, index) }
                 Session.flush()
                 dlg.dismiss(); onChanged(); show(ctx, entryId, onChanged)
             }
         }
-        body.addView(W.text(ctx,
-            if (hist.isEmpty()) "履歴はありません (本文やタイトルを変えて保存したときに、変わった所だけを最大 ${Tree.HISTORY_MAX} 件まで残します)。"
-            else "新しい順 (最大 ${Tree.HISTORY_MAX} 件)。変更前 (−、赤) と変更後 (＋、緑) を、前後 1 文字と一緒に表示します。↵ は改行です。日時は変更前の内容を保存した日時です。" +
-                if (ro) "読取専用です。" else "",
-            13f).apply { setPadding(0, 0, 0, W.dp(8)) }, W.lp(W.MATCH, W.WRAP))
+        // 0.4.20: no explanatory header; only the empty state says something
+        if (hist.isEmpty()) body.addView(W.text(ctx, L.t("履歴はありません。", "No history."), 13f).apply { setPadding(0, 0, 0, W.dp(8)) }, W.lp(W.MATCH, W.WRAP))
         val buttons = ArrayList<ClassicDialog.Btn>()
-        if (hist.isNotEmpty() && !ro) buttons.add(ClassicDialog.Btn("全て削除") { delete(null); false })
-        buttons.add(ClassicDialog.Btn("閉じる", true))
+        if (hist.isNotEmpty() && !ro) buttons.add(ClassicDialog.Btn(L.t("全て削除", "Delete all")) { delete(null); false })
+        buttons.add(ClassicDialog.Btn(L.t("閉じる", "Close"), true))
         if (hist.isEmpty()) {
             dlg = ClassicDialog(ctx, title, body, buttons)
             return dlg.also { current = it; it.show() }
@@ -80,7 +78,7 @@ object MemoDiffViewer {
             // the title it was renamed to: the next newer copy's, or the memo's own
             val newerTitle = if (k == 0) Tree.title(e) else Tree.title(hist[hist.size - k])
             val card = if (MemoDiff.isChangeEntry(e, snap)) changeCard(ctx, index, snap, newerTitle, onDelete)
-                else HistoryViewer.snapCard(ctx, rows[k], onDelete)
+                else HistoryViewer.snapCard(ctx, rows[k], onDelete, showTitle = Tree.title(snap) != newerTitle, newerTitle = newerTitle)
             list.addView(card, W.lp(W.MATCH, W.WRAP, b = 8))
         }
         val sv = ScrollView(ctx).apply { W.classicScrollbars(this); addView(list) }
@@ -99,14 +97,14 @@ object MemoDiffViewer {
         }
         val head = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         head.addView(W.text(ctx, "#$index  ${time(snap)}", 14f, true, W.NAVY), W.lp(0, W.WRAP, 1f))
-        if (onDelete != null) head.addView(W.text(ctx, "削除", 13f, true).apply {
+        if (onDelete != null) head.addView(W.text(ctx, L.t("削除", "Delete"), 13f, true).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true
-            contentDescription = "履歴 #$index を削除"; tag = "history-delete-$index"
+            contentDescription = L.t("履歴 #$index を削除", "Delete history #$index"); tag = "history-delete-$index"
             setPadding(W.dp(14), W.dp(6), W.dp(14), W.dp(6)); setOnClickListener { onDelete() }
         }, W.lp(W.WRAP, W.WRAP, l = 8))
         card.addView(head, W.lp(W.MATCH, W.WRAP))
         val t = Tree.title(snap)
-        if (t != newerTitle) card.addView(W.text(ctx, "タイトル: $t → $newerTitle", 13f, color = W.LABEL_DARK), W.lp(W.MATCH, W.WRAP, t = 4))
+        if (t != newerTitle) card.addView(W.text(ctx, L.t("タイトル: $t → $newerTitle", "Title: $t → $newerTitle"), 13f, color = W.LABEL_DARK), W.lp(W.MATCH, W.WRAP, t = 4))
         val notes = Tree.notes(snap)
         if (notes.isNotEmpty() || t == newerTitle)
             card.addView(W.text(ctx, "", 14f).apply { text = colored(notes); tag = "change-text-$index"; setPadding(0, W.dp(4), 0, 0) },

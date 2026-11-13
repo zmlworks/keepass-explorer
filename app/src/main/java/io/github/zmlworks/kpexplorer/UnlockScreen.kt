@@ -21,11 +21,11 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     override val view: View get() = root
     val error: TextView = W.text(ctx, "", 14f, color = 0xFFC00000.toInt())
     private var autoPrompted = false
-    private val info = W.text(ctx, "指紋、またはこの端末の画面ロック (PIN・パターン・パスワード) でロックを解除します。" +
-        "マスターパスワードでも開けます。", 14f).apply { setLineSpacing(0f, 1.15f) }
+    private val info = W.text(ctx, L.t("指紋、またはこの端末の画面ロック (PIN・パターン・パスワード) でロックを解除します。", "Unlock with your fingerprint or this device’s screen lock (PIN, pattern, password). ") +
+        L.t("マスターパスワードでも開けます。", "The master password works too."), 14f).apply { setLineSpacing(0f, 1.15f) }
     val pw = W.field(ctx, password = true).apply { isSingleLine = true }
     val pwBox = W.vbox(ctx)
-    private val bio = W.button(ctx, "指紋・画面ロック(U)", true) { unlock() }
+    private val bio = W.button(ctx, L.t("指紋・画面ロック(U)", "Fingerprint / screen lock(U)"), true) { unlock() }
 
     init {
         val content = W.vbox(ctx)
@@ -36,23 +36,23 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         top.addView(W.icon(ctx, Px.keyfile32), W.lp(W.WRAP, W.WRAP, r = 12))
         top.addView(info, W.lp(0, W.WRAP, 1f))
         inner.addView(top)
-        pwBox.addView(W.text(ctx, "マスターパスワード:", 14f), W.lp(W.MATCH, W.WRAP))
+        pwBox.addView(W.text(ctx, L.t("マスターパスワード:", "Master password:"), 14f), W.lp(W.MATCH, W.WRAP))
         pwBox.addView(pw, W.lp(W.MATCH, W.WRAP, t = 3))
-        pwBox.addView(W.button(ctx, "開く(O)", true) { openWithPassword() }.apply { minWidth = W.dp(96) },
+        pwBox.addView(W.button(ctx, L.t("開く(O)", "Open(O)"), true) { openWithPassword() }.apply { minWidth = W.dp(96) },
             W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.END })
         inner.addView(pwBox, W.lp(W.MATCH, W.WRAP, t = 8))
         inner.addView(error, W.lp(W.MATCH, W.WRAP, t = 10))
         val btns = W.hbox(ctx).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         btns.addView(bio, W.lp(W.WRAP, W.WRAP))
-        btns.addView(W.button(ctx, "終了") { a.finish() }, W.lp(W.WRAP, W.WRAP, l = 6))
+        btns.addView(W.button(ctx, L.t("終了", "Exit")) { a.finish() }, W.lp(W.WRAP, W.WRAP, l = 6))
         inner.addView(btns, W.lp(W.MATCH, W.WRAP, t = 8))
         val alt = W.hbox(ctx).apply { gravity = Gravity.END }
-        alt.addView(W.button(ctx, "マスターパスワードで開く...") { showPassword(null) }, W.lp(W.WRAP, W.WRAP))
+        alt.addView(W.button(ctx, L.t("マスターパスワードで開く...", "Open with master password...")) { showPassword(null) }, W.lp(W.WRAP, W.WRAP))
         inner.addView(alt, W.lp(W.MATCH, W.WRAP, t = 6))
-        if (!a.vault.hasStoredKey()) showPassword("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。")
+        if (!a.vault.hasStoredKey()) showPassword(L.t("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。", "There is no fingerprint / screen lock key, so open with the master password."))
         else pwBox.visibility = View.GONE
         content.addView(inner)
-        val cap = W.titleBar(ctx, "KeePass Explorer へログオン", Px.key16, onClose = null)
+        val cap = W.titleBar(ctx, L.t("KeePass Explorer へログオン", "Log On to KeePass Explorer"), Px.key16, onClose = null)
         root = Desktop.frame(ctx, W.window(ctx, cap, content))
     }
 
@@ -81,7 +81,7 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
 
     override fun onShown() {
         Session.takeLockSaveError()?.let {
-            Dlg.message(ctx, "保存エラー", "ロックする直前の変更を保存できませんでした。最後の変更は失われた可能性があります。\n$it", 'x')
+            Dlg.message(ctx, L.t("保存エラー", "Save Error"), L.t("ロックする直前の変更を保存できませんでした。最後の変更は失われた可能性があります。\n$it", "The changes made just before locking could not be saved. The last change may have been lost.\n$it"), 'x')
         }
         if (!autoPrompted && Vault.forceAvailableForTest == null && a.vault.hasStoredKey()) {
             autoPrompted = true
@@ -98,7 +98,7 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun openWithPassword() {
         val p = pw.text.toString()
-        if (p.isEmpty()) { error.text = "マスターパスワードを入力してください。"; return }
+        if (p.isEmpty()) { error.text = L.t("マスターパスワードを入力してください。", "Enter the master password."); return }
         pw.setText("")
         error.text = ""
         Security.unlockWithPassword(a, p, onError = { error.text = it }) { a.showExplorer() }
@@ -106,7 +106,7 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun unlock() {
         error.text = ""
-        if (!a.vault.hasStoredKey()) { showPassword("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。"); return }
-        Security.unlock(a, onError = { error.text = it }, onLost = { showPassword("$it\nマスターパスワードで開くと、もう一度登録します。") }) { a.showExplorer() }
+        if (!a.vault.hasStoredKey()) { showPassword(L.t("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。", "There is no fingerprint / screen lock key, so open with the master password.")); return }
+        Security.unlock(a, onError = { error.text = it }, onLost = { showPassword(L.t("$it\nマスターパスワードで開くと、もう一度登録します。", "$it\nOpening with the master password sets it up again.")) }) { a.showExplorer() }
     }
 }

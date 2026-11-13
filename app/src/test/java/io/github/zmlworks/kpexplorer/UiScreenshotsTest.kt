@@ -582,12 +582,12 @@ class UiScreenshotsTest {
         assertNull(Tree.findEntry(Session.db!!, ids["Gmail"]!!))
     }
 
-    @Test fun historyIsCappedAtFive() {
+    @Test fun historyIsCappedAtTen() {
         var db = sample()
         val id = ids["Gmail"]!!
         repeat(15) { i -> db = io.github.zmlworks.kpexplorer.db.Order.saveEntry(db, id, mapOf("Title" to "Gmail $i"), listOf(), null) }
-        assertEquals(5, Tree.findEntry(db, id)!!.second.history.size)
-        assertEquals(5, Kdbx.create("x", key).content.meta.historyMaxItems)
+        assertEquals(10, Tree.findEntry(db, id)!!.second.history.size)
+        assertEquals(10, Kdbx.create("x", key).content.meta.historyMaxItems)
     }
 
     @Test fun debouncedSavesCoalesce() {

@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.L
 import io.github.zmlworks.kpexplorer.R
 
 import android.app.Dialog
@@ -92,7 +93,7 @@ object Dlg {
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 8))
         val d = ClassicDialog(ctx, title, col, listOf(
             ClassicDialog.Btn(ok, true) { onOk(f.text.toString()) },
-            ClassicDialog.Btn("キャンセル") { true }))
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel")) { true }))
         d.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
         d.show()
         f.requestFocus()

@@ -11,24 +11,27 @@ import app.keemobile.kotpass.models.Entry
 object EntryIcon {
     const val CD = "KPExplorer.Icon"
 
-    class Def(val id: String, val label: String, val std: PredefinedIcon)
+    /** 0.4.20: [label] follows the display language ([L]). */
+    class Def(val id: String, private val ja: String, private val en: String, val std: PredefinedIcon) {
+        val label: String get() = io.github.zmlworks.kpexplorer.L.t(ja, en)
+    }
 
     val ALL = listOf(
-        Def("key", "鍵", PredefinedIcon.Key),
-        Def("mail", "メール", PredefinedIcon.Email),
-        Def("web", "ウェブ", PredefinedIcon.World),
-        Def("wifi", "Wi-Fi", PredefinedIcon.WorldSocket),
-        Def("food", "食べ物", PredefinedIcon.Apple),
-        Def("user", "アカウント", PredefinedIcon.Identity),
-        Def("card", "カード", PredefinedIcon.Money),
-        Def("bank", "銀行", PredefinedIcon.HomeBanking),
-        Def("cart", "買い物", PredefinedIcon.Package),
-        Def("game", "ゲーム", PredefinedIcon.Star),
-        Def("phone", "電話", PredefinedIcon.UserCommunication),
-        Def("lock", "ロック", PredefinedIcon.PaperLocked),
-        Def("home", "家", PredefinedIcon.Home),
-        Def("star", "お気に入り", PredefinedIcon.Star),
-        Def("note", "メモ", PredefinedIcon.Note),
+        Def("key", "鍵", "Key", PredefinedIcon.Key),
+        Def("mail", "メール", "Mail", PredefinedIcon.Email),
+        Def("web", "ウェブ", "Web", PredefinedIcon.World),
+        Def("wifi", "Wi-Fi", "Wi-Fi", PredefinedIcon.WorldSocket),
+        Def("food", "食べ物", "Food", PredefinedIcon.Apple),
+        Def("user", "アカウント", "Account", PredefinedIcon.Identity),
+        Def("card", "カード", "Card", PredefinedIcon.Money),
+        Def("bank", "銀行", "Bank", PredefinedIcon.HomeBanking),
+        Def("cart", "買い物", "Shopping", PredefinedIcon.Package),
+        Def("game", "ゲーム", "Game", PredefinedIcon.Star),
+        Def("phone", "電話", "Phone", PredefinedIcon.UserCommunication),
+        Def("lock", "ロック", "Lock", PredefinedIcon.PaperLocked),
+        Def("home", "家", "Home", PredefinedIcon.Home),
+        Def("star", "お気に入り", "Favourite", PredefinedIcon.Star),
+        Def("note", "メモ", "Note", PredefinedIcon.Note),
     )
 
     fun def(id: String?): Def? = ALL.firstOrNull { it.id == id }

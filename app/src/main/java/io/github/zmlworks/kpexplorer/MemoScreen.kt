@@ -44,10 +44,10 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
     init {
         val e = Session.db?.let { Tree.findEntry(it, entryId)?.second }
         appMemo = e != null && MemoDiff.isAppMemo(e)
-        title.text = e?.let { Tree.title(it) }.orEmpty().ifEmpty { "(無題)" }
+        title.text = e?.let { Tree.title(it) }.orEmpty().ifEmpty { L.t("(無題)", "(Untitled)") }
         text.setText(e?.let { Tree.notes(it) }.orEmpty())
         val bar = Parts.appBar(ctx, "", onBack = { onBack() }, titleView = title, back = false)
-        val word = if (appMemo) "差分" else "履歴"
+        val word = if (appMemo) L.t("差分", "Changes") else L.t("履歴", "History")
         historyLink = W.text(ctx, "", 15f, true, W.HILITE).apply {
             text = SpannableString("- $word").apply { setSpan(UnderlineSpan(), 2, length, 0) }
             contentDescription = word; isClickable = true; gravity = Gravity.CENTER
@@ -71,9 +71,9 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
         e.fields.forEach { (k, v) -> vals[k] = v.content }
         vals["Notes"] = text.text.toString()
         try { Session.update { Order.saveEntry(it, entryId, vals, e.tags, null) }; Session.flush() }
-        catch (t: Throwable) { Dlg.message(ctx, "保存", "保存できませんでした。\n$t", 'x'); return false }
+        catch (t: Throwable) { Dlg.message(ctx, L.t("保存", "Save"), L.t("保存できませんでした。\n$t", "Could not save.\n$t"), 'x'); return false }
         dirty = false
-        Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, L.t("保存しました", "Saved"), Toast.LENGTH_SHORT).show()
         return true
     }
 

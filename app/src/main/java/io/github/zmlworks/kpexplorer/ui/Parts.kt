@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.L
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -31,7 +32,7 @@ object Parts {
         val box = W.vbox(ctx).apply { setPadding(W.dp(6), W.dp(3), W.dp(6), W.dp(4)) }
         val binId = io.github.zmlworks.kpexplorer.Session.db?.let { io.github.zmlworks.kpexplorer.db.Tree.recycleBinId(it) }
         path.forEachIndexed { i, g ->
-            val name = if (i == 0) "/" else g.name.ifEmpty { "(名前なし)" }
+            val name = if (i == 0) "/" else g.name.ifEmpty { L.t("(名前なし)", "(no name)") }
             val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = g.uuid; minimumHeight = W.dp(26) }
             row.setPadding(W.dp(20) * i, 0, 0, 0)
             if (i > 0) row.addView(W.text(ctx, "└", 15f), W.lp(W.WRAP, W.WRAP))
@@ -53,16 +54,16 @@ object Parts {
     /** Bottom 戻る / 保存 bar (key and memo screens): tall buttons, 17 sp text, floppy glyph on 保存. */
     fun footer(ctx: Context, onBack: () -> Unit, onSave: () -> Unit): LinearLayout {
         val foot = W.hbox(ctx).apply { gravity = Gravity.CENTER; setPadding(W.dp(6), W.dp(8), W.dp(6), W.dp(8)) }
-        foot.addView(W.text(ctx, "← 戻る", 17f, true).apply {
-            gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true; contentDescription = "戻る"
+        foot.addView(W.text(ctx, L.t("← 戻る", "← Back"), 17f, true).apply {
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true; contentDescription = L.t("戻る", "Back")
             setOnClickListener { onBack() }
         }, W.lp(0, W.dp(56), 1f, r = 6))
         val sv = W.hbox(ctx).apply {
-            gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true; contentDescription = "保存"
+            gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true; contentDescription = L.t("保存", "Save")
             setOnClickListener { onSave() }
         }
         sv.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.FLOPPY)) }, W.lp(W.dp(24), W.dp(24), r = 8))
-        sv.addView(W.text(ctx, "保存", 17f, true), W.lp(W.WRAP, W.WRAP))
+        sv.addView(W.text(ctx, L.t("保存", "Save"), 17f, true), W.lp(W.WRAP, W.WRAP))
         foot.addView(sv, W.lp(0, W.dp(56), 1f, l = 6))
         return foot
     }
@@ -113,7 +114,7 @@ object Parts {
             setImageDrawable(Glyph(Glyph.Kind.CLOSE, W.HILITE))
             scaleType = ImageView.ScaleType.CENTER
             background = null
-            contentDescription = "閉じる"; tooltipText = "閉じる"
+            contentDescription = L.t("閉じる", "Close"); tooltipText = L.t("閉じる", "Close")
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             isClickable = true; isFocusable = true
             minimumWidth = W.dp(48); minimumHeight = W.dp(48)
@@ -132,7 +133,7 @@ object Parts {
         bar.setPadding(W.dp(3), W.dp(3), W.dp(3), W.dp(3))
         bar.gravity = Gravity.CENTER_VERTICAL
         val backButton = W.text(ctx, "←", 20f, true).apply {
-            background = W.Bevel(W.Style.BUTTON); gravity = Gravity.CENTER; contentDescription = "戻る"
+            background = W.Bevel(W.Style.BUTTON); gravity = Gravity.CENTER; contentDescription = L.t("戻る", "Back")
             isClickable = true; setOnClickListener { onBack() }
         }
         if (back) bar.addView(backButton, W.lp(W.dp(44), W.dp(38), r = 6))

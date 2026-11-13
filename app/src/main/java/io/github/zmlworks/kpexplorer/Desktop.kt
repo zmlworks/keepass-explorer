@@ -36,7 +36,7 @@ object Desktop {
         }
         val start = W.hbox(ctx).apply { background = W.Bevel(W.Style.BUTTON); setPadding(W.dp(6), W.dp(4), W.dp(10), W.dp(4)) }
         start.addView(W.icon(ctx, Px.key16, maxOf(1, W.iconScale() - 1)), W.lp(W.WRAP, W.WRAP, r = 4))
-        start.addView(W.text(ctx, "スタート", 14f, true))
+        start.addView(W.text(ctx, L.t("スタート", "Start"), 14f, true))
         bar.addView(start, W.lp(W.WRAP, W.dp(36)))
         bar.addView(View(ctx), W.lp(0, 1, 1f))
         val clock = W.text(ctx, java.time.LocalTime.now().let { "%d:%02d".format(it.hour, it.minute) }, 14f).apply {

@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.sec
 
+import io.github.zmlworks.kpexplorer.L
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
@@ -93,9 +94,9 @@ class Vault(ctx: Context) {
         try {
             cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, newKey()) }
         } catch (t: Throwable) {
-            key.fill(0); clear(); done("キーストアを準備できませんでした: ${t.javaClass.simpleName}"); return
+            key.fill(0); clear(); done(L.t("キーストアを準備できませんでした: ${t.javaClass.simpleName}", "Could not prepare the keystore: ${t.javaClass.simpleName}")); return
         }
-        prompt(activity, "指紋・画面ロックで開けるようにする", "次回からマスターパスワードの入力を省きます")
+        prompt(activity, L.t("指紋・画面ロックで開けるようにする", "Open with fingerprint / screen lock"), L.t("次回からマスターパスワードの入力を省きます", "Next time you will not need to type the master password"))
             .authenticate(BiometricPrompt.CryptoObject(cipher), CancellationSignal(), activity.mainExecutor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
@@ -107,7 +108,7 @@ class Vault(ctx: Context) {
                             check(tmp.renameTo(file)) { "rename" }
                             done(null)
                         } catch (t: Throwable) {
-                            clear(); done("暗号化に失敗しました: ${t.javaClass.simpleName}")
+                            clear(); done(L.t("暗号化に失敗しました: ${t.javaClass.simpleName}", "Encryption failed: ${t.javaClass.simpleName}"))
                         } finally { key.fill(0) }
                     }
                     override fun onAuthenticationError(code: Int, msg: CharSequence) {
@@ -119,23 +120,23 @@ class Vault(ctx: Context) {
     /** OS authentication → decrypted composite key. */
     fun unlock(activity: Activity, r: Result) {
         val all = try { file.readBytes() } catch (_: Throwable) { null }
-        if (all == null || all.size <= 12) { r.lost("指紋・画面ロック用の鍵がありません。"); return }
+        if (all == null || all.size <= 12) { r.lost(L.t("指紋・画面ロック用の鍵がありません。", "There is no fingerprint / screen lock key.")); return }
         val iv = all.copyOfRange(0, 12); val ct = all.copyOfRange(12, all.size)
         val cipher: Cipher
         try {
-            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { clear(); r.lost("キーストアの鍵が見つかりません (画面ロックの解除など)。"); return }
+            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { clear(); r.lost(L.t("キーストアの鍵が見つかりません (画面ロックの解除など)。", "The keystore key was not found (screen lock removed, etc.).")); return }
             cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) }
         } catch (e: KeyPermanentlyInvalidatedException) {
-            clear(); r.lost("画面ロックが解除・変更されたため、指紋・画面ロック用の鍵は無効になりました。"); return
+            clear(); r.lost(L.t("画面ロックが解除・変更されたため、指紋・画面ロック用の鍵は無効になりました。", "The screen lock was removed or changed, so the fingerprint / screen lock key is no longer valid.")); return
         } catch (t: Throwable) {
-            r.fail("キーストアエラー: ${t.javaClass.simpleName}"); return
+            r.fail(L.t("キーストアエラー: ${t.javaClass.simpleName}", "Keystore error: ${t.javaClass.simpleName}")); return
         }
-        prompt(activity, "KeePass Explorer のロック解除", "指紋または画面ロックの PIN などで開きます")
+        prompt(activity, L.t("KeePass Explorer のロック解除", "Unlock KeePass Explorer"), L.t("指紋または画面ロックの PIN などで開きます", "Open with your fingerprint or the screen lock PIN etc."))
             .authenticate(BiometricPrompt.CryptoObject(cipher), CancellationSignal(), activity.mainExecutor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         try { r.ok(result.cryptoObject.cipher!!.doFinal(ct)) }
-                        catch (t: Throwable) { r.fail("復号に失敗しました: ${t.javaClass.simpleName}") }
+                        catch (t: Throwable) { r.fail(L.t("復号に失敗しました: ${t.javaClass.simpleName}", "Decryption failed: ${t.javaClass.simpleName}")) }
                     }
                     override fun onAuthenticationError(code: Int, msg: CharSequence) { r.fail(if (cancelled(code)) "" else msg.toString()) }
                 })

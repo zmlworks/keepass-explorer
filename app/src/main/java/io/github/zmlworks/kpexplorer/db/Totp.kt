@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.db
 
+import io.github.zmlworks.kpexplorer.L
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.ByteBuffer
@@ -41,18 +42,18 @@ object Totp {
     fun parse(input: String): Params {
         val t = input.trim()
         if (!t.startsWith("otpauth://", true)) return Params(base32Decode(t))
-        require(t.substring(10).startsWith("totp", true)) { "TOTP のみ対応しています" }
+        require(t.substring(10).startsWith("totp", true)) { L.t("TOTP のみ対応しています", "Only TOTP is supported") }
         val q = t.substringAfter('?', "")
         val label = URLDecoder.decode(t.substringAfter("://").substringAfter('/').substringBefore('?'), "UTF-8")
         val m = q.split('&').filter { it.contains('=') }.associate {
             it.substringBefore('=').lowercase() to URLDecoder.decode(it.substringAfter('='), "UTF-8")
         }
         val alg = (m["algorithm"] ?: "SHA1").uppercase().replace("-", "")
-        require(alg in setOf("SHA1", "SHA256", "SHA512")) { "未対応のアルゴリズム: $alg" }
+        require(alg in setOf("SHA1", "SHA256", "SHA512")) { L.t("未対応のアルゴリズム: $alg", "Unsupported algorithm: $alg") }
         val digits = m["digits"]?.toIntOrNull() ?: 6
         val period = m["period"]?.toIntOrNull() ?: 30
-        require(digits in 6..10 && period in 1..3600) { "digits / period が不正です" }
-        return Params(base32Decode(m["secret"] ?: throw IllegalArgumentException("secret がありません")), digits, period, alg,
+        require(digits in 6..10 && period in 1..3600) { L.t("digits / period が不正です", "Invalid digits / period") }
+        return Params(base32Decode(m["secret"] ?: throw IllegalArgumentException(L.t("secret がありません", "No secret"))), digits, period, alg,
             m["issuer"] ?: label.substringBefore(':', ""), label.substringAfter(':'))
     }
 

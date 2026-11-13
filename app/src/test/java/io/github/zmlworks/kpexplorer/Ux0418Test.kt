@@ -206,8 +206,10 @@ class Ux0418Test {
     }
 
     // ---------------------------------------------------------------- memo history = History copies with the change
-    @Test fun memoHistory_isStandardHistoryWithChangesOnly_max5() {
+    @Test fun memoHistory_isStandardHistoryWithChangesOnly_dbMax5() {
         val id = memoId()
+        // 0.4.20: the database's own HistoryMaxItems is respected (here 5)
+        Session.update { it.modifyContent { copy(meta = meta.copy(historyMaxItems = 5)) } }; idle()
         saveMemo(openMemo(id), V[0])
         assertEquals("the first text of an empty memo leaves nothing", 0, hist(id).size)
         saveMemo(openMemo(id), V[1])

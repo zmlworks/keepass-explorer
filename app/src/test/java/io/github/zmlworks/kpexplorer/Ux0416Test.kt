@@ -204,8 +204,10 @@ class Ux0416Test {
     }
 
     // ---------------------------------------------------------------- 2 cap 5
-    @Test fun history_cappedAtFive_oldOnesTrimmedOnlyOnContentEdit() {
+    @Test fun history_cappedAtDatabaseMax_oldOnesTrimmedOnlyOnContentEdit() {
         val id = ids["Amazon"]!!
+        // 0.4.20: trimmed to the database's own HistoryMaxItems (here 5)
+        Session.update { it.modifyContent { copy(meta = meta.copy(historyMaxItems = 5)) } }; idle()
         withHistory(id, 8)
         assertEquals(5, hist(id).size)
         assertEquals("u6", Tree.userName(hist(id).last()))
@@ -218,11 +220,11 @@ class Ux0416Test {
         ks = openKey(id); ks.boxes["Title"]!!.field.setText("Amazon.co.jp"); assertTrue(ks.save(silent = true)); idle()
         assertEquals("content edit trims to the newest 5", 5, hist(id).size)
         assertEquals("Amazon", Tree.title(hist(id).last()))
-        // Meta.HistoryMaxItems = 5 (also for an old database that said 10)
+        // 0.4.20: HistoryMaxItems is left as the database has it; new databases get KeePass' 10
         var d = Session.db!!
-        d = d.modifyContent { copy(meta = meta.copy(historyMaxItems = 10)) }
-        assertEquals(5, Tree.ensureRecycleBin(d, "ごみ箱").content.meta.historyMaxItems)
-        assertEquals(5, Kdbx.create("x", ByteArray(32)).content.meta.historyMaxItems)
+        d = d.modifyContent { copy(meta = meta.copy(historyMaxItems = 7)) }
+        assertEquals(7, Tree.ensureRecycleBin(d, "ごみ箱").content.meta.historyMaxItems)
+        assertEquals(10, Kdbx.create("x", ByteArray(32)).content.meta.historyMaxItems)
     }
 
     // ---------------------------------------------------------------- 1 key page label

@@ -252,7 +252,9 @@ class Ux0419Test {
         val sp = notes.text as android.text.Spanned
         assertEquals(listOf(io.github.zmlworks.kpexplorer.ui.MemoDiffViewer.MINUS, io.github.zmlworks.kpexplorer.ui.MemoDiffViewer.PLUS),
             sp.getSpans(0, sp.length, android.text.style.ForegroundColorSpan::class.java).map { it.foregroundColor })
-        assertTrue(texts(c2).toString(), texts(c2).any { it == "変わった欄: Pass、Memo" })
+        // 0.4.20: no 「変わった欄」 summary; the title did not change between #2 and #1, so it is not shown
+        assertTrue(texts(c2).toString(), texts(c2).none { it.startsWith("変わった欄") || it == "Title" })
+        assertNull(findTag<View>(c2, "changed-Title"))
         assertNull(findTag<View>(c2, "changed-UserName"))
         // the password is shown only on 表示
         assertTrue(texts(c2).none { it == "p" })

@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.L
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -228,4 +229,4 @@ class FolderTree(
 }
 
 /** 0.4.14: tree label — the root is always "/", whatever its group name in the file; unnamed folders "(名前なし)". */
-fun folderLabel(depth: Int, name: String): String = if (depth == 0) "/" else name.ifEmpty { "(名前なし)" }
+fun folderLabel(depth: Int, name: String): String = if (depth == 0) "/" else name.ifEmpty { L.t("(名前なし)", "(no name)") }

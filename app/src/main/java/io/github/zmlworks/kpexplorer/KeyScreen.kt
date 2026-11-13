@@ -60,7 +60,8 @@ object UrlCheck {
 
 /** Shared field labels / formatting for the key screen and the explorer preview pane. */
 object KeyFields {
-    val fmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss").withZone(ZoneId.systemDefault())
+    /** 0.4.20: follows the date order setting ([L.dateTime]). */
+    val fmt: DateTimeFormatter get() = L.dateTime(true)
     fun label(k: String) = when (k) {
         Order.F_TITLE -> "Title:"; Order.F_USER -> "User:"; Order.F_PASS -> "Pass:"; Order.F_URL -> "URL:"
         Order.F_TAGS -> "Tag:"; Order.F_OTP -> "OTP:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
@@ -90,7 +91,7 @@ object KeyFields {
                     setSpan(android.text.style.RelativeSizeSpan(0.6f), st, length, 0)
                     setSpan(android.text.style.ForegroundColorSpan(W.SHADOW), st, length, 0)
                 }
-            }.getOrElse { "⚠ 設定が不正です" }
+            }.getOrElse { L.t("⚠ 設定が不正です", "⚠ Invalid settings") }
         }
         override fun onAttachedToWindow() { super.onAttachedToWindow(); post(tick) }
         override fun onDetachedFromWindow() { removeCallbacks(tick); super.onDetachedFromWindow() }
@@ -228,7 +229,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
     }
 
-    private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) "新しい鍵" else "(無題)" }
+    private fun titleText() = values["Title"].orEmpty().ifEmpty { if (entryId == null) L.t("新しい鍵", "New key") else L.t("(無題)", "(Untitled)") }
     fun barTitle(): String = bar.title.text.toString()
 
     /**
@@ -248,7 +249,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val tile = android.widget.FrameLayout(ctx).apply {
             // Flat icon on band — no 3D bevel/raised frame (0.4.3)
             background = null
-            contentDescription = "アイコン (ダブルタップまたは長押しで変更)"
+            contentDescription = L.t("アイコン (ダブルタップまたは長押しで変更)", "Icon (double-tap or long-press to change)")
             isClickable = true
             val gd = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: android.view.MotionEvent) = true
@@ -265,7 +266,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         top.addView(tile, W.lp(W.dp(84), W.dp(84), r = 12))
         val info = W.vbox(ctx)
         path.forEachIndexed { i, g ->
-            val name = if (i == 0) "/" else "└ ${g.name.ifEmpty { "(名前なし)" }}"
+            val name = if (i == 0) "/" else L.t("└ ${g.name.ifEmpty { "(名前なし)" }}", "└ ${g.name.ifEmpty { "(no name)" }}")
             info.addView(W.text(ctx, name, 15f, bold = i == path.size - 1, color = W.HILITE).apply {
                 isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(W.dp(12) * i, 0, 0, W.dp(2))
@@ -277,14 +278,14 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         modRow.addView(W.text(ctx, "Last Modified: " + (entry()?.times?.lastModificationTime?.let { KeyFields.fmt.format(it) } ?: "-"),
             13f, color = 0xFFD6E4F7.toInt()).apply {
             isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END
-        }.also { lastMod = it }, W.lp(W.WRAP, W.WRAP))
+        }.also { lastMod = it }, W.lp(0, W.WRAP, 1f))   // 0.4.20: 「- 履歴」 at the right edge
         if (entryId != null) {
             val n = entry()?.history?.size ?: 0
-            val label = android.text.SpannableString("- 履歴").apply {
+            val label = android.text.SpannableString(L.t("- 履歴", "- History")).apply {
                 setSpan(android.text.style.UnderlineSpan(), 2, length, 0)
             }
             modRow.addView(W.text(ctx, "", 14f, true, W.HILITE).apply {
-                text = label; contentDescription = "履歴 ($n 件)"; isClickable = true
+                text = label; contentDescription = L.t("履歴 ($n 件)", "History ($n)"); isClickable = true
                 setPadding(W.dp(10), W.dp(6), W.dp(10), W.dp(6))
                 setOnClickListener { openHistory() }
             }.also { historyLink = it }, W.lp(W.WRAP, W.WRAP, l = 2))
@@ -314,8 +315,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             chip.addView(W.text(ctx, label, 14f, true, W.NAVY).apply { isSingleLine = true }, W.lp(W.WRAP, W.WRAP))
             return chip
         }
-        val edit = toolChip("項目の編集", "項目の編集", plus = false) { editLayout() }
-        val add = toolChip("カスタム項目の追加", "カスタム項目の追加", plus = true) { addCustom() }
+        val edit = toolChip(L.t("項目の編集", "Edit fields"), L.t("項目の編集", "Edit fields"), plus = false) { editLayout() }
+        val add = toolChip(L.t("カスタム項目の追加", "Add custom field"), L.t("カスタム項目の追加", "Add custom field"), plus = true) { addCustom() }
         editButton = edit; addButton = add
         rowBtns.addView(edit, W.lp(W.WRAP, W.WRAP, r = 8))
         rowBtns.addView(add, W.lp(W.WRAP, W.WRAP))
@@ -341,7 +342,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     fun pickIcon(): ClassicDialog {
         lateinit var dlg: ClassicDialog
         val grid = io.github.zmlworks.kpexplorer.ui.FugueIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
-        dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
+        dlg = ClassicDialog(ctx, L.t("アイコンの変更", "Change icon"), grid, listOf(ClassicDialog.Btn(L.t("キャンセル", "Cancel"))), scroll = true)
         dlg.show()
         return dlg
     }
@@ -420,8 +421,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
 
     private fun copyName(k: String) = when (k) {
-        Order.F_TITLE -> "タイトル"; Order.F_USER -> "ユーザー名"; Order.F_PASS -> "パスワード"; Order.F_URL -> "URL"
-        Order.F_TAGS -> "タグ"; else -> k
+        Order.F_TITLE -> L.t("タイトル", "Title"); Order.F_USER -> L.t("ユーザー名", "User name"); Order.F_PASS -> L.t("パスワード", "Password"); Order.F_URL -> "URL"
+        Order.F_TAGS -> L.t("タグ", "Tags"); else -> k
     }
 
     /**
@@ -476,11 +477,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     private fun otpRow() {
-        val o = KeyFields.OtpView(ctx, "未設定 (長押しで設定)") { currentOtpUri() }
+        val o = KeyFields.OtpView(ctx, L.t("未設定 (長押しで設定)", "Not set (long-press to set)")) { currentOtpUri() }
         otpView = o
         rowIndex++
         val box = io.github.zmlworks.kpexplorer.ui.FieldBox(ctx, KeyFields.name(Order.F_OTP), W.field(ctx), view = o,
-            onSwipe = { o.current()?.let { copy("ワンタイムパスワード", it, true) } }, onLongPress = { setupOtp() },
+            onSwipe = { o.current()?.let { copy(L.t("ワンタイムパスワード", "One-time password"), it, true) } }, onLongPress = { setupOtp() },
             icon = glyphFor(Order.F_OTP), plain = true)
         boxes[Order.F_OTP] = box
         body.addView(box, W.lp(W.MATCH, W.WRAP))
@@ -514,7 +515,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private fun copy(label: String, s: String, sensitive: Boolean) {
         if (s.isEmpty()) return
         Clip.copy(ctx, label, s, sensitive)
-        Toast.makeText(ctx, "${label}をコピーしました", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, L.t("${label}をコピーしました", "${label} copied"), Toast.LENGTH_SHORT).show()
     }
 
     fun generate(len: Int = 20): String {
@@ -530,35 +531,35 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
      * Pass generator removed from existing key (0.4.2).
      */
     fun menu(): List<Menus.Item> = listOf(
-        Menus.Item("項目の編集") { editLayout() },
-        Menus.Item("カスタム項目の追加") { addCustom() },
-        Menus.Item("アイコンの変更") { pickIcon() },
+        Menus.Item(L.t("項目の編集", "Edit fields")) { editLayout() },
+        Menus.Item(L.t("カスタム項目の追加", "Add custom field")) { addCustom() },
+        Menus.Item(L.t("アイコンの変更", "Change icon")) { pickIcon() },
     )
 
     /** 「カスタム項目の追加」: name + 1 行 / 複数行 (memo-like, wraps and keeps newlines). */
     fun addCustom(): ClassicDialog {
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "欄の名前 (例: 暗証番号、秘密の質問):", 14f))
+        col.addView(W.text(ctx, L.t("欄の名前 (例: 暗証番号、秘密の質問):", "Field name (e.g. PIN, security question):"), 14f))
         val f = W.field(ctx).apply { isSingleLine = true }
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
-        col.addView(W.text(ctx, "種類:", 14f), W.lp(W.MATCH, W.WRAP, t = 10))
+        col.addView(W.text(ctx, L.t("種類:", "Type:"), 14f), W.lp(W.MATCH, W.WRAP, t = 10))
         val rg = android.widget.RadioGroup(ctx)
-        val r1 = W.radio(ctx, "1 行 (ID・番号など)").apply { id = View.generateViewId() }
-        val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
+        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers…)")).apply { id = View.generateViewId() }
+        val r2 = W.radio(ctx, L.t("複数行 (メモのように改行・折り返し)", "Multi-line (line breaks and wrapping, like notes)")).apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
-        val dlg = ClassicDialog(ctx, "カスタム項目の追加", col, listOf(
-            ClassicDialog.Btn("追加", true) {
+        val dlg = ClassicDialog(ctx, L.t("カスタム項目の追加", "Add custom field"), col, listOf(
+            ClassicDialog.Btn(L.t("追加", "Add"), true) {
                 val name = f.text.toString().trim()
                 when {
                     name.isEmpty() -> false
                     name in Order.STANDARD || name == Order.OTP || values.containsKey(name) || name.startsWith("@") || name.startsWith("-") -> {
-                        Dlg.message(ctx, "カスタム項目の追加", "その名前は使えません。", '!'); false
+                        Dlg.message(ctx, L.t("カスタム項目の追加", "Add custom field"), L.t("その名前は使えません。", "That name cannot be used."), '!'); false
                     }
                     else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }
             },
-            ClassicDialog.Btn("キャンセル")))
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel"))))
         dlg.show()
         nameField = f; multiRadio = r2
         return dlg
@@ -588,12 +589,12 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         // Fixed height so drag has room inside the dialog scroll area
         val wrap = W.vbox(ctx)
         wrap.addView(editor, W.lp(W.MATCH, W.dp(480)))
-        val dlg = ClassicDialog(ctx, "項目の編集", wrap, listOf(
+        val dlg = ClassicDialog(ctx, L.t("項目の編集", "Edit fields"), wrap, listOf(
             ClassicDialog.Btn("OK", true) {
                 applyArrangement(editor.snapshot(), editor.removedCustoms.toList())
                 true
             },
-            ClassicDialog.Btn("キャンセル")), scroll = false)
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel"))), scroll = false)
         dlg.show()
         return dlg
     }
@@ -639,18 +640,18 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     fun setupOtp() {
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "otpauth:// で始まる URI (QR コードの中身) か、Base32 の秘密鍵を入力してください。\nKeePassXC と同じ「otp」欄に保存します。", 14f).apply { setLineSpacing(0f, 1.1f) })
+        col.addView(W.text(ctx, L.t("otpauth:// で始まる URI (QR コードの中身) か、Base32 の秘密鍵を入力してください。\nKeePassXC と同じ「otp」欄に保存します。", "Enter a URI starting with otpauth:// (the content of the QR code) or a Base32 secret.\nIt is saved in the \"otp\" field, like KeePassXC."), 14f).apply { setLineSpacing(0f, 1.1f) })
         val f = W.field(ctx, "otpauth://totp/...?secret=...").apply { setText(currentOtpUri().orEmpty()) }
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 8))
-        ClassicDialog(ctx, "ワンタイムパスワード", col, listOf(
+        ClassicDialog(ctx, L.t("ワンタイムパスワード", "One-time password"), col, listOf(
             ClassicDialog.Btn("OK", true) {
                 val s = f.text.toString().trim()
                 if (s.isEmpty()) { setOtp(null); return@Btn true }
                 val r = runCatching { setOtp(s) }
-                r.exceptionOrNull()?.let { Dlg.message(ctx, "ワンタイムパスワード", "読み取れませんでした: ${it.message}", 'x'); false } ?: true
+                r.exceptionOrNull()?.let { Dlg.message(ctx, L.t("ワンタイムパスワード", "One-time password"), L.t("読み取れませんでした: ${it.message}", "Could not read it: ${it.message}"), 'x'); false } ?: true
             },
-            ClassicDialog.Btn("削除") { setOtp(null); true },
-            ClassicDialog.Btn("キャンセル"))).show()
+            ClassicDialog.Btn(L.t("削除", "Delete")) { setOtp(null); true },
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).show()
     }
 
     /** Validate and store; a bare secret becomes an otpauth URI (issuer = title, account = user). */
@@ -672,7 +673,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val d = Session.db ?: return false
         // No-op save: keep Session/DB/history untouched (explicit Save with no draft changes).
         if (entryId != null && !dirty) {
-            if (!silent) Toast.makeText(ctx, "変更はありません", Toast.LENGTH_SHORT).show()
+            if (!silent) Toast.makeText(ctx, L.t("変更はありません", "No changes"), Toast.LENGTH_SHORT).show()
             return true
         }
         val vals = LinkedHashMap(values)
@@ -692,9 +693,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             removedKeys.clear()
             Session.flush()
         } catch (t: Throwable) {
-            Dlg.message(ctx, "保存", "保存できませんでした。\n$t", 'x'); return false
+            Dlg.message(ctx, L.t("保存", "Save"), L.t("保存できませんでした。\n$t", "Could not save.\n$t"), 'x'); return false
         }
-        if (!silent && (d !== Session.db || dirty)) Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show()
+        if (!silent && (d !== Session.db || dirty)) Toast.makeText(ctx, L.t("保存しました", "Saved"), Toast.LENGTH_SHORT).show()
         dirty = false
         a.explorer?.selection = entryId
         build()
@@ -745,9 +746,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     companion object {
         /** "変更を保存しますか?" with 保存 / 保存しない / キャンセル. */
         fun confirmUnsaved(ctx: Context, onSave: () -> Unit, onDiscard: () -> Unit): ClassicDialog =
-            ClassicDialog(ctx, "KeePass Explorer", W.text(ctx, "変更が保存されていません。\n保存しますか?", 15f), listOf(
-                ClassicDialog.Btn("保存する", true) { onSave(); true },
-                ClassicDialog.Btn("保存しない") { onDiscard(); true },
-                ClassicDialog.Btn("キャンセル"))).also { it.show(); Dlg.last = it }
+            ClassicDialog(ctx, "KeePass Explorer", W.text(ctx, L.t("変更が保存されていません。\n保存しますか?", "The changes have not been saved.\nSave them?"), 15f), listOf(
+                ClassicDialog.Btn(L.t("保存する", "Save"), true) { onSave(); true },
+                ClassicDialog.Btn(L.t("保存しない", "Don’t save")) { onDiscard(); true },
+                ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).also { it.show(); Dlg.last = it }
     }
 }

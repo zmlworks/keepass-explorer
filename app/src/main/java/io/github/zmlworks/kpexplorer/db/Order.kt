@@ -217,7 +217,7 @@ object Order {
         // keep Last Modified; an icon change keeps no history but does count as a modification.
         val contentChanged = content(old.fields, old.tags) != content(newFields, nt)
         val iconChanged = old.icon != newIcon || old.customData[EntryIcon.CD]?.value != cd[EntryIcon.CD]?.value
-        val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
+        val max = Tree.historyMax(db)
         var hist = old.history
         // 0.4.17: an entry with no content yet (a key just created by this app: appendEntry + saveEntry) leaves
         // no empty History copy. Independent memos of this app keep only the change in the copy's Notes.
@@ -296,7 +296,7 @@ object Order {
     fun migrateMemoDiffs(db: KeePassDatabase): KeePassDatabase {
         fun fix(g: Group): Group {
             var changed = false
-            val es = g.entries.map { e -> MemoDiff.migrate(e)?.also { changed = true } ?: e }
+            val es = g.entries.map { e -> MemoDiff.migrate(e, Tree.historyMax(db))?.also { changed = true } ?: e }
             val gs = g.groups.map { c -> fix(c).also { if (it !== c) changed = true } }
             return if (changed) g.copy(entries = es, groups = gs) else g
         }

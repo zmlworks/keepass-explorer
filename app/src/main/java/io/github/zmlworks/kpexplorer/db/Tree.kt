@@ -27,7 +27,22 @@ import java.util.UUID
  */
 object Tree {
     /** At most this many history copies per entry (0.4.16: 5; also written to Meta.HistoryMaxItems). */
-    const val HISTORY_MAX = 5
+    /** 0.4.20: KeePass default Meta.HistoryMaxItems for new databases (0.4.16–0.4.19 forced 5). */
+    const val HISTORY_MAX = 10
+
+    /**
+     * KeePass rule for Meta.HistoryMaxItems: a negative value = no limit, 0 = keep none, n = keep the newest n.
+     * The database's own value is used as it is (KeePass / KeePassXC users may have set it).
+     */
+    fun historyMax(db: KeePassDatabase): Int = db.content.meta.historyMaxItems.let { if (it < 0) Int.MAX_VALUE else it }
+
+    /**
+     * 0.4.20: 0.4.16–0.4.19 wrote HistoryMaxItems = 5 into the database; put back KeePass' default 10 once
+     * ([alreadyRestored] = done before on this device, so a 5 set later in KeePass is kept).
+     */
+    fun restoreHistoryMax(db: KeePassDatabase, alreadyRestored: Boolean, now: Instant = Instant.now()): KeePassDatabase =
+        if (alreadyRestored || db.content.meta.historyMaxItems != 5) db
+        else db.modifyContent { copy(meta = meta.copy(historyMaxItems = HISTORY_MAX, settingsChanged = now)) }
 
     /** Group CustomData key for the per-folder view override (icons / list / auto). */
     const val CD_VIEW = "KPExplorer.View"
@@ -177,7 +192,7 @@ object Tree {
     fun updateEntry(db: KeePassDatabase, id: UUID, f: Fields, now: Instant = Instant.now()): KeePassDatabase {
         val (parent, old) = findEntry(db, id) ?: throw TreeException("entry not found")
         if (fieldsOf(old) == f.copy(tags = normalizeTags(f.tags))) return db
-        val max = db.content.meta.historyMaxItems.let { if (it < 0 || it > Tree.HISTORY_MAX) Tree.HISTORY_MAX else it }
+        val max = historyMax(db)
         val snapshot = old.copy(history = listOf())
         var hist = old.history + snapshot
         if (max >= 0) hist = hist.takeLast(max)
@@ -306,14 +321,9 @@ object Tree {
     fun ensureRecycleBin(db: KeePassDatabase, displayName: String, now: Instant = Instant.now()): KeePassDatabase {
         var out = db
         val meta = out.content.meta
-        if (!meta.recycleBinEnabled || meta.historyMaxItems != HISTORY_MAX) {
-            out = out.modifyContent {
-                copy(meta = meta.copy(
-                    recycleBinEnabled = true,
-                    historyMaxItems = HISTORY_MAX,
-                    settingsChanged = now
-                ))
-            }
+        // 0.4.20: HistoryMaxItems is left as the database has it (KeePass standard)
+        if (!meta.recycleBinEnabled) {
+            out = out.modifyContent { copy(meta = meta.copy(recycleBinEnabled = true, settingsChanged = now)) }
         }
         val existing = recycleBinId(out)?.let { findGroup(out, it) }
         if (existing != null) {

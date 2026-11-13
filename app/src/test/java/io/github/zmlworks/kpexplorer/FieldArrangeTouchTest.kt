@@ -28,7 +28,7 @@ import java.io.FileOutputStream
  * see comments on individual tests for honest limits.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "w411dp-h891dp-port-xxhdpi")
+@Config(sdk = [35], qualifiers = "ja-w411dp-h891dp-port-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class FieldArrangeTouchTest {
     private lateinit var host: FrameLayout

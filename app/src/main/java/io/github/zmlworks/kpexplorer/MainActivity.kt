@@ -41,6 +41,17 @@ class MainActivity : Activity() {
     private val results = HashMap<Int, (Int, Intent?) -> Unit>()
     private var nextReq = 100
 
+    /** 0.4.20: resources in the chosen display language ([L]). */
+    override fun attachBaseContext(newBase: android.content.Context) { super.attachBaseContext(L.wrap(newBase)) }
+
+    /** 0.4.20: switch the display language: saved, then the window is rebuilt (the database stays open). */
+    fun setLanguage(l: L.Lang) {
+        if (l == L.lang) return
+        L.setLang(this, l)
+        explorer = null
+        recreate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         W.init(this)
@@ -117,7 +128,7 @@ class MainActivity : Activity() {
             startActivityForResult(i, rc)
         } catch (t: Throwable) {
             results.remove(rc)
-            Dlg.message(this, "エラー", "ファイル選択画面を開けませんでした。\n$t", 'x')
+            Dlg.message(this, L.t("エラー", "Error"), L.t("ファイル選択画面を開けませんでした。\n$t", "Could not open the file picker.\n$t"), 'x')
         }
     }
 
@@ -137,7 +148,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         super.onStop()
         stoppedAt = SystemClock.elapsedRealtime()
-        if (Session.isOpen && autoLockMinutes() == 0) lock()
+        if (Session.isOpen && autoLockMinutes() == 0 && !isChangingConfigurations) lock()   // 0.4.20: not for a language switch
     }
 
     override fun onStart() {

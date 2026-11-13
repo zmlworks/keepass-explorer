@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.ui
 
+import io.github.zmlworks.kpexplorer.L
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -76,7 +77,7 @@ class FieldArrangeEditor(
         ghost.addView(ImageView(ctx).apply {
             setImageDrawable(Glyph(Glyph.Kind.GRIP, W.SHADOW))
             scaleType = ImageView.ScaleType.CENTER
-            contentDescription = "並べ替え"
+            contentDescription = L.t("並べ替え", "Reorder")
         }, W.lp(W.dp(60), W.dp(44), l = 4))
         scroll.addView(list)
         stage.addView(scroll, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -128,7 +129,7 @@ class FieldArrangeEditor(
             minimumHeight = W.dp(36)
         }
         row.addView(View(ctx).apply { setBackgroundColor(W.NAVY) }, W.lp(0, W.dp(2), 1f))
-        row.addView(W.text(ctx, " この下は非表示 ", 13f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
+        row.addView(W.text(ctx, L.t(" この下は非表示 ", " Hidden below "), 13f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         row.addView(View(ctx).apply { setBackgroundColor(W.NAVY) }, W.lp(0, W.dp(2), 1f))
         return row
     }
@@ -150,7 +151,7 @@ class FieldArrangeEditor(
         if (k !in Order.DEFAULT_LAYOUT) {
             row.addView(W.text(ctx, "×", 22f, true).apply {
                 background = W.Bevel(W.Style.BUTTON)
-                gravity = Gravity.CENTER; contentDescription = "欄を削除"
+                gravity = Gravity.CENTER; contentDescription = L.t("欄を削除", "Delete field")
                 minimumWidth = W.dp(48); minimumHeight = W.dp(48)
                 isClickable = true
                 tag = "delete:$k"
@@ -162,7 +163,7 @@ class FieldArrangeEditor(
         }
         val handle = ImageView(ctx).apply {
             setImageDrawable(Glyph(Glyph.Kind.GRIP, W.TEXT))
-            contentDescription = "並べ替え"
+            contentDescription = L.t("並べ替え", "Reorder")
             // 0.4.4: Win-style raised frame so ≡ reads as a button; wider (~60dp)
             background = W.Bevel(W.Style.BUTTON)
             minimumWidth = W.dp(60); minimumHeight = W.dp(44)

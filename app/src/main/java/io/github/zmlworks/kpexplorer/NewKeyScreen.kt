@@ -76,7 +76,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         get() = Tree.parseTags(tags).isNotEmpty() || values.any { (_, v) -> v.isNotEmpty() }
 
     init {
-        bar = Parts.appBar(ctx, "新しい鍵", onBack = { onBack() })
+        bar = Parts.appBar(ctx, L.t("新しい鍵", "New key"), onBack = { onBack() })
         root.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
         scroll = sv
@@ -91,7 +91,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         val path = Tree.path(Tree.root(d), parent)
         val head = W.hbox(ctx).apply { gravity = Gravity.TOP }
         val tile = android.widget.FrameLayout(ctx).apply {
-            background = W.Bevel(W.Style.RAISED); contentDescription = "アイコン (タップで変更)"
+            background = W.Bevel(W.Style.RAISED); contentDescription = L.t("アイコン (タップで変更)", "Icon (tap to change)")
             isClickable = true; setOnClickListener { pickIcon() }
         }
         tile.addView(ImageView(ctx).apply {
@@ -101,7 +101,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         head.addView(tile, W.lp(W.dp(84), W.dp(84), r = 10, t = 4))
         val info = W.vbox(ctx)
         info.addView(Parts.pathTree(ctx, path).apply { setPadding(0, 0, 0, W.dp(2)) }, W.lp(W.MATCH, W.WRAP))
-        info.addView(W.text(ctx, "新しい鍵を作成", 13f, false, W.SHADOW).apply {
+        info.addView(W.text(ctx, L.t("新しい鍵を作成", "Create a new key"), 13f, false, W.SHADOW).apply {
             isSingleLine = true
         }, W.lp(W.MATCH, W.WRAP, t = 4))
         head.addView(info, W.lp(0, W.WRAP, 1f))
@@ -113,7 +113,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
         // 0.4.11: OTP on the create form (otpauth:// URI or Base32 secret); empty = not added (restorable later)
         inputRow(Order.F_OTP, Order.OTP, Glyph(Glyph.Kind.OTP), false)
-        editors[Order.F_OTP]?.hint = "otpauth://… または Base32 の秘密鍵"
+        editors[Order.F_OTP]?.hint = L.t("otpauth://… または Base32 の秘密鍵", "otpauth://… or a Base32 secret")
         inputRow(Order.F_NOTES, "Notes", Glyph(Glyph.Kind.MEMO), true)
         for (name in customs) {
             inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
@@ -124,11 +124,11 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
         val add = W.hbox(ctx).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.FLAT_TOOL); isClickable = true
-            contentDescription = "カスタム項目の追加"; setPadding(W.dp(12), W.dp(6), W.dp(12), W.dp(6))
+            contentDescription = L.t("カスタム項目の追加", "Add custom field"); setPadding(W.dp(12), W.dp(6), W.dp(12), W.dp(6))
             setOnClickListener { addCustom() }
         }
         add.addView(ImageView(ctx).apply { setImageDrawable(Glyph(Glyph.Kind.PLUS)) }, W.lp(W.dp(22), W.dp(22), r = 6))
-        add.addView(W.text(ctx, "カスタム項目の追加", 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
+        add.addView(W.text(ctx, L.t("カスタム項目の追加", "Add custom field"), 15f, true, W.NAVY), W.lp(W.WRAP, W.WRAP))
         addButton = add
         body.addView(add, W.lp(W.WRAP, W.WRAP, t = 6).apply { gravity = Gravity.CENTER_HORIZONTAL })
 
@@ -139,16 +139,16 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
     private fun createFooter(): LinearLayout {
         val foot = W.hbox(ctx).apply { gravity = Gravity.CENTER; setPadding(W.dp(6), W.dp(8), W.dp(6), W.dp(8)) }
-        foot.addView(W.text(ctx, "キャンセル", 17f, true).apply {
+        foot.addView(W.text(ctx, L.t("キャンセル", "Cancel"), 17f, true).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON); isClickable = true
-            contentDescription = "キャンセル"; setOnClickListener { onBack() }
+            contentDescription = L.t("キャンセル", "Cancel"); setOnClickListener { onBack() }
         }, W.lp(0, W.dp(56), 1f, r = 6))
         val sv = W.hbox(ctx).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.DEFAULT_BUTTON); isClickable = true
-            contentDescription = "作成"; setOnClickListener { create() }
+            contentDescription = L.t("作成", "Create"); setOnClickListener { create() }
         }
         sv.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, "key")) }, W.lp(W.dp(24), W.dp(24), r = 8))
-        sv.addView(W.text(ctx, "作成", 17f, true), W.lp(W.WRAP, W.WRAP))
+        sv.addView(W.text(ctx, L.t("作成", "Create"), 17f, true), W.lp(W.WRAP, W.WRAP))
         foot.addView(sv, W.lp(0, W.dp(56), 1f, l = 6))
         return foot
     }
@@ -170,7 +170,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
                 if (isTags) { tags = s.toString(); renderChips() }
                 else {
                     values[valueKey] = s.toString()
-                    if (valueKey == "Title") bar.title.text = s.toString().ifEmpty { "新しい鍵" }
+                    if (valueKey == "Title") bar.title.text = s.toString().ifEmpty { L.t("新しい鍵", "New key") }
                 }
             }
         })
@@ -208,9 +208,9 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         editors[Order.F_PASS] = f
         // No eye / show-hide button (0.4.2). Tap the field to toggle if remasked after state change.
         f.setOnClickListener { if (!passShown) togglePass(show = true) }
-        val gen = W.text(ctx, "生成", 13f, true).apply {
+        val gen = W.text(ctx, L.t("生成", "Generate"), 13f, true).apply {
             gravity = Gravity.CENTER; background = W.Bevel(W.Style.BUTTON)
-            contentDescription = "パスワードを生成"; setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
+            contentDescription = L.t("パスワードを生成", "Generate password"); setPadding(W.dp(8), W.dp(4), W.dp(8), W.dp(4))
             isClickable = true; setOnClickListener { askGenerate() }
         }
         genButton = gen
@@ -296,7 +296,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     fun pickIcon(): ClassicDialog {
         lateinit var dlg: ClassicDialog
         val grid = io.github.zmlworks.kpexplorer.ui.FugueIcons.pickerGrid(ctx, iconId) { id -> setIcon(id); dlg.dismiss() }
-        dlg = ClassicDialog(ctx, "アイコンの変更", grid, listOf(ClassicDialog.Btn("キャンセル")), scroll = true)
+        dlg = ClassicDialog(ctx, L.t("アイコンの変更", "Change icon"), grid, listOf(ClassicDialog.Btn(L.t("キャンセル", "Cancel"))), scroll = true)
         dlg.show()
         return dlg
     }
@@ -305,28 +305,28 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
 
     fun addCustom(): ClassicDialog {
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "欄の名前 (例: 暗証番号、秘密の質問):", 14f))
+        col.addView(W.text(ctx, L.t("欄の名前 (例: 暗証番号、秘密の質問):", "Field name (e.g. PIN, security question):"), 14f))
         val f = W.field(ctx).apply { isSingleLine = true }
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
-        col.addView(W.text(ctx, "種類:", 14f), W.lp(W.MATCH, W.WRAP, t = 10))
+        col.addView(W.text(ctx, L.t("種類:", "Type:"), 14f), W.lp(W.MATCH, W.WRAP, t = 10))
         val rg = android.widget.RadioGroup(ctx)
-        val r1 = W.radio(ctx, "1 行 (ID・番号など)").apply { id = View.generateViewId() }
-        val r2 = W.radio(ctx, "複数行 (メモのように改行・折り返し)").apply { id = View.generateViewId() }
+        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers…)")).apply { id = View.generateViewId() }
+        val r2 = W.radio(ctx, L.t("複数行 (メモのように改行・折り返し)", "Multi-line (line breaks and wrapping, like notes)")).apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
-        val dlg = ClassicDialog(ctx, "カスタム項目の追加", col, listOf(
-            ClassicDialog.Btn("追加", true) {
+        val dlg = ClassicDialog(ctx, L.t("カスタム項目の追加", "Add custom field"), col, listOf(
+            ClassicDialog.Btn(L.t("追加", "Add"), true) {
                 val name = f.text.toString().trim()
                 when {
                     name.isEmpty() -> false
                     name in Order.STANDARD || name == Order.OTP || values.containsKey(name) ||
                         name in customs || name.startsWith("@") || name.startsWith("-") -> {
-                        Dlg.message(ctx, "カスタム項目の追加", "その名前は使えません。", '!'); false
+                        Dlg.message(ctx, L.t("カスタム項目の追加", "Add custom field"), L.t("その名前は使えません。", "That name cannot be used."), '!'); false
                     }
                     else -> { addCustomField(name, multiline = rg.checkedRadioButtonId == r2.id); true }
                 }
             },
-            ClassicDialog.Btn("キャンセル")))
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel"))))
         dlg.show()
         nameField = f; multiRadio = r2
         return dlg
@@ -351,7 +351,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         fun createdFields(values: Map<String, String>, customs: List<String>, tagList: List<String>): Pair<LinkedHashMap<String, String>, List<Pair<String, Boolean>>> {
             val vals = LinkedHashMap<String, String>()
             for ((k, v) in values) if (k in Order.STANDARD || (if (k == Order.OTP) v.isNotBlank() else v.isNotEmpty())) vals[k] = v
-            if (vals["Title"].isNullOrBlank()) vals["Title"] = "(無題)"
+            if (vals["Title"].isNullOrBlank()) vals["Title"] = L.t("(無題)", "(Untitled)")
             val layout = Order.DEFAULT_LAYOUT.filter { k ->
                 when (k) {
                     Order.F_TITLE -> true
@@ -378,7 +378,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             if (s.startsWith("otpauth://", true)) s
             else io.github.zmlworks.kpexplorer.db.Totp.toUri(p.copy(issuer = values["Title"].orEmpty(), account = values["UserName"].orEmpty()))
         } catch (t: Exception) {
-            Dlg.message(ctx, "ワンタイムパスワード", "OTP を読み取れませんでした: ${t.message}\n空欄にするか、otpauth:// の URI か Base32 の秘密鍵を入力してください。", 'x')
+            Dlg.message(ctx, L.t("ワンタイムパスワード", "One-time password"), L.t("OTP を読み取れませんでした: ${t.message}\n空欄にするか、otpauth:// の URI か Base32 の秘密鍵を入力してください。", "Could not read the OTP: ${t.message}\nLeave it empty, or enter an otpauth:// URI or a Base32 secret."), 'x')
             null
         }
     }
@@ -386,7 +386,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     /** Create the entry, flush, then open the normal key (view) screen. */
     fun create(): Boolean {
         if (!hasInput) {
-            Toast.makeText(ctx, "何も入力されていないため、作成しません", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, L.t("何も入力されていないため、作成しません", "Nothing entered, so nothing was created"), Toast.LENGTH_SHORT).show()
             return false
         }
         try {
@@ -405,11 +405,11 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             Session.flush()
             a.explorer?.selection = id
             a.explorer?.refresh()
-            Toast.makeText(ctx, "作成しました", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, L.t("作成しました", "Created"), Toast.LENGTH_SHORT).show()
             a.show(KeyScreen(a, id, parent))
             return true
         } catch (t: Throwable) {
-            Dlg.message(ctx, "作成", "作成できませんでした。\n$t", 'x')
+            Dlg.message(ctx, L.t("作成", "Create"), L.t("作成できませんでした。\n$t", "Could not create it.\n$t"), 'x')
             return false
         }
     }
@@ -418,11 +418,11 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         if (endTextInput()) return true   // first Back: stop typing, stay on the form
         if (!dirty || !hasInput) { a.showExplorer(); return true }  // nothing typed: discard silently
         ClassicDialog(ctx, "KeePass Explorer",
-            W.text(ctx, "入力内容がまだ作成されていません。\n作成しますか?", 15f),
+            W.text(ctx, L.t("入力内容がまだ作成されていません。\n作成しますか?", "What you entered has not been created yet.\nCreate it?"), 15f),
             listOf(
-                ClassicDialog.Btn("作成する", true) { create(); true },
-                ClassicDialog.Btn("破棄する") { a.showExplorer(); true },
-                ClassicDialog.Btn("キャンセル"))).show()
+                ClassicDialog.Btn(L.t("作成する", "Create"), true) { create(); true },
+                ClassicDialog.Btn(L.t("破棄する", "Discard")) { a.showExplorer(); true },
+                ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).show()
         return true
     }
 }

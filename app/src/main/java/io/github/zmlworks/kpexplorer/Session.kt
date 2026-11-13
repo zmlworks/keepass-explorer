@@ -53,7 +53,7 @@ object Session {
     /** A save started by [lock] failed after the session was gone; shown once by [takeLockSaveError]. */
     @Volatile private var lockSaveError: String? = null
 
-    class SaveFailedException(cause: Throwable) : Exception("保存できませんでした: $cause", cause)
+    class SaveFailedException(cause: Throwable) : Exception(L.t("保存できませんでした: $cause", "Could not save: $cause"), cause)
 
     fun open(d: KeePassDatabase) {
         generation++

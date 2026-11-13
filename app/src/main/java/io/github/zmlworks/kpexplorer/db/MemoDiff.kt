@@ -99,7 +99,7 @@ object MemoDiff {
      * Converts 0.4.17 data (CustomData [LEGACY_CD]) of [e] into change copies in <History> and removes the
      * CustomData. Versions that can't be rebuilt are dropped. null = nothing to do.
      */
-    fun migrate(e: Entry): Entry? {
+    fun migrate(e: Entry, max: Int = Tree.HISTORY_MAX): Entry? {
         if (e.customData[LEGACY_CD] == null) return null
         val recs = records(e)
         val vs = runCatching { versions(e) }.getOrDefault(emptyList())
@@ -112,7 +112,7 @@ object MemoDiff {
             made.add(e.copy(history = listOf(), customData = e.customData - LEGACY_CD, times = t,
                 fields = e.fields + ("Title" to EntryValue.Plain(v.title)) + ("Notes" to EntryValue.Plain(changeText(text, newer)))))
         }
-        val all = (e.history + made).sortedBy { it.times?.lastModificationTime ?: Instant.MIN }.takeLast(Tree.HISTORY_MAX)
+        val all = (e.history + made).sortedBy { it.times?.lastModificationTime ?: Instant.MIN }.takeLast(max)
         return e.copy(customData = e.customData - LEGACY_CD, history = all)
     }
 

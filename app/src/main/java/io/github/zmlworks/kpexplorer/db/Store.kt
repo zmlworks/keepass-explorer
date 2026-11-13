@@ -1,5 +1,6 @@
 package io.github.zmlworks.kpexplorer.db
 
+import io.github.zmlworks.kpexplorer.L
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDate
@@ -89,16 +90,16 @@ class Store(dataDir: File, val backupDir: File) {
     fun renameBackup(f: File, input: String): File {
         val base = backupBaseName(input)
         val target = File(backupDir, "$base.kdbx")
-        if (f.parentFile?.canonicalFile != backupDir.canonicalFile || !f.isFile) throw RenameException("バックアップが見つかりません。")
+        if (f.parentFile?.canonicalFile != backupDir.canonicalFile || !f.isFile) throw RenameException(L.t("バックアップが見つかりません。", "Backup not found."))
         if (target.name == f.name) return f
         val clash = (backupDir.listFiles() ?: emptyArray()).any { it.name.equals(target.name, ignoreCase = true) && it.name != f.name }
-        if (clash) throw RenameException("「${target.name}」は既にあります。別の名前にしてください。")
+        if (clash) throw RenameException(L.t("「${target.name}」は既にあります。別の名前にしてください。", "\"${target.name}\" already exists. Choose another name."))
         val mtime = f.lastModified()
         if (target.name.equals(f.name, ignoreCase = true)) {
             // case-only change: go through a temporary name
             val tmp = File(backupDir, f.name + ".rename.tmp")
-            if (!f.renameTo(tmp) || !tmp.renameTo(target)) throw RenameException("名前を変更できませんでした。")
-        } else if (!f.renameTo(target)) throw RenameException("名前を変更できませんでした。")
+            if (!f.renameTo(tmp) || !tmp.renameTo(target)) throw RenameException(L.t("名前を変更できませんでした。", "Could not rename it."))
+        } else if (!f.renameTo(target)) throw RenameException(L.t("名前を変更できませんでした。", "Could not rename it."))
         if (mtime > 0) target.setLastModified(mtime)
         return target
     }
@@ -110,11 +111,11 @@ class Store(dataDir: File, val backupDir: File) {
         fun backupBaseName(input: String): String {
             var s = input.trim()
             if (s.endsWith(".kdbx", ignoreCase = true)) s = s.dropLast(5).trimEnd()
-            if (s.isEmpty()) throw RenameException("名前を入力してください。")
+            if (s.isEmpty()) throw RenameException(L.t("名前を入力してください。", "Enter a name."))
             if (s.any { it == '/' || it == '\\' || it.code < 0x20 || it.code == 0x7F || it in "<>:\"|?*" })
-                throw RenameException("名前に次の文字は使えません: / \\ : * ? \" < > |")
-            if (s == "." || s == ".." || s.startsWith(".")) throw RenameException("「.」で始まる名前は使えません。")
-            if (s.length > MAX_BACKUP_NAME) throw RenameException("名前が長すぎます (${MAX_BACKUP_NAME} 文字まで)。")
+                throw RenameException(L.t("名前に次の文字は使えません: / \\ : * ? \" < > |", "Names cannot contain: / \\ : * ? \" < > |"))
+            if (s == "." || s == ".." || s.startsWith(".")) throw RenameException(L.t("「.」で始まる名前は使えません。", "Names cannot start with \".\"."))
+            if (s.length > MAX_BACKUP_NAME) throw RenameException(L.t("名前が長すぎます (${MAX_BACKUP_NAME} 文字まで)。", "The name is too long (up to ${MAX_BACKUP_NAME} characters)."))
             return s
         }
 

@@ -101,6 +101,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         const val PREF_COL_NAME = "detailColNameDp"; const val PREF_COL_USER = "detailColUserDp"
         const val MIN_NAME_DP = 64; const val MIN_USER_DP = 40; const val MIN_DATE_DP = 28
         const val DRAG_START_MM = 8f
+        /** 0.4.20: a drop goes into a folder only between these fractions of the cell (width in icons, height in details). */
+        const val INTO_FROM = 0.30f
+        const val INTO_TO = 0.70f
         /** 0.4.13: preview frame dashes (longer than 0.4.12's 1px dots). */
         const val DASH_ON_DP = 4f
         const val DASH_OFF_DP = 3f
@@ -143,16 +146,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             tb.addView(v, W.lp(bw, W.dp(50)))
         }
         fun sep() = tb.addView(View(ctx).apply { background = W.Bevel(W.Style.THIN_SUNKEN) }, W.lp(2 * W.px + W.px, W.dp(40), l = 3, r = 3))
-        tool("up", Px.up16, "上へ") { goUp() }
-        tool("view", if (iconMode) Ico.viewDetails16 else Ico.viewIcons16, "表示") { toggleView() }
+        tool("up", Px.up16, L.t("上へ", "Up")) { goUp() }
+        tool("view", if (iconMode) Ico.viewDetails16 else Ico.viewIcons16, L.t("表示", "View")) { toggleView() }
         sep()
-        tool("newFolder", Px.newFolder16, "フォルダ") { askNewFolder() }
-        tool("newKey", Ico.newKey16, "鍵") { newKey() }
-        tool("newMemo", Ico.newMemo16, "メモ") { askNewMemo() }
+        tool("newFolder", Px.newFolder16, L.t("フォルダ", "Folder")) { askNewFolder() }
+        tool("newKey", Ico.newKey16, L.t("鍵", "Key")) { newKey() }
+        tool("newMemo", Ico.newMemo16, L.t("メモ", "Memo")) { askNewMemo() }
         sep()
-        tool("save", Px.floppy16, "保存") { Security.saveDialog(a) }
-        tool("menu", Ico.menu16, "メニュー") { Menus.dropDown(tools["menu"]!!, mainMenu()) }
-        tool("find", Px.find16, "検索") { if (search == null) openSearch() else closeSearch() }
+        tool("save", Px.floppy16, L.t("保存", "Save")) { Security.saveDialog(a) }
+        tool("menu", Ico.menu16, L.t("メニュー", "Menu")) { Menus.dropDown(tools["menu"]!!, mainMenu()) }
+        tool("find", Px.find16, L.t("検索", "Search")) { if (search == null) openSearch() else closeSearch() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         root.addView(W.hsep(ctx))
         tempBanner.removeAllViews()
@@ -218,13 +221,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         pathBox.removeAllViews(); pathLines.clear()
         if (q != null) {
             rows = Tree.search(d, q).map { Order.Node.E(it.second) }
-            caption.title.text = "検索結果 - KeePass Explorer"
+            caption.title.text = L.t("検索結果 - KeePass Explorer", "Search Results - KeePass Explorer")
             val ws = q.split(Regex("\\s+")).filter { it.isNotEmpty() }
             val tg = ws.filter { it.startsWith("#") && it.length > 1 }.map { it.substring(1) }
             val tx = ws.filterNot { it.startsWith("#") && it.length > 1 }
-            val desc = listOfNotNull(tx.takeIf { it.isNotEmpty() }?.let { "文字: ${it.joinToString(" ")}" },
-                tg.takeIf { it.isNotEmpty() }?.let { "タグ: ${it.joinToString(" + ")}" }).joinToString("  ")
-            pathBox.addView(W.text(ctx, if (q.isEmpty()) "文字を入力するか、タグを選んでください" else "検索結果 ${rows.size} 件  $desc", 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
+            val desc = listOfNotNull(tx.takeIf { it.isNotEmpty() }?.let { L.t("文字: ${it.joinToString(" ")}", "Text: ${it.joinToString(" ")}") },
+                tg.takeIf { it.isNotEmpty() }?.let { L.t("タグ: ${it.joinToString(" + ")}", "Tags: ${it.joinToString(" + ")}") }).joinToString("  ")
+            pathBox.addView(W.text(ctx, if (q.isEmpty()) L.t("文字を入力するか、タグを選んでください", "Type some text or pick a tag") else L.t("検索結果 ${rows.size} 件  $desc", "${rows.size} results  $desc"), 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
         } else {
             rows = Order.children(g)
             caption.title.text = "${groupLabel(g)} - KeePass Explorer"
@@ -286,14 +289,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val err = Session.lastError
         if (Session.saveState == Session.SaveState.ERROR && err != null && err != shownSaveError) {
             shownSaveError = err
-            Dlg.message(ctx, "保存エラー", "変更を保存できませんでした。\n$err", 'x')
+            Dlg.message(ctx, L.t("保存エラー", "Save Error"), L.t("変更を保存できませんでした。\n$err", "Could not save the changes.\n$err"), 'x')
         }
     }
 
     /** The root folder has no name and is shown as "/". */
-    fun groupLabel(g: Group): String = if (g.uuid == Tree.root(db()).uuid) "/" else g.name.ifEmpty { "(名前なし)" }
+    fun groupLabel(g: Group): String = if (g.uuid == Tree.root(db()).uuid) "/" else g.name.ifEmpty { L.t("(名前なし)", "(no name)") }
 
-    fun label(r: Order.Node): String = r.name.ifEmpty { if (r is Order.Node.F) "(名前なし)" else "(無題)" }
+    fun label(r: Order.Node): String = r.name.ifEmpty { if (r is Order.Node.F) L.t("(名前なし)", "(no name)") else L.t("(無題)", "(Untitled)") }
 
     private fun isBin(r: Order.Node): Boolean {
         val d = db()
@@ -412,6 +415,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     val previewSelected: Boolean get() = previewActive != null && previewActive == selection
 
     fun updatePreview() {
+        if (previewHeld) return
         preview.removeAllViews()
         val r = rows.firstOrNull { it.uuid == selection }
         val vis = if (r == null) View.GONE else View.VISIBLE
@@ -429,7 +433,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 val kids = Order.children(r.g)
                 val nf = kids.count { it.kind == Order.Kind.FOLDER }; val nk = kids.count { it.kind == Order.Kind.KEY }
                 val nm = kids.count { it.kind == Order.Kind.MEMO }
-                preview.addView(W.text(ctx, "フォルダー ${nf} 個、鍵 ${nk} 個、メモ ${nm} 個", 14f))
+                preview.addView(W.text(ctx, L.t("フォルダー ${nf} 個、鍵 ${nk} 個、メモ ${nm} 個", "${nf} folders, ${nk} keys, ${nm} memos"), 14f))
                 // 0.4.17: each item with its small icon (like the list), instead of a bullet
                 kids.take(30).forEach { k ->
                     val line = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = "preview-child" }
@@ -465,7 +469,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (!vis) continue
             when (k) {
                 Order.F_TAGS -> kv(k, tv(Tree.formatTags(e.tags)))
-                Order.F_OTP -> Order.otpUri(e)?.let { u -> kv("ワンタイム:", KeyFields.OtpView(ctx) { u }.apply { textSize = 15f }) }
+                Order.F_OTP -> Order.otpUri(e)?.let { u -> kv(L.t("ワンタイム:", "One-time:"), KeyFields.OtpView(ctx) { u }.apply { textSize = 15f }) }
                 Order.F_PASS -> kv(k, tv(Tree.password(e), mono = true).apply {
                     // masked by default; tap = show / hide
                     setTextIsSelectable(false); var shown = false
@@ -502,14 +506,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val r = downR
             if (r == null) { select(null); Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), backgroundMenu()) }
             else {
-                select(r.uuid)
+                // 0.4.20: the list must not move under the finger during the gesture (see [holdSelect])
+                holdSelect(r.uuid)
                 // 0.4.13: beside / below / above the pressed cell, never over it
                 val c = v.getChildAt(v.pointToPosition(x0.toInt(), y0.toInt()) - v.firstVisiblePosition)
-                if (c == null) Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r))
+                val pw = if (c == null) Menus.at(v, (loc[0] + x0).toInt(), (loc[1] + y0).toInt(), itemMenu(r))
                 else {
                     val cl = IntArray(2); c.getLocationOnScreen(cl)
                     Menus.beside(v, android.graphics.Rect(cl[0], cl[1], cl[0] + c.width, cl[1] + c.height), (loc[0] + x0).toInt(), itemMenu(r))
                 }
+                pw.setOnDismissListener { if (drag == null) releasePreview() }
             }
         }
         v.setOnTouchListener { _, e ->
@@ -527,8 +533,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                         val r = downR
                         if (r != null && !Session.readOnlyTemp &&
                             (abs(e.x - x0) > dragStartPx() || abs(e.y - y0) > dragStartPx())) {
+                            beginDrag(r, rx0, ry0)   // before dismissing, so the menu's dismiss keeps the preview held
                             Menus.dismiss()
-                            beginDrag(r, rx0, ry0)
                             drag?.let { it.moving = true; dragTo(e.rawX, e.rawY) }
                         }
                         return@setOnTouchListener true
@@ -579,7 +585,32 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return rows.getOrNull(p)
     }
 
+    /**
+     * 0.4.20: long press. Opening the preview pane shrinks the list (and 0.4.19 then scrolled it to keep the
+     * selection visible), which moved every cell under the finger right as a drag started: the drop marker then
+     * showed at a cell that had slid there (often a row start, at the left edge). Now, if the pane is closed,
+     * only the selection is drawn; the pane opens when the menu closes without a drag, or when the drag ends.
+     */
+    fun holdSelect(id: UUID) {
+        if (previewScroll.visibility == View.VISIBLE) { select(id); return }
+        selection = id; previewHeld = true
+        notifyList(); updateStatus()
+    }
+
+    /** The preview is waiting for the end of a long-press gesture (tests). */
+    var previewHeld = false
+        private set
+
+    fun releasePreview() {
+        if (!previewHeld) return
+        previewHeld = false
+        if (!Session.isOpen) return   // the menu can close after a lock
+        updatePreview()
+        if (selection != null) content.post { if (Session.isOpen) ensureSelectionVisible() }
+    }
+
     fun select(id: UUID?) {
+        previewHeld = false
         selection = id
         notifyList(); updatePreview(); updateStatus()
         // 0.4.19: the preview pane takes space from the list; once laid out, bring the selected item above it
@@ -591,6 +622,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * pane). Called after a selection and whenever the list area changes height (preview shown, splitter dragged).
      */
     fun ensureSelectionVisible() {
+        if (drag != null || previewHeld) return
         val v = listView ?: return
         val id = selection ?: return
         val pos = rows.indexOfFirst { it.uuid == id }.takeIf { it >= 0 } ?: return
@@ -682,7 +714,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun empty(v: View): View {
         val f = FrameLayout(ctx)
         f.addView(v)
-        f.addView(W.text(ctx, if (search != null) (if (search!!.isEmpty()) "" else "見つかりませんでした。") else "このフォルダーは空です。", 14f, color = W.SHADOW).apply {
+        f.addView(W.text(ctx, if (search != null) (if (search!!.isEmpty()) "" else L.t("見つかりませんでした。", "Nothing found.")) else L.t("このフォルダーは空です。", "This folder is empty."), 14f, color = W.SHADOW).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(40) })
         return f
@@ -804,10 +836,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (grip) foreground = Grip()
         }, W.lp(w, W.WRAP, weight))
         val inSearch = search != null
-        h("名前", colName, 0f, true)
-        h(if (inSearch) "場所" else "ユーザー名", colUser, 0f, true)
-        h("更新日時", 0, 1f, false)
-        header.contentDescription = "列の見出し (境目をドラッグで幅を変更)"
+        h(L.t("名前", "Name"), colName, 0f, true)
+        h(if (inSearch) L.t("場所", "Location") else L.t("ユーザー名", "User name"), colUser, 0f, true)
+        h(L.t("更新日時", "Modified"), 0, 1f, false)
+        header.contentDescription = L.t("列の見出し (境目をドラッグで幅を変更)", "Column headers (drag a border to resize)")
         attachHeaderResize(header)
         col.addView(header, W.lp())
         val list = ListView(ctx)
@@ -815,7 +847,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         list.isVerticalScrollBarEnabled = false; list.isHorizontalScrollBarEnabled = false
         list.divider = null
         list.selector = android.graphics.drawable.ColorDrawable(0)
-        val dateFmt = java.time.format.DateTimeFormatter.ofPattern("yyyy/MM/dd").withZone(java.time.ZoneId.systemDefault())
+        val dateFmt = L.date()
         list.adapter = object : BaseAdapter() {
             override fun getCount() = rows.size
             override fun getItem(p: Int) = rows[p]
@@ -836,8 +868,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 row.addView(nameCol, W.lp(colName, W.WRAP))
                 val second = when (r) {
                     is Order.Node.E -> if (inSearch) Tree.parentOf(Tree.root(db()), r.uuid)?.name.orEmpty()
-                        else if (r.kind == Order.Kind.MEMO) "メモ" else Tree.userName(r.e)
-                    is Order.Node.F -> "フォルダー"
+                        else if (r.kind == Order.Kind.MEMO) L.t("メモ", "Memo") else Tree.userName(r.e)
+                    is Order.Node.F -> L.t("フォルダー", "Folder")
                 }
                 row.addView(W.text(ctx, second, 14f, color = if (inSearch) W.SHADOW else W.TEXT).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, W.dp(2), 0)
@@ -895,6 +927,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         ghost.visibility = View.GONE
         pathLines.forEach { it.setBackgroundColor(0) }
         notifyList()
+        releasePreview()
     }
 
     /** Move the ghost and compute the drop target under the finger (raw screen coordinates). */
@@ -932,18 +965,36 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val l = IntArray(2); v.getLocationOnScreen(l)
         val x = rx - l[0]; val y = ry - l[1]
         if (x < 0 || y < 0 || x >= v.width || y >= v.height) return null
-        val pos = v.pointToPosition(x.toInt(), y.toInt())
+        var pos = v.pointToPosition(x.toInt(), y.toInt())
+        // 0.4.20: in the small gaps between cells / rows, use the nearest cell instead of "to the end"; END only
+        // below the last row or after the last cell of the last row
+        if (pos == AbsListView.INVALID_POSITION && v.childCount > 0) {
+            val lastC = v.getChildAt(v.childCount - 1)
+            val afterAll = v.lastVisiblePosition >= v.count - 1 &&
+                (y > lastC.bottom || (y >= lastC.top && x > lastC.right))
+            if (!afterAll) {
+                var best = -1; var bestD = Float.MAX_VALUE
+                for (i in 0 until v.childCount) {
+                    val c = v.getChildAt(i)
+                    val dx = if (x < c.left) c.left - x else if (x > c.right) x - c.right else 0f
+                    val dy = if (y < c.top) c.top - y else if (y > c.bottom) y - c.bottom else 0f
+                    val dd = dx * dx + dy * dy
+                    if (dd < bestD) { bestD = dd; best = i }
+                }
+                if (best >= 0 && bestD <= (W.dp(12) * W.dp(12)).toFloat()) pos = v.firstVisiblePosition + best
+            }
+        }
         val r = rowAt(v, pos) ?: return if (search == null) Drop(Drop.Mode.END, null) else null
         if (search != null) return if (!binDrag && r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
         if (r.uuid == dragged) return null
         val cell = v.getChildAt(pos - v.firstVisiblePosition) ?: return null
         val vertical = v is ListView
-        val f = if (vertical) (y - cell.top) / cell.height.coerceAtLeast(1) else (x - cell.left) / cell.width.coerceAtLeast(1)
-        return if (r.kind == Order.Kind.FOLDER && !binDrag) when {
-            f < 0.22f -> Drop(Drop.Mode.BEFORE, r.uuid)
-            f > 0.78f -> Drop(Drop.Mode.AFTER, r.uuid)
-            else -> Drop(Drop.Mode.INTO, r.uuid)
-        } else Drop(if (f < 0.5f) Drop.Mode.BEFORE else Drop.Mode.AFTER, r.uuid)
+        val f = (if (vertical) (y - cell.top) / cell.height.coerceAtLeast(1) else (x - cell.left) / cell.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+        // 0.4.20: "into the folder" only in the middle 40 % (was 56 %): 30 % bands on both sides reorder
+        val fy = ((y - cell.top) / cell.height.coerceAtLeast(1)).coerceIn(0f, 1f)
+        val into = if (vertical) f in INTO_FROM..INTO_TO else f in INTO_FROM..INTO_TO && fy in 0.08f..0.92f
+        return if (r.kind == Order.Kind.FOLDER && !binDrag && into) Drop(Drop.Mode.INTO, r.uuid)
+        else Drop(if (f < 0.5f) Drop.Mode.BEFORE else Drop.Mode.AFTER, r.uuid)
     }
 
     fun performDrop(id: UUID, dr: Drop) {
@@ -961,7 +1012,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (dr.mode == Drop.Mode.INTO) selection = null
             refresh()
         } catch (e: Tree.TreeException) {
-            Dlg.message(ctx, "移動エラー", "移動できません: 移動先のフォルダーは、移動するフォルダーの中にあります。", 'x')
+            Dlg.message(ctx, L.t("移動エラー", "Move Error"), L.t("移動できません: 移動先のフォルダーは、移動するフォルダーの中にあります。", "Cannot move: the target folder is inside the folder being moved."), 'x')
         }
     }
 
@@ -1029,10 +1080,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         searchPanel.setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(6))
         val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         row.addView(ImageView(ctx).apply { setImageDrawable(Px.drawable(ctx, Px.find16, maxOf(1, W.iconScale() - 1))) }, W.lp(W.WRAP, W.WRAP, r = 4))
-        searchField = W.field(ctx).apply { isSingleLine = true; hint = "文字で検索 (名前・ユーザー名・URL・メモ)" }
+        searchField = W.field(ctx).apply { isSingleLine = true; hint = L.t("文字で検索 (名前・ユーザー名・URL・メモ)", "Search text (name, user name, URL, notes)") }
         row.addView(searchField, W.lp(0, W.WRAP, 1f))
-        row.addView(W.button(ctx, "クリア") { searchTags.clear(); searchField.setText(""); renderSearchTags(); applyLiveSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
-        row.addView(W.button(ctx, "閉じる") { closeSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
+        row.addView(W.button(ctx, L.t("クリア", "Clear")) { searchTags.clear(); searchField.setText(""); renderSearchTags(); applyLiveSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
+        row.addView(W.button(ctx, L.t("閉じる", "Close")) { closeSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
         searchPanel.addView(row)
         searchField.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
@@ -1070,8 +1121,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun saveNow() {
         Session.flush()
         Session.afterSave({ Unit }) { r ->
-            r.onSuccess { Toast.makeText(ctx, "保存しました", Toast.LENGTH_SHORT).show() }
-             .onFailure { Dlg.message(ctx, "保存", "保存できませんでした。\n${it.message ?: it}", 'x') }
+            r.onSuccess { Toast.makeText(ctx, L.t("保存しました", "Saved"), Toast.LENGTH_SHORT).show() }
+             .onFailure { Dlg.message(ctx, L.t("保存", "Save"), L.t("保存できませんでした。\n${it.message ?: it}", "Could not save.\n${it.message ?: it}"), 'x') }
             updateStatus()
         }
     }
@@ -1105,6 +1156,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.menu_autolock_now), checked = lockMin == 0) { p.edit().putInt("autolock", 0).apply() })
         out.add(Menus.Item(ctx.getString(R.string.menu_autolock_5), checked = lockMin == 5) { p.edit().putInt("autolock", 5).apply() })
         out.add(Menus.Item(ctx.getString(R.string.menu_autolock_never), checked = lockMin < 0) { p.edit().putInt("autolock", -1).apply() })
+        out.add(Menus.sep())
+        // 0.4.20: display language and date order
+        for ((l, name) in listOf(L.Lang.SYSTEM to L.t("言語: 端末に合わせる", "Language: system"), L.Lang.JA to L.t("言語: 日本語", "Language: 日本語"),
+                L.Lang.EN to L.t("言語: English", "Language: English")))
+            out.add(Menus.Item(name, checked = L.lang == l) { a.setLanguage(l) })
+        val today = java.time.Instant.now()
+        for (d in L.DateOrder.entries) {
+            val ex = java.time.format.DateTimeFormatter.ofPattern(d.pattern).withZone(java.time.ZoneId.systemDefault()).format(today)
+            out.add(Menus.Item(L.t("日付: ", "Date: ") + ex, checked = L.dateOrder == d) { L.setDateOrder(ctx, d); refresh() })
+        }
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.menu_usage)) { Help.usage(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
@@ -1229,7 +1290,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun newKey() = a.show(NewKeyScreen(a, current))
 
     fun rename(r: Order.Node) {
-        Dlg.prompt(ctx, "名前の変更", "新しい名前:", r.name) { n ->
+        Dlg.prompt(ctx, L.t("名前の変更", "Rename"), L.t("新しい名前:", "New name:"), r.name) { n ->
             when (r) {
                 is Order.Node.F -> Session.update { Tree.renameGroup(it, r.uuid, n) }
                 is Order.Node.E -> Session.update { Order.renameEntry(it, r.uuid, n) }
@@ -1240,7 +1301,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun cut(id: UUID) {
         cut = id; refresh()
-        Toast.makeText(ctx, "切り取りました。移動先で「貼り付け」を選んでください。", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, L.t("切り取りました。移動先で「貼り付け」を選んでください。", "Cut. Choose \"Paste\" where you want to move it."), Toast.LENGTH_SHORT).show()
     }
 
     /** 0.4.13: drop the pending cut (the item is no longer shown dimmed). */
@@ -1249,7 +1310,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun paste(target: UUID) {
         val id = cut ?: return
         try { Session.update { Order.moveTo(it, id, target) }; cut = null; refresh() }
-        catch (e: Tree.TreeException) { Dlg.message(ctx, "移動エラー", "移動できません: 移動先のフォルダーは、移動するフォルダーの中にあります。", 'x') }
+        catch (e: Tree.TreeException) { Dlg.message(ctx, L.t("移動エラー", "Move Error"), L.t("移動できません: 移動先のフォルダーは、移動するフォルダーの中にあります。", "Cannot move: the target folder is inside the folder being moved."), 'x') }
     }
 
     fun moveIndex(id: UUID, index: Int) { Session.update { Order.moveTo(it, id, current, index) }; selection = id; refresh() }
@@ -1277,7 +1338,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (search == null) navigate(dest)
             refresh()
         } catch (e: Tree.TreeException) {
-            Dlg.message(ctx, "移動エラー", "移動できませんでした。", 'x')
+            Dlg.message(ctx, L.t("移動エラー", "Move Error"), L.t("移動できませんでした。", "Could not move it."), 'x')
         }
     }
 
@@ -1288,15 +1349,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)
-        col.addView(W.text(ctx, "「${rows.firstOrNull { it.uuid == id }?.let { label(it) } ?: ""}」の移動先:", 15f), W.lp(W.MATCH, W.WRAP, b = 8))
+        col.addView(W.text(ctx, L.t("「${rows.firstOrNull { it.uuid == id }?.let { label(it) } ?: ""}」の移動先:", "Move \"${rows.firstOrNull { it.uuid == id }?.let { label(it) } ?: ""}\" to:"), 15f), W.lp(W.MATCH, W.WRAP, b = 8))
         col.addView(FrameLayout(ctx).apply { background = W.Bevel(W.Style.FIELD); setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px); addView(tree) })
-        ClassicDialog(ctx, "フォルダーへ移動", col, listOf(
-            ClassicDialog.Btn("移動", true) {
+        ClassicDialog(ctx, L.t("フォルダーへ移動", "Move to Folder"), col, listOf(
+            ClassicDialog.Btn(L.t("移動", "Move"), true) {
                 val t = target ?: return@Btn false
                 try { Session.update { Order.moveTo(it, id, t) }; refresh(); true }
-                catch (e: Tree.TreeException) { Dlg.message(ctx, "移動エラー", "そのフォルダーには移動できません。", 'x'); false }
+                catch (e: Tree.TreeException) { Dlg.message(ctx, L.t("移動エラー", "Move Error"), L.t("そのフォルダーには移動できません。", "It cannot be moved to that folder."), 'x'); false }
             },
-            ClassicDialog.Btn("キャンセル")), scroll = true).show()
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel"))), scroll = true).show()
     }
 
     fun askDelete(id: UUID) {
@@ -1352,6 +1413,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     private fun copy(label: String, s: String, sensitive: Boolean) {
         Clip.copy(ctx, label, s, sensitive)
-        Toast.makeText(ctx, "${label}をコピーしました" + if (sensitive) " (${Clip.CLEAR_MS / 1000} 秒後に消去)" else "", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, L.t("${label}をコピーしました", "${label} copied") + if (sensitive) L.t(" (${Clip.CLEAR_MS / 1000} 秒後に消去)", " (cleared in ${Clip.CLEAR_MS / 1000} s)") else "", Toast.LENGTH_SHORT).show()
     }
 }
