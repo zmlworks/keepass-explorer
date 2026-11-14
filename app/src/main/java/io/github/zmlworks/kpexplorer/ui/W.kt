@@ -27,6 +27,7 @@ import android.widget.RadioButton
 import android.widget.TextView
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /** Windows 95/98/2000 "classic" look: palette, 3-D bevels, and small widget builders. */
 object W {
@@ -67,6 +68,17 @@ object W {
 
     fun dp(v: Float): Int = (v * density).roundToInt()
     fun dp(v: Int): Int = dp(v.toFloat())
+
+    /** 0.4.31: this app's long press, a little shorter than the system's (the share of it). */
+    const val LONG_PRESS_SHARE = 0.8f
+
+    /**
+     * 0.4.31: the hold time of every long press in this app (list, tree, preview, key fields, icon, backups):
+     * [LONG_PRESS_SHARE] of the system's long-press delay, so 320 ms with Android's default 400 ms (and longer
+     * for whoever set a longer 「長押しの時間」 in the system settings). Text selection inside text boxes is
+     * Android's own and keeps the system delay.
+     */
+    fun longPressMs(): Long = (android.view.ViewConfiguration.getLongPressTimeout() * LONG_PRESS_SHARE).roundToLong()
 
     /** Integer zoom for pixel-art icons (≈1.33 dp per art pixel). */
     fun iconScale(): Int = max(1, (density * 1.33f).roundToInt())

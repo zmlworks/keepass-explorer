@@ -103,21 +103,23 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
             }
         }
         list.adapter = adapter
+        // 0.4.31: the long press is the app's own ([W.longPressMs]), not GestureDetector's system delay
+        val long = io.github.zmlworks.kpexplorer.ui.LongPress(list) { x, y ->
+            files.getOrNull(list.pointToPosition(x.toInt(), y.toInt()))?.let { f ->
+                selected = f; adapter.notifyDataSetChanged(); updateStatus()
+                val loc = IntArray(2); list.getLocationInWindow(loc)
+                Menus.at(list, loc[0] + x.toInt(), loc[1] + y.toInt(), menuFor(f))
+            }
+        }
         val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
             override fun onSingleTapUp(e: MotionEvent): Boolean {
+                if (long.fired) return true
                 val pos = list.pointToPosition(e.x.toInt(), e.y.toInt())
                 selected = files.getOrNull(pos); adapter.notifyDataSetChanged(); updateStatus(); return true
             }
-            override fun onLongPress(e: MotionEvent) {
-                val pos = list.pointToPosition(e.x.toInt(), e.y.toInt())
-                val f = files.getOrNull(pos) ?: return
-                selected = f; adapter.notifyDataSetChanged(); updateStatus()
-                val loc = IntArray(2); list.getLocationInWindow(loc)
-                Menus.at(list, loc[0] + e.x.toInt(), loc[1] + e.y.toInt(), menuFor(f))
-            }
-        })
-        list.setOnTouchListener { _, e -> gd.onTouchEvent(e); false }
+        }).also { it.setIsLongpressEnabled(false) }
+        list.setOnTouchListener { _, e -> long.onTouch(e); gd.onTouchEvent(e); false }
         if (files.isEmpty()) {
             val f = FrameLayout(ctx); f.addView(list)
             f.addView(W.text(ctx, L.t("バックアップはまだありません。\n「今すぐ作成」またはツールバーの「保存」で作成できます。", "No backups yet.\nCreate one with \"Create now\" or with \"Save\" in the toolbar."), 14f, color = W.SHADOW).apply {

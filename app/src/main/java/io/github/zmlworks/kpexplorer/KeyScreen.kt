@@ -244,7 +244,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     /**
      * 0.4.30: the field being edited is kept wholly in view above the keyboard (Android only brings the cursor
      * line into view, so the rest of a field near the bottom stayed under the keyboard). A field taller than
-     * the space keeps as much of itself in view as fits, always with the cursor line.
+     * the space keeps as much of itself in view as fits, always with the cursor line. While Tag is edited, the
+     * used-tag buttons under it count as part of the field (0.4.31).
      */
     fun showEditing() {
         val box = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active ?: return
@@ -255,7 +256,12 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         val r = android.graphics.Rect(0, 0, box.width, box.height)
         sv.offsetDescendantRectToMyCoords(box, r)
         var y = sv.scrollY
-        if (r.height() <= h) y = y.coerceIn(r.bottom - h, r.top)
+        // 0.4.31: editing Tag, its used-tag buttons below it are part of what is kept in view
+        val ch = chips?.takeIf { box === boxes[Order.F_TAGS] && it.visibility == View.VISIBLE && it.height > 0 }
+        val all = ch?.let { android.graphics.Rect(0, 0, it.width, it.height).also { c -> sv.offsetDescendantRectToMyCoords(it, c); c.union(r) } }
+        if (all != null && all.height() <= h) y = y.coerceIn(all.bottom - h, all.top)
+        else if (all != null && r.height() <= h) y = r.top   // the field at the top, then as many buttons as fit
+        else if (r.height() <= h) y = y.coerceIn(r.bottom - h, r.top)
         else {
             y = y.coerceIn(r.top, r.bottom - h)
             val f = box.field
@@ -301,9 +307,9 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             val gd = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
                 override fun onDown(e: android.view.MotionEvent) = true
                 override fun onDoubleTap(e: android.view.MotionEvent): Boolean { pickIcon(); return true }
-                override fun onLongPress(e: android.view.MotionEvent) { pickIcon() }
-            })
-            setOnTouchListener { _, e -> gd.onTouchEvent(e); true }
+            }).also { it.setIsLongpressEnabled(false) }
+            val long = io.github.zmlworks.kpexplorer.ui.LongPress(this) { _, _ -> pickIcon() }   // 0.4.31: the app's long press
+            setOnTouchListener { _, e -> long.onTouch(e); gd.onTouchEvent(e); true }
         }
         tile.addView(ImageView(ctx).apply { setImageDrawable(io.github.zmlworks.kpexplorer.ui.FugueIcons.drawable(ctx, iconId)) },
             android.widget.FrameLayout.LayoutParams(W.dp(52), W.dp(52), Gravity.CENTER))
@@ -434,6 +440,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         if (allTags.isEmpty()) return
         val holder = android.widget.FrameLayout(ctx).apply { visibility = if (tagsShown) View.VISIBLE else View.GONE }
         chips = holder
+        holder.addOnLayoutChangeListener(keepEditVisible)   // 0.4.31: the buttons appear / change while Tag is edited
         body.addView(holder, W.lp(W.MATCH, W.WRAP, l = 4, b = 4))
         renderChips()
     }

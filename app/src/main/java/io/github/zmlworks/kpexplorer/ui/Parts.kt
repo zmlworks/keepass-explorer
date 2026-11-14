@@ -263,6 +263,7 @@ object Parts {
                     if (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop) tapCandidate = false
                 }
                 android.view.MotionEvent.ACTION_UP -> {
+                    // (the system delay, not W.longPressMs: past it the EditText's own long press selects a word)
                     if (tapCandidate && e.eventTime - e.downTime < android.view.ViewConfiguration.getLongPressTimeout()) {
                         tapCandidate = false
                         val cancel = android.view.MotionEvent.obtain(e).apply { action = android.view.MotionEvent.ACTION_CANCEL }

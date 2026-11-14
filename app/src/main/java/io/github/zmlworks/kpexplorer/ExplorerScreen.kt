@@ -237,6 +237,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val key = listOf<Any?>(g.uuid, q, flat, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"))
         val same = key == shownKey
         val keepTreeY = if (same) (pathBox.getChildAt(0) as? ScrollView)?.scrollY else null
+        // 0.4.31: the path tree's offset before this refresh (null = no tree shown, e.g. search results)
+        val treeY = (pathBox.getChildAt(0) as? ScrollView)?.scrollY
         shownKey = key
         pathBox.removeAllViews(); pathLines.clear()
         if (q != null) {
@@ -258,22 +260,26 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             caption.title.text = if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
                 else "${groupLabel(g)} - KeePass Explorer"
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
-                onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
+                onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } else tempExpanded[gid] = exp },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
-                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat)
+                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat,
+                expandedOverride = if (Session.readOnlyTemp) tempExpanded else emptyMap())
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
                 override fun onChildViewAdded(p: View?, c: View?) { pathLines.clear(); pathLines.addAll(tree.rows) }
                 override fun onChildViewRemoved(p: View?, c: View?) {}
             })
-            pathBox.addView(MaxScroll(ctx, (ctx.resources.displayMetrics.heightPixels * 0.3f).toInt()).apply {
-                W.classicScrollbars(this); addView(tree) })
-            post {
-                val sv = pathBox.getChildAt(0) as? ScrollView
-                if (keepTreeY != null) sv?.scrollTo(0, keepTreeY)
-                else folderTree?.rows?.firstOrNull { it.tag == g.uuid }?.let { v -> sv?.scrollTo(0, maxOf(0, v.top - W.dp(32))) }
-            }
+            val treeBox = MaxScroll(ctx, (ctx.resources.displayMetrics.heightPixels * 0.3f).toInt()).apply {
+                W.classicScrollbars(this); addView(tree) }
+            pathBox.addView(treeBox)
+            // placed in its first layout, before it is drawn (a post could show one frame at the top first)
+            treeBox.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+                override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, orr: Int, ob: Int) {
+                    v.removeOnLayoutChangeListener(this)
+                    placeTree(treeBox, tree, g.uuid, keepTreeY ?: treeY, keep = keepTreeY != null)
+                }
+            })
             flatBand.visibility = if (flat) View.VISIBLE else View.GONE
             if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
@@ -358,8 +364,31 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * 0.4.23: long press on a folder of the path tree: 開く (= one tap) and 下部ファイルをすべて表示; the recycle bin
      * also offers 空にする.
      */
+    /** 0.4.31: folder-tree open / closed state of a read-only browse (not written to that file), by folder. */
+    private val tempExpanded = HashMap<UUID, Boolean>()
+
+    /**
+     * Scroll of a rebuilt path tree. [y] = the old tree's offset: kept as it was ([keep]: same folder), or (0.4.31)
+     * kept and moved only as far as needed to show the current folder [cur]. Up to 0.4.30 every change of folder
+     * scrolled the current folder up to the top, so a folder tapped in the tree jumped away from the finger.
+     * No old tree (first show, after a search): the current folder near the top, as before.
+     */
+    private fun placeTree(sv: ScrollView, tree: FolderTree, cur: UUID, y: Int?, keep: Boolean) {
+        val row = tree.rows.firstOrNull { it.tag == cur }
+        if (y == null) { row?.let { sv.scrollTo(0, maxOf(0, it.top - W.dp(32))) }; return }
+        sv.scrollTo(0, y)
+        if (keep || row == null) return
+        val h = sv.height - sv.paddingTop - sv.paddingBottom
+        val top = tree.top + row.top; val bottom = tree.top + row.bottom
+        if (top < sv.scrollY) sv.scrollTo(0, top)
+        else if (bottom > sv.scrollY + h) sv.scrollTo(0, bottom - h)
+    }
+
     fun pathLongPress(gid: UUID, x: Int, y: Int): Boolean {
-        Menus.at(pathBox, x, y, treeMenu(gid))
+        // 0.4.31: the long-pressed folder is framed (dotted) while its menu is open
+        val tree = folderTree
+        tree?.menuTarget = gid
+        Menus.at(pathBox, x, y, treeMenu(gid)).setOnDismissListener { if (tree?.menuTarget == gid) tree.menuTarget = null }
         return true
     }
 
@@ -465,7 +494,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val r = super.dispatchTouchEvent(e)
             if (e.actionMasked == MotionEvent.ACTION_UP && candidate) {
                 candidate = false
-                if (e.eventTime - t0 < ViewConfiguration.getLongPressTimeout()) onTap()
+                if (e.eventTime - t0 < W.longPressMs()) onTap()
             }
             return e.actionMasked == MotionEvent.ACTION_DOWN || r
         }
@@ -631,7 +660,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun attachGestures(v: AbsListView) {
         listView = v
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
-        val longMs = ViewConfiguration.getLongPressTimeout().toLong()
+        val longMs = W.longPressMs()
         var downR: Order.Node? = null; var x0 = 0f; var y0 = 0f; var rx0 = 0f; var ry0 = 0f
         var moved = false; var longFired = false
         val long = Runnable {

@@ -273,7 +273,7 @@ class FieldBox(
     fun copyThreshold(): Float = W.dp(110).toFloat()
     private val slop = W.dp(10)
     private val handler = Handler(Looper.getMainLooper())
-    /** Shorter than the system long-press (~500ms); horizontal swipe / scroll cancels. */
+    /** After [W.longPressMs] (0.4.31: the app's one long-press time; was a fixed 320 ms); horizontal swipe / scroll cancels. */
     private val longPressRunnable = Runnable { if (!sliding && !editing) startEdit() }
     private val gd = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
@@ -303,7 +303,7 @@ class FieldBox(
             MotionEvent.ACTION_DOWN -> {
                 x0 = e.rawX; y0 = e.rawY; sliding = false; front.animate().cancel()
                 handler.removeCallbacks(longPressRunnable)
-                handler.postDelayed(longPressRunnable, EDIT_LONG_PRESS_MS)
+                handler.postDelayed(longPressRunnable, W.longPressMs())
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = e.rawX - x0; val dy = e.rawY - y0
@@ -371,8 +371,6 @@ class FieldBox(
     }
 
     companion object {
-        /** Long-press to enter inline edit (ms). System default is ~500; user asked shorter. */
-        const val EDIT_LONG_PRESS_MS = 320L
         /** Cream well for the new-key form (kept). */
         const val FILL = 0xFFFFFFE1.toInt()
         /** Property-sheet row fills (no cream / white). */

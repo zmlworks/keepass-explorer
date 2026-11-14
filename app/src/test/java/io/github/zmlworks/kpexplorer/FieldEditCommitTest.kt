@@ -85,7 +85,8 @@ class FieldEditCommitTest {
         MotionEvent.obtain(0L, System.currentTimeMillis(), action, x, y, 0)
 
     @Test fun longPressDurationIsAbout320ms() {
-        assertEquals(320L, FieldBox.EDIT_LONG_PRESS_MS)
+        // 0.4.31: the app's one long press, 80 % of the system delay (Robolectric: 500 ms → 400; Android 12+ default 400 → 320)
+        assertEquals(Math.round(android.view.ViewConfiguration.getLongPressTimeout() * 0.8), io.github.zmlworks.kpexplorer.ui.W.longPressMs())
         val (_, ks) = openKey()
         val box = ks.boxes["UserName"]!!
         val loc = IntArray(2); box.getLocationOnScreen(loc)
@@ -95,7 +96,7 @@ class FieldEditCommitTest {
         ShadowLooper.idleMainLooper(200, TimeUnit.MILLISECONDS)
         assertFalse("too early", box.editing)
         ShadowLooper.idleMainLooper(200, TimeUnit.MILLISECONDS)
-        assertTrue("edit after ~320ms", box.editing)
+        assertTrue("edit after the app's long press", box.editing)
         box.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, x, y))
     }
 

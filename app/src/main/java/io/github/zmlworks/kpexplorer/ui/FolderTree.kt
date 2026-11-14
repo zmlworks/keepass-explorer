@@ -52,17 +52,27 @@ class FolderTree(
      * 0.4.30: a tap on the selected folder (a second tap) opens / closes it. False keeps that tap for [onJump]
      * (main tree while 「下部ファイルをすべて表示」 is on: the tap returns to the folder's normal view, 0.4.23).
      */
-    private val toggleSelected: Boolean = true
+    private val toggleSelected: Boolean = true,
+    /** 0.4.31: open / closed states to use instead of the file's (a read-only browse, where toggles are not saved). */
+    expandedOverride: Map<UUID, Boolean> = emptyMap()
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
 
     private val expanded = HashMap<UUID, Boolean>()
 
+    /**
+     * 0.4.31: the folder whose long-press menu is open, drawn in a dotted frame so the menu's folder is clear
+     * (also when another folder is the selected one); null = none.
+     */
+    var menuTarget: UUID? = null
+        set(v) { field = v; for (r in rows) r.invalidate() }
+
     /** One view per visible node, tagged with the group uuid (drop targets). */
     val rows = ArrayList<View>()
 
     init {
+        expanded.putAll(expandedOverride)
         current?.let { cur -> pathTo(root, cur)?.dropLast(1)?.forEach { expanded[it.uuid] = true } }
         orientation = VERTICAL
         setBackgroundColor(W.WINDOW)
@@ -186,6 +196,15 @@ class FolderTree(
                 q.color = W.NAVY; q.style = Paint.Style.STROKE; q.strokeWidth = W.px.toFloat(); q.pathEffect = android.graphics.DashPathEffect(floatArrayOf(W.px.toFloat(), W.px.toFloat()), 0f)
                 c.drawRect(tx - W.dp(2).toFloat(), cy - W.dp(11).toFloat(), tx + tw + W.dp(3), cy + W.dp(11).toFloat(), q)
             }
+            if (n.g.uuid == menuTarget) {
+                // just outside the label (and outside the navy band when it is the selected folder)
+                val q = Paint().apply {
+                    color = W.DARK; style = Paint.Style.STROKE; strokeWidth = W.px.toFloat()
+                    pathEffect = android.graphics.DashPathEffect(floatArrayOf(W.px.toFloat(), W.px.toFloat()), 0f)
+                }
+                val o = W.px * 1.5f
+                c.drawRect(tx - W.dp(2) - o, cy - W.dp(11) - o, tx + tw + W.dp(3) + o, cy + W.dp(11) + o, q)
+            }
             p.color = when { sel -> W.HILITE; dis -> W.SHADOW; else -> W.TEXT }
             c.drawText(label, tx.toFloat(), cy + W.dp(5).toFloat(), p)
             if (showCounts) {
@@ -213,7 +232,7 @@ class FolderTree(
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.x; downY = e.y; longDone = false
-                    if (onLongPress != null) postDelayed(longRun, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+                    if (onLongPress != null) postDelayed(longRun, W.longPressMs())
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
