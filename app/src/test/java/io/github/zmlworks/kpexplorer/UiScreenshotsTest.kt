@@ -340,7 +340,12 @@ class UiScreenshotsTest {
         assertNotNull(findDesc(a.host, "保存")); assertNotNull(findDesc(a.host, "戻る"))
         val rt = findRuled(a.host)!!
         val l = rt.layout
-        for (i in 0 until rt.lineCount) assertEquals(rt.getLineBounds(i, android.graphics.Rect()) + W.dp(4), rt.ruleYs[i])
+        // 0.4.28: each line in the middle of its row (Ux0428Test)
+        val fm = rt.paint.fontMetricsInt
+        for (i in 0 until rt.lineCount) {
+            val c = rt.getLineBounds(i, android.graphics.Rect()) + (fm.ascent + fm.descent) / 2
+            assertTrue(kotlin.math.abs((c - (if (i == 0) rt.topRule else rt.ruleYs[i - 1])) - (rt.ruleYs[i] - c)) <= 1)
+        }
         assertTrue("rules reach the bottom", rt.ruleYs.last() + rt.lineHeight >= rt.scrollY + rt.height)
         assertNotNull(l)
         a.showExplorer(); idle()

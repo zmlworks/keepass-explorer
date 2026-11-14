@@ -1611,7 +1611,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (Session.readOnlyTemp) return
         try {
             val to = Tree.pathText(db(), Tree.restoreTarget(db(), id).target)
-            Session.update { Tree.restoreFromBin(it, id) }
+            Session.update { Order.restoreFromBin(it, id) }
             Toast.makeText(ctx, L.t("$to に戻しました", "Restored to $to"), Toast.LENGTH_SHORT).show()
             selection = id; refresh()
         } catch (e: Tree.TreeException) {

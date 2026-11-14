@@ -75,6 +75,33 @@ object Order {
         return out
     }
 
+    /**
+     * 0.4.28: sub-folders of [g] for the folder tree — the same order as the list ([children]), with the recycle
+     * bin ([bin]) always last. Up to 0.4.27 the tree used the file's own group order, which the list's reordering
+     * (stored in [CD_ORDER]) never changed, so a folder restored from the bin (appended to the file's groups)
+     * stayed below the bin in the tree for good.
+     */
+    fun folders(g: Group, bin: UUID?): List<Group> {
+        val fs = children(g).mapNotNull { (it as? Node.F)?.g }
+        val (b, rest) = fs.partition { it.uuid == bin }
+        return rest + b
+    }
+
+    /**
+     * 0.4.28: restore [id] from the recycle bin ([Tree.restoreFromBin]). A folder is put right after the other
+     * folders of the folder it returns to (so before the bin when the bin follows them, as it does by default);
+     * a key or memo goes to the end, as before.
+     */
+    fun restoreFromBin(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
+        val d = Tree.restoreFromBin(db, id, now)
+        if (Tree.findGroup(d, id) == null) return d
+        val parent = Tree.parentOf(Tree.root(d), id) ?: return d
+        val bin = Tree.recycleBinId(d)
+        val others = children(parent).filter { it.uuid != id }
+        val lastFolder = others.indexOfLast { it is Node.F && it.uuid != bin }
+        return moveTo(d, id, parent.uuid, lastFolder + 1, now)
+    }
+
     private fun withOrder(g: Group, ids: List<UUID>, now: Instant): Group =
         g.copy(customData = g.customData + (CD_ORDER to CustomDataValue(ids.joinToString(","), now)))
 

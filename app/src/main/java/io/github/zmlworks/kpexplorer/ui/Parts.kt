@@ -182,7 +182,7 @@ object Parts {
             pathEffect = android.graphics.DashPathEffect(floatArrayOf(RULE_DOT_DP * W.dp(1), RULE_GAP_DP * W.dp(1)), 0f)
         }
         private val r = android.graphics.Rect()
-        /** Rule positions drawn last (content coordinates) — exposed for tests. */
+        /** Rules under each line, then on down the page (content coordinates) — exposed for tests. */
         val ruleYs = ArrayList<Int>()
         init {
             setBackgroundColor(0xFFFFFFF4.toInt())
@@ -200,26 +200,36 @@ object Parts {
             imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
             if (!editable) { isFocusable = false; isCursorVisible = false; keyListener = null; setTextIsSelectable(true) }
         }
+        /**
+         * 0.4.28: each line of text sits in the middle of its ruled row (the same space above and below the
+         * characters). Up to 0.4.27 a rule was drawn just under each baseline, so the text hugged the rule below
+         * and the line spacing was all above it. The rules are midway between the centres of two lines; one more
+         * rule above the first line closes its row. The text itself stays left-aligned.
+         */
         override fun onDraw(c: Canvas) {
             ruleYs.clear()
-            val gap = W.dp(4)                       // rule sits a little below the baseline (under descenders of Latin text)
+            val fm = paint.fontMetricsInt
+            val mid = (fm.ascent + fm.descent) / 2      // centre of the characters relative to the baseline (< 0)
             val bottom = scrollY + height           // visible bottom in content coordinates
             val l = layout
-            var last = -1
             var step = lineHeight
-            if (l != null) {
-                for (i in 0 until lineCount) {
-                    val base = getLineBounds(i, r)  // baseline incl. padding, in content coordinates
-                    val y = base + gap
-                    ruleYs.add(y); last = y
-                    if (i > 0) step = maxOf(1, l.getLineBaseline(i) - l.getLineBaseline(i - 1))
-                }
+            val centres = ArrayList<Int>()
+            if (l != null) for (i in 0 until lineCount) {
+                centres.add(getLineBounds(i, r) + mid)  // baseline incl. padding, in content coordinates
+                if (i > 0) step = maxOf(1, l.getLineBaseline(i) - l.getLineBaseline(i - 1))
             }
-            var y = if (last < 0) extendedPaddingTop + (l?.getLineBaseline(0) ?: lineHeight) + gap else last + step
+            val first = centres.firstOrNull() ?: (extendedPaddingTop - fm.ascent + mid)
+            topRule = first - step / 2
+            for (cy in centres) ruleYs.add(cy + step / 2)
+            if (ruleYs.isEmpty()) ruleYs.add(topRule + step)
+            var y = ruleYs.last() + step
             while (y < bottom) { ruleYs.add(y); y += step }
-            for (yy in ruleYs) if (yy >= scrollY) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
+            for (yy in listOf(topRule) + ruleYs) if (yy >= scrollY && yy >= 0) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
             super.onDraw(c)
         }
+        /** Rule above the first line (content coordinates; tests). */
+        var topRule = 0
+            private set
         /** The rule's paint (tests: dotted, no margin). */
         val rulePaint: Paint get() = rule
         companion object { const val RULE_DOT_DP = 1.5f; const val RULE_GAP_DP = 2.5f }

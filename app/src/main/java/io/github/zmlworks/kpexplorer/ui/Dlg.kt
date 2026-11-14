@@ -20,20 +20,29 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/** Classic dialog boxes: gray window, navy caption, OK/Cancel at the bottom right. */
-class ClassicDialog(ctx: Context, title: String, body: View, buttons: List<Btn>, scroll: Boolean = false) :
+/**
+ * Classic dialog boxes: gray window, navy caption, OK/Cancel at the bottom right.
+ * [scroll]: a tall window (80 % of the screen) whose body scrolls. [fit] (0.4.28, messages): the window wraps its
+ * body and grows up to the screen; a body taller than that scrolls, with the buttons kept on screen. Up to 0.4.27
+ * a message was never scrollable, so a long one (使い方) ran off the screen.
+ */
+class ClassicDialog(ctx: Context, title: String, body: View, buttons: List<Btn>, scroll: Boolean = false, fit: Boolean = false) :
     Dialog(ctx, android.R.style.Theme_Material_Light_Dialog_NoActionBar) {
 
     class Btn(val label: String, val default: Boolean = false, val onClick: () -> Boolean = { true })
 
     val frame: LinearLayout
     val buttonViews = ArrayList<TextView>()
+    /** The scroll view around the body ([scroll] or [fit]), else null. */
+    var bodyScroll: ScrollView? = null
+        private set
 
     init {
         val content = W.vbox(ctx)
         content.setPadding(W.dp(12), W.dp(14), W.dp(12), W.dp(12))
-        if (scroll) {
-            val sv = ScrollView(ctx); W.classicScrollbars(sv); sv.addView(body)
+        if (scroll || fit) {
+            val sv = ScrollView(ctx); W.classicScrollbars(sv); sv.addView(body); bodyScroll = sv
+            sv.scrollBarStyle = View.SCROLLBARS_INSIDE_INSET   // 0.4.28: the bar beside the text, not over its last letters
             content.addView(sv, W.lp(W.MATCH, 0, 1f))
         } else content.addView(body, W.lp(W.MATCH, W.WRAP))
         if (buttons.isNotEmpty()) {
@@ -46,7 +55,7 @@ class ClassicDialog(ctx: Context, title: String, body: View, buttons: List<Btn>,
             content.addView(row, W.lp(W.MATCH, W.WRAP, t = 14))
         }
         val cap = W.titleBar(ctx, title, null, onClose = { cancel() })
-        frame = W.window(ctx, cap, content, bodyWeight = scroll)
+        frame = W.window(ctx, cap, content, bodyWeight = scroll || fit)
         setContentView(frame)
         window?.setBackgroundDrawable(ColorDrawable(0))
         window?.setDimAmount(0f)
@@ -73,7 +82,7 @@ object Dlg {
     }
 
     fun message(ctx: Context, title: String, msg: CharSequence, icon: Char? = 'i', onOk: () -> Unit = {}): ClassicDialog =
-        ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(ClassicDialog.Btn("OK", true) { onOk(); true }))
+        ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(ClassicDialog.Btn("OK", true) { onOk(); true }), fit = true)
             .also { it.show() }
 
     fun confirm(ctx: Context, title: String, msg: CharSequence, icon: Char = '?', yes: String? = null, no: String? = null,
@@ -82,7 +91,7 @@ object Dlg {
         val n = no ?: ctx.getString(R.string.no)
         return ClassicDialog(ctx, title, msgBody(ctx, icon, msg), listOf(
             ClassicDialog.Btn(y, true) { onYes(); true },
-            ClassicDialog.Btn(n) { true })).also { it.show(); last = it }
+            ClassicDialog.Btn(n) { true }), fit = true).also { it.show(); last = it }
     }
 
     fun prompt(ctx: Context, title: String, label: String, initial: String, ok: String = "OK",

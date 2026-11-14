@@ -76,7 +76,7 @@ class FolderTree(
         fun walk(g: Group, depth: Int, flags: List<Boolean>, last: Boolean) {
             out.add(Node(g, depth, flags, last))
             if (!isExpanded(g)) return
-            val kids = g.groups.filter { it.uuid !in hidden }
+            val kids = io.github.zmlworks.kpexplorer.db.Order.folders(g, binId).filter { it.uuid !in hidden }
             kids.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == kids.size - 1) }
         }
         walk(root, 0, emptyList(), true)
