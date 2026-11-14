@@ -66,6 +66,14 @@ object KeyFields {
         Order.F_TITLE -> "Title:"; Order.F_USER -> "User:"; Order.F_PASS -> "Pass:"; Order.F_URL -> "URL:"
         Order.F_TAGS -> "Tag:"; Order.F_OTP -> "OTP:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
     }
+    /**
+     * 0.4.24: field values shown in the system monospace font (user name, password, URL, custom fields) so that
+     * look-alike characters (0/O, l/1/I) are easier to tell apart. Title, notes and tags keep the normal font.
+     * One place to change: every value view goes through [valueFont].
+     */
+    fun monospace(k: String) = k != Order.F_TITLE && k != Order.F_NOTES && k != Order.F_TAGS
+    fun valueFont(t: android.widget.TextView, k: String) { if (monospace(k)) t.typeface = android.graphics.Typeface.MONOSPACE }
+
     /** Small label shown above the value in a field well. */
     fun name(k: String) = label(k).removeSuffix(":")
     fun lastModified(e: Entry?): String = "Last Modified: " + (e?.times?.lastModificationTime?.let { fmt.format(it) } ?: "-")
@@ -440,6 +448,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         editors[k] = f
         if (multi) { f.minLines = 3; f.gravity = Gravity.TOP or Gravity.START } else { f.isSingleLine = true; f.setHorizontallyScrolling(true) }
         f.textSize = 17f
+        KeyFields.valueFont(f, k)
         val sensitive = k != Order.F_TITLE && k != Order.F_URL && k != Order.F_TAGS && k != Order.F_USER && k != Order.F_NOTES
         rowIndex++
         // URL open-in-browser removed (0.4.3); Pass gen removed (0.4.2).
@@ -459,7 +468,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             box.setLeftSwipeGlyph(Glyph(Glyph.Kind.OPEN, W.HILITE))
         }
         if (k == Order.F_PASS) {
-            f.typeface = android.graphics.Typeface.MONOSPACE
             io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, !passShown)
             box.onTap = { togglePass() }
             box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false) }

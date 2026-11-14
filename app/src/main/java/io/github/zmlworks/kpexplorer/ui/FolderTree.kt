@@ -38,7 +38,14 @@ class FolderTree(
      */
     private val onLongPress: ((UUID, Int, Int) -> Boolean)? = null,
     /** 0.4.23: folders not shown (the hidden recycle bin). */
-    private val hidden: Set<UUID> = emptySet()
+    private val hidden: Set<UUID> = emptySet(),
+    /**
+     * 0.4.24 "one cushion": asked before a tap (label or +/−) acts. True = the tap only cleared a selection
+     * elsewhere (the list) and does nothing here.
+     */
+    private val cushion: (() -> Boolean)? = null,
+    /** 0.4.24: rows alternate white / pale blue. */
+    private val striped: Boolean = false
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -78,12 +85,15 @@ class FolderTree(
 
     fun rebuild() {
         removeAllViews(); rows.clear()
-        for (n in flatten()) {
-            val v = Row(context, n).apply { tag = n.g.uuid }
+        for ((i, n) in flatten().withIndex()) {
+            val v = Row(context, n).apply { tag = n.g.uuid; if (striped) setBackgroundColor(stripe(i)) }
             rows.add(v)
             addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
         }
     }
+
+    /** Row background for row [i] (0 = root): white, pale blue, white … */
+    fun stripe(i: Int): Int = if (i % 2 == 0) W.WINDOW else STRIPE
 
     @SuppressLint("ViewConstructor")
     /** Icon bitmap used for the row of [id] (tests). */
@@ -205,7 +215,10 @@ class FolderTree(
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> { removeCallbacks(longRun); return true }
-                MotionEvent.ACTION_UP -> { removeCallbacks(longRun); if (longDone) { longDone = false; return true } }
+                MotionEvent.ACTION_UP -> {
+                    removeCallbacks(longRun); if (longDone) { longDone = false; return true }
+                    if (cushion?.invoke() == true) return true
+                }
                 else -> return true
             }
             val cx = n.depth * indent
@@ -230,6 +243,9 @@ class FolderTree(
         }
     }
 }
+
+/** 0.4.24: the pale blue of every other tree row (well apart from the navy selection and the current band). */
+const val STRIPE = 0xFFE8F1FB.toInt()
 
 /** 0.4.14: tree label — the root is always "/", whatever its group name in the file; unnamed folders "(名前なし)". */
 fun folderLabel(depth: Int, name: String): String = if (depth == 0) "/" else name.ifEmpty { L.t("(名前なし)", "(no name)") }

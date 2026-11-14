@@ -349,8 +349,8 @@ class Ux0423Test {
     @Test fun treeLongPress_menu_openAndShowAllBelow() {
         val ex = a.explorer!!; layoutHost()
         val g = ids["G"]!!
-        assertEquals(listOf("開く", "下部ファイルをすべて表示"), labels(ex.treeMenu(g)))
-        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする"), labels(ex.treeMenu(bin())))
+        assertEquals(listOf("開く", "下部ファイルをすべて表示"), labels(ex.treeMenu(g)).take(2))   // 0.4.24: more below
+        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする"), labels(ex.treeMenu(bin())).take(4))
         // a real long press on the 仕事 row: menu, no navigation, no drag
         val row = ex.folderTree!!.rows.first { it.tag == g }
         val l = IntArray(2); row.getLocationInWindow(l)
@@ -416,7 +416,7 @@ class Ux0423Test {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup(); idle()
         val act = ctl.get(); if (act.explorer == null) act.showExplorer(); idle()
         val ex = act.explorer!!
-        assertEquals(listOf("Open", "Show all files below"), labels(ex.treeMenu(ids["G"]!!)))
+        assertEquals(listOf("Open", "Show all files below"), labels(ex.treeMenu(ids["G"]!!)).take(2))
         ex.showAllBelow(ids["G"]!!); idle()
         assertEquals("All keys and memos under \"仕事\" (3)  ×", (findTag<View>(ex.view, "flat-band") as android.widget.TextView).text.toString())
         BinSettings.show(act); idle()

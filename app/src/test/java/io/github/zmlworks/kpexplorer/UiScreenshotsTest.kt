@@ -148,12 +148,13 @@ class UiScreenshotsTest {
         // tap: file selects, tap again opens; folder opens on one tap
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertEquals(ids["Wi-Fi (自宅)"], ex.selection)
-        val pv = findTag(a.host, "pass") as android.widget.TextView
+        val pv = findTag(a.host, "pass-value") as android.widget.TextView
+        val pt = findTag(a.host, "pass") as android.widget.TextView   // 0.4.24: 表示する / 隠す
         assertEquals("******", pv.transformationMethod.getTransformation(pv.text, pv).toString())
         save(shot(a.host), "02-main-selected.png")
-        pv.performClick()
+        pt.performClick()
         assertEquals(null, pv.transformationMethod)
-        pv.performClick()
+        pt.performClick()
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertTrue(a.screen is KeyScreen)
         a.showExplorer(); idle()

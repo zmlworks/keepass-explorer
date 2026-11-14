@@ -148,7 +148,7 @@ class Ux0415Test {
     }
 
     private val FIVE = listOf("名前の変更", "|", "切り取り", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除")
-    private val FOLDER = listOf("名前の変更", "|", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "|", "削除")
+    private val FOLDER = listOf("下部ファイルをすべて表示", "|", "名前の変更", "|", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "|", "削除")
     private val ICON_HEAD = listOf("表示: 詳細", "|")
     private val DETAIL_HEAD = listOf("表示: アイコン", "列の幅を元に戻す", "|")
     private fun tapAt(v: android.widget.AbsListView, id: UUID) { val (x, y) = cellCenter(v, id); touch(MotionEvent.ACTION_DOWN, x, y); touch(MotionEvent.ACTION_UP, x, y); idle(); layoutHost() }
@@ -162,7 +162,7 @@ class Ux0415Test {
         assertEquals(ICON_HEAD + FOLDER, labels(ex.itemMenu(row(ids["G"]!!))))
         val removed = listOf(s(R.string.open), s(R.string.move_earlier), s(R.string.move_later))
         assertTrue(labels(ex.itemMenu(row(ids["G"]!!))).none { it in removed })
-        assertEquals(ICON_HEAD + listOf("開く", "|", "ごみ箱を空にする"), labels(ex.itemMenu(row(Tree.recycleBinId(Session.db!!)!!))))
+        assertEquals(ICON_HEAD + listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする"), labels(ex.itemMenu(row(Tree.recycleBinId(Session.db!!)!!))))
         assertEquals(ICON_HEAD + listOf("貼り付け", "|", "新しいフォルダ", "新しい鍵", "新しいメモ"), labels(ex.backgroundMenu()))
         var p = longPressAt(grid(), ids["家のWi-Fi"]!!)
         shot("v0415/01-file-menu-icons.png", menuAt = p.left to p.top); Menus.dismiss(); idle()
@@ -194,7 +194,8 @@ class Ux0415Test {
         try {
             val m = ex.itemMenu(row(ids["G"]!!))
             assertEquals(ICON_HEAD + FOLDER, labels(m))
-            assertTrue(m.first().enabled); assertTrue(m.drop(2).filter { !it.sep }.none { it.enabled })
+            assertTrue(m.first().enabled); assertTrue("viewing stays", m[2].enabled)   // 0.4.24: 下部ファイルをすべて表示
+            assertTrue(m.drop(3).filter { !it.sep }.none { it.enabled })
         } finally { Session.exitTempView() }
     }
 

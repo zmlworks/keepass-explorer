@@ -162,6 +162,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
             if (multiLine) { minLines = 4; gravity = Gravity.TOP or Gravity.START }
             else { isSingleLine = true; setHorizontallyScrolling(true) }
             setText(if (isTags) tags else values[valueKey].orEmpty())
+            KeyFields.valueFont(this, layoutKey)
         }
         f.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}

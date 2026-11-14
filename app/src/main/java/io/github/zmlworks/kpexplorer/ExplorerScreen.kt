@@ -248,7 +248,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
-                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) })
+                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true)
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
@@ -341,14 +341,43 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return true
     }
 
+    /**
+     * 0.4.24: the path tree's folder menu, like the list's folder menu plus the commands that act "in" a folder.
+     * Root: open / show all / new / paste. Recycle bin: open / show all / empty / settings.
+     */
     fun treeMenu(gid: UUID): List<Menus.Item> {
         val d = db()
+        val g = Tree.findGroup(d, gid) ?: return emptyList()
+        val w = !Session.readOnlyTemp
+        val isRoot = gid == Tree.root(d).uuid
+        val inBin = Tree.isInRecycleBin(d, gid)
         val out = arrayListOf(
             Menus.Item(ctx.getString(R.string.open)) { navigate(gid) },
             Menus.Item(L.t("下部ファイルをすべて表示", "Show all files below")) { showAllBelow(gid) })
-        if (gid == Tree.recycleBinId(d) && !Session.readOnlyTemp) {
+        if (gid == Tree.recycleBinId(d)) {
             out.add(Menus.sep())
-            out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(d) > 0) { askEmptyBin() })
+            out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), w && Tree.recycleBinChildCount(d) > 0) { askEmptyBin() })
+            out.add(Menus.Item(L.t("ごみ箱の設定…", "Recycle Bin settings…"), w) { BinSettings.show(a) })
+            return out
+        }
+        if (inBin) {   // a folder inside the bin: as in the list
+            out.add(Menus.sep())
+            out.add(Menus.Item(ctx.getString(R.string.restore), w) { restoreItem(gid) })
+            out.add(Menus.Item(ctx.getString(R.string.delete_permanently), w) { askDelete(gid) })
+            return out
+        }
+        out.add(Menus.sep())
+        out.add(Menus.Item(ctx.getString(R.string.tool_new_folder), w) { navigate(gid); askNewFolder() })
+        out.add(Menus.Item(ctx.getString(R.string.tool_new_key), w) { navigate(gid); newKey() })
+        out.add(Menus.Item(ctx.getString(R.string.tool_new_memo), w) { navigate(gid); askNewMemo() })
+        out.add(Menus.sep())
+        if (!isRoot) out.add(Menus.Item(ctx.getString(R.string.rename), w) { rename(Order.Node.F(g)) })
+        if (!isRoot) out.add(Menus.Item(ctx.getString(R.string.cut), w) { cut(gid) })
+        out.add(Menus.Item(ctx.getString(R.string.paste_here), w && cut != null && cut != gid) { paste(gid) })
+        if (!isRoot) {
+            out.add(Menus.Item(ctx.getString(R.string.move_to_folder), w) { moveToDialog(gid) })
+            out.add(Menus.sep())
+            out.add(Menus.Item(ctx.getString(R.string.delete), w) { askDelete(gid) })
         }
         return out
     }
@@ -492,23 +521,43 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             row.addView(v, W.lp(0, W.WRAP, 1f))
             preview.addView(row, W.lp(W.MATCH, W.WRAP, b = 4))
         }
-        fun tv(s: String, mono: Boolean = false) = W.text(ctx, s, 14f).apply {
-            setTextIsSelectable(true); if (mono) typeface = android.graphics.Typeface.MONOSPACE
-        }
+        fun tv(s: String, k: String) = W.text(ctx, s, 14f).apply { setTextIsSelectable(true); KeyFields.valueFont(this, k) }
         for ((k, vis) in Order.layout(e)) {
             if (!vis) continue
             when (k) {
-                Order.F_TAGS -> kv(k, tv(Tree.formatTags(e.tags)))
+                Order.F_TAGS -> kv(k, tv(Tree.formatTags(e.tags), k))
                 Order.F_OTP -> Order.otpUri(e)?.let { u -> kv(L.t("ワンタイム:", "One-time:"), KeyFields.OtpView(ctx) { u }.apply { textSize = 15f }) }
-                Order.F_PASS -> kv(k, tv(Tree.password(e), mono = true).apply {
-                    // masked by default; tap = show / hide
-                    setTextIsSelectable(false); var shown = false
-                    io.github.zmlworks.kpexplorer.ui.FieldBox.mask(this, true); tag = "pass"
-                    isClickable = true; setOnClickListener { shown = !shown; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(this, !shown) }
-                })
-                else -> kv(k, tv(Order.string(e, k)))
+                Order.F_PASS -> kv(k, passPreview(Tree.password(e)))
+                else -> kv(k, tv(Order.string(e, k), k))
             }
         }
+    }
+
+    /**
+     * 0.4.24: the preview's password, masked; only the small 「表示する」/「隠す」 text toggles it (the whole value
+     * used to, and was tapped by mistake). The value itself is like the rest of the preview (tap = preview tap).
+     */
+    private fun passPreview(pw: String): View {
+        val box = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
+        val v = W.text(ctx, pw, 14f).apply { KeyFields.valueFont(this, Order.F_PASS); tag = "pass-value" }
+        io.github.zmlworks.kpexplorer.ui.FieldBox.mask(v, true)
+        box.addView(v, W.lp(0, W.WRAP, 1f))
+        if (pw.isEmpty()) return box
+        var shown = false
+        val t = W.text(ctx, L.t("表示する", "Show"), 14f, color = W.NAVY).apply {
+            tag = "pass"   // [PreviewBox]: a tap here is not a preview tap
+            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+            setPadding(W.dp(10), W.dp(4), W.dp(6), W.dp(4)); isClickable = true
+            contentDescription = L.t("パスワードを表示する", "Show the password")
+            setOnClickListener {
+                shown = !shown
+                io.github.zmlworks.kpexplorer.ui.FieldBox.mask(v, !shown)
+                text = if (shown) L.t("隠す", "Hide") else L.t("表示する", "Show")
+                contentDescription = if (shown) L.t("パスワードを隠す", "Hide the password") else L.t("パスワードを表示する", "Show the password")
+            }
+        }
+        box.addView(t, W.lp(W.WRAP, W.WRAP, l = 4))
+        return box
     }
 
     // ------------------------------------------------------------------ item views
@@ -600,6 +649,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /** Folder: open. Key / memo: first tap selects, tapping the selected item again opens it. Empty: deselect. */
     fun tap(r: Order.Node?) {
+        // 0.4.24 one cushion: the preview pane had the focus (dotted frame) → this tap only gives it back to the list
+        if (previewActive != null && previewActive == selection) { previewActive = null; highlightPreview(); return }
         previewActive = null
         when {
             r == null -> select(null)
@@ -637,6 +688,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (!Session.isOpen) return   // the menu can close after a lock
         updatePreview()
         if (selection != null) content.post { if (Session.isOpen) ensureSelectionVisible() }
+    }
+
+    /**
+     * 0.4.24 "one cushion": while a key / memo / folder is selected in the list (preview pane open), the first tap
+     * on the path tree only clears the selection; the tree acts on the next tap. Returns true when it used the tap.
+     */
+    fun cushionTap(): Boolean {
+        if (selection == null) return false
+        previewActive = null; select(null)
+        return true
     }
 
     fun select(id: UUID?) {
@@ -1254,6 +1315,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (inBin || binFolder) {
             // recycle bin and items inside it: as before (open / restore / delete permanently / empty)
             out.add(Menus.Item(ctx.getString(R.string.open)) { open(r) })
+            if (binFolder) out.add(Menus.Item(L.t("下部ファイルをすべて表示", "Show all files below")) { showAllBelow(r.uuid) })
             if (r is Order.Node.E && r.kind == Order.Kind.KEY) {
                 out.add(Menus.Item(ctx.getString(R.string.copy_username), Tree.userName(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_username), Tree.userName(r.e), false) })
                 out.add(Menus.Item(ctx.getString(R.string.copy_password), Tree.password(r.e).isNotEmpty()) { copy(ctx.getString(R.string.copy_password), Tree.password(r.e), true) })
@@ -1271,6 +1333,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         }
         // 0.4.15 folder menu: no 開く (tap twice) and no 前へ／後ろへ移動 (long press + drag)
         val w = !ro
+        // 0.4.24: as in the path tree's menu
+        out.add(Menus.Item(L.t("下部ファイルをすべて表示", "Show all files below")) { showAllBelow(r.uuid) })
+        out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.rename), w && !bin) { rename(r) })
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.cut), w && !bin) { cut(r.uuid) })
@@ -1415,7 +1480,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveToDialog(id: UUID) {
         val d = db()
         var target: UUID? = null
-        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id), hidden = Tree.hiddenGroups(d),
+        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id), hidden = Tree.hiddenGroups(d), striped = true,
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)
@@ -1448,6 +1513,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         else ctx.getString(R.string.quoted_name, label(r))
         val inBin = Tree.isInRecycleBin(d, id)
         val soft = d.content.meta.recycleBinEnabled && !inBin
+        // 0.4.24 (path tree menu): deleting the open folder or one above it → go to its parent first
+        val g = Tree.findGroup(d, id)
+        fun has(x: Group): Boolean = x.uuid == current || x.groups.any { has(it) }
+        val leaveTo = if (g != null && has(g)) Tree.parentOf(Tree.root(d), id)?.uuid else null
         fun perform() {
             val binName = ctx.getString(R.string.recycle_bin)
             Session.update {
@@ -1455,6 +1524,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 else Tree.deletePermanently(it, id)
             }
             if (cut == id) cut = null
+            if (leaveTo != null) { navigate(leaveTo); return }
             selection = null; refresh()
         }
         // Soft move-to-bin: no confirmation (t522u). Permanent / from-bin still confirms.
