@@ -239,8 +239,8 @@ object Order {
      * KDBX history entry that holds only what changed.
      *  - Title: always the title before the save (a label for KeePass / KeePassXC lists; a rename shows as old → new).
      *  - other string fields (UserName, Password, URL, custom fields, otp, TimeOtp-*, ...): only those whose value
-     *    changed, with the previous value and its protected flag; a field that was empty / absent before is kept as an
-     *    empty value (so "added" is visible). Unchanged fields are left out.
+     *    changed, with the previous value and its protected flag. Unchanged fields are left out, and so are fields that
+     *    were empty / absent before (0.4.21: no empty placeholders; a save that only adds fields keeps just the Title).
      *  - Notes: when changed, the 1-character-context change text of [MemoDiff.changeText] (protected stays protected).
      *  - Tags: the previous tags when they changed, otherwise none.
      *  - icon, colours and times as before; no CustomData (layout etc.), no attachments (never edited here), no history.
@@ -252,13 +252,12 @@ object Order {
             if (k == "Title") continue
             val ov = old.fields[k]?.content.orEmpty(); val nv = newFields[k]?.content.orEmpty()
             if (ov == nv) continue
-            val was = old.fields[k]
-            m[k] = when {
-                k == "Notes" -> MemoDiff.changeText(ov, nv).let { if (was is EntryValue.Encrypted) EntryValue.Encrypted(EncryptedValue.fromString(it)) else EntryValue.Plain(it) }
-                was != null -> was
-                newFields[k] is EntryValue.Encrypted -> EntryValue.Encrypted(EncryptedValue.fromString(""))
-                else -> EntryValue.Plain("")
-            }
+            // 0.4.21: a field that was empty or not there before is not stored (no empty placeholder): a save that
+            // only adds fields leaves a copy with just the Title (shown as 「項目の追加」)
+            if (ov.isEmpty()) continue
+            val was = old.fields[k]!!
+            m[k] = if (k == "Notes") MemoDiff.changeText(ov, nv).let { if (was is EntryValue.Encrypted) EntryValue.Encrypted(EncryptedValue.fromString(it)) else EntryValue.Plain(it) }
+                else was
         }
         return old.copy(fields = EntryFields(m), tags = if (old.tags != newTags) old.tags else emptyList(),
             customData = emptyMap(), binaries = emptyList(), history = emptyList(), autoType = null, previousParentGroup = null)

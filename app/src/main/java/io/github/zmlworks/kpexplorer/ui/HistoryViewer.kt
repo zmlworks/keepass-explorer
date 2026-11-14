@@ -110,7 +110,7 @@ object HistoryViewer {
 
     /**
      * 0.4.19: card of a changed-only copy ([Order.changedOnlyCopy]): the title (old → new on a rename), then each
-     * changed field with its previous value (「(空)」 = it was empty or not there), Memo as a coloured change, Tag.
+     * changed field with its previous value, Memo as a coloured change, Tag; 「項目の追加」 for fields that were added.
      */
     internal fun changedCard(ctx: Context, index: Int, modified: String, snap: Entry, newerTitle: String, onDelete: (() -> Unit)?): LinearLayout {
         val card = W.vbox(ctx).apply {
@@ -144,9 +144,18 @@ object HistoryViewer {
         }
         if (title != newerTitle) row("Title", "$title → $newerTitle", tagName = "changed-Title")
         val rank = mapOf("UserName" to 0, "Password" to 1, "URL" to 2, "Notes" to 9)
+        // 0.4.21: a field whose previous value is empty was added (filled in) by that save. Only the names are
+        // shown (the value is on the newer version). A copy with only an unchanged Title = fields were added
+        // (since 0.4.21 added fields are not stored, so their names are not known).
+        val added = snap.fields.entries.filter { it.key != "Title" && it.value.content.isEmpty() }.sortedBy { rank[it.key] ?: 5 }.map { label(it.key) }
+        val onlyTitle = snap.fields.keys.all { it == "Title" } && snap.tags.isEmpty() && title == newerTitle
+        if (added.isNotEmpty() || onlyTitle)
+            card.addView(W.text(ctx, L.t("項目の追加", "Fields added") + if (added.isEmpty()) "" else ": " + added.joinToString(L.t("、", ", ")), 14f)
+                .apply { tag = "changed-added" }, W.lp(W.MATCH, W.WRAP, t = 2))
         for ((k, v) in snap.fields.entries.sortedBy { rank[it.key] ?: 5 }) {
             if (k == "Title") continue
             val c = v.content
+            if (c.isEmpty()) continue
             when {
                 k == "Notes" -> row(label(k), MemoDiffViewer.colored(c).let { if (c.isEmpty()) L.t("(空)", "(empty)") else it }, tagName = "changed-Notes")
                 k == "Password" || k == Order.OTP || v is app.keemobile.kotpass.models.EntryValue.Encrypted ->

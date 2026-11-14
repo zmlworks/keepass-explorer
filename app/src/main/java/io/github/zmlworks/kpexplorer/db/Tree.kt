@@ -26,7 +26,6 @@ import java.util.UUID
  * edits push the old version to the entry History.
  */
 object Tree {
-    /** At most this many history copies per entry (0.4.16: 5; also written to Meta.HistoryMaxItems). */
     /** 0.4.20: KeePass default Meta.HistoryMaxItems for new databases (0.4.16–0.4.19 forced 5). */
     const val HISTORY_MAX = 10
 
@@ -35,14 +34,6 @@ object Tree {
      * The database's own value is used as it is (KeePass / KeePassXC users may have set it).
      */
     fun historyMax(db: KeePassDatabase): Int = db.content.meta.historyMaxItems.let { if (it < 0) Int.MAX_VALUE else it }
-
-    /**
-     * 0.4.20: 0.4.16–0.4.19 wrote HistoryMaxItems = 5 into the database; put back KeePass' default 10 once
-     * ([alreadyRestored] = done before on this device, so a 5 set later in KeePass is kept).
-     */
-    fun restoreHistoryMax(db: KeePassDatabase, alreadyRestored: Boolean, now: Instant = Instant.now()): KeePassDatabase =
-        if (alreadyRestored || db.content.meta.historyMaxItems != 5) db
-        else db.modifyContent { copy(meta = meta.copy(historyMaxItems = HISTORY_MAX, settingsChanged = now)) }
 
     /** Group CustomData key for the per-folder view override (icons / list / auto). */
     const val CD_VIEW = "KPExplorer.View"

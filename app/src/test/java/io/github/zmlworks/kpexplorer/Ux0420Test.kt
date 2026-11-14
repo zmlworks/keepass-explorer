@@ -267,21 +267,6 @@ class Ux0420Test {
         assertEquals(25, Tree.ensureRecycleBinAtRoot(Session.db!!, "ごみ箱").content.meta.historyMaxItems)
     }
 
-    @Test fun historyLimit_fiveWrittenBy0416to0419_isPutBackTo10_once() {
-        var d = Session.db!!.modifyContent { copy(meta = meta.copy(historyMaxItems = 5)) }
-        assertEquals(10, Tree.restoreHistoryMax(d, alreadyRestored = false).content.meta.historyMaxItems)
-        assertEquals("after the one-time fix a 5 set in KeePass stays", 5, Tree.restoreHistoryMax(d, alreadyRestored = true).content.meta.historyMaxItems)
-        d = d.modifyContent { copy(meta = meta.copy(historyMaxItems = 7)) }
-        assertEquals("other values are never touched", 7, Tree.restoreHistoryMax(d, alreadyRestored = false).content.meta.historyMaxItems)
-        // the real open path sets the flag
-        App.prefs(app()).edit().remove(Security.PREF_HIST_RESTORED).commit()
-        Security.opened(a, Session.db!!.modifyContent { copy(meta = meta.copy(historyMaxItems = 5)) }); idle()
-        assertEquals(10, Session.db!!.content.meta.historyMaxItems)
-        assertTrue(App.prefs(app()).getBoolean(Security.PREF_HIST_RESTORED, false))
-        Security.opened(a, Session.db!!.modifyContent { copy(meta = meta.copy(historyMaxItems = 5)) }); idle()
-        assertEquals(5, Session.db!!.content.meta.historyMaxItems)
-    }
-
     // ---------------------------------------------------------------- 4 「- 履歴」 at the right edge
     @Test fun keyPage_historyLinkAtRightEdge() {
         val id = ids["Gmail"]!!

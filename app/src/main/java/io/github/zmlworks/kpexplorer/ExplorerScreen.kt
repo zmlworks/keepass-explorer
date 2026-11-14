@@ -702,7 +702,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     setPadding(W.dp(2), W.dp(1), W.dp(2), W.dp(1))
                     if (sel) setBackgroundColor(W.NAVY)
                 }, W.lp(W.WRAP, W.WRAP, t = 2))
-                drop?.takeIf { it.target == r.uuid }?.let { cell.foreground = Marker(it.mode, false) }
+                drop?.takeIf { it.target == r.uuid && !it.pathFolder }?.let { cell.foreground = Marker(it.mode, false) }
                 cell.layoutParams = AbsListView.LayoutParams(W.MATCH, W.dp(32) * iconScale / 2 + W.dp(48))
                 return cell
             }
@@ -878,7 +878,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 row.addView(W.text(ctx, t?.let { dateFmt.format(it) } ?: "", 13f).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, 0, 0) },
                     W.lp(0, W.WRAP, 1f))
-                drop?.takeIf { it.target == r.uuid }?.let { row.foreground = Marker(it.mode, true) }
+                drop?.takeIf { it.target == r.uuid && !it.pathFolder }?.let { row.foreground = Marker(it.mode, true) }
                 return row
             }
         }
@@ -953,9 +953,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun hit(dragged: UUID, rx: Float, ry: Float): Drop? {
         val binDrag = dragged == Tree.recycleBinId(db())
+        // 0.4.21: the path tree sits in a scroll box (at most 30 % of the screen). Rows scrolled out of that box
+        // still have screen positions — below it they lie over the item list — so only the visible part counts.
+        // (Before, a hidden row (usually the recycle bin, the last row) caught drops in the middle of the list.)
+        val box = (pathBox.getChildAt(0) as? ScrollView)?.takeIf { it.isShown }
+        val bl = IntArray(2); box?.getLocationOnScreen(bl)
+        val inBox = box != null && rx >= bl[0] && rx < bl[0] + box.width && ry >= bl[1] && ry < bl[1] + box.height
         for (line in pathLines) {
+            if (binDrag || !inBox || !line.isShown) continue
             val l = IntArray(2); line.getLocationOnScreen(l)
-            if (binDrag) continue
             if (rx >= l[0] && rx < l[0] + line.width && ry >= l[1] && ry < l[1] + line.height) {
                 val id = line.tag as UUID
                 return if (id == current) null else Drop(Drop.Mode.INTO, id, pathFolder = true)

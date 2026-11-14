@@ -38,18 +38,11 @@ object Security {
         }
     }
 
-    /** 0.4.20: HistoryMaxItems 5 → 10 done once on this device. */
-    const val PREF_HIST_RESTORED = "historyMaxRestored"
-
-    /** Session start; HistoryMaxItems + recycle bin enabled (localized bin name, stable UUID). */
+    /** Session start; recycle bin enabled (localized bin name, stable UUID). */
     fun opened(a: MainActivity, db: KeePassDatabase) {
         Session.open(db)
         val binName = a.getString(R.string.recycle_bin)
-        val prefs = App.prefs(a)
-        val restored = prefs.getBoolean(PREF_HIST_RESTORED, false)
-        Session.update { Order.migrateMemoDiffs(Order.dropEmptyCreationHistory(
-            Tree.restoreHistoryMax(Tree.ensureRecycleBinAtRoot(it, binName), restored))) }
-        if (!restored) prefs.edit().putBoolean(PREF_HIST_RESTORED, true).apply()
+        Session.update { Order.migrateMemoDiffs(Order.dropEmptyCreationHistory(Tree.ensureRecycleBinAtRoot(it, binName))) }
     }
 
     /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */

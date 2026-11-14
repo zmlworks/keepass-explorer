@@ -202,8 +202,9 @@ class Ux0419Test {
         Session.update { Order.saveEntry(it, id, cur().filterKeys { it != "部署" && it != Order.OTP } + ("会員番号" to "A-1"), listOf("mail", "仕事"), null,
             removed = setOf(Order.OTP)) }
         h = hist(id).last()
-        assertEquals(setOf("Title", "部署", "会員番号", Order.OTP), h.fields.keys)
-        assertEquals("営業", f(h, "部署")!!.content); assertEquals("", f(h, "会員番号")!!.content)
+        // 0.4.21: the added 会員番号 is not stored (no empty placeholder)
+        assertEquals(setOf("Title", "部署", Order.OTP), h.fields.keys)
+        assertEquals("営業", f(h, "部署")!!.content); assertNull(f(h, "会員番号"))
         assertTrue(f(h, Order.OTP)!!.content.startsWith("otpauth://")); assertTrue(f(h, Order.OTP) is app.keemobile.kotpass.models.EntryValue.Encrypted)
         // 4) rename only → just the old title
         Session.update { Order.renameEntry(it, id, "Gmail (個人)") }
