@@ -38,11 +38,11 @@ object Security {
         }
     }
 
-    /** Session start; recycle bin enabled (localized bin name, stable UUID). */
+    /** Session start; recycle bin set up when the database uses one, old bin items auto-deleted when set (localized bin name, stable UUID). */
     fun opened(a: MainActivity, db: KeePassDatabase) {
         Session.open(db)
         val binName = a.getString(R.string.recycle_bin)
-        Session.update { Tree.ensureRecycleBinAtRoot(it, binName) }
+        Session.update { Tree.purgeOldInBin(Tree.ensureRecycleBinAtRoot(it, binName)) }   // 0.4.23: + auto-delete by days
     }
 
     /** OS prompt → wrapped composite key → open. [onLost]: the wrapped key is unusable, ask for the master password. */

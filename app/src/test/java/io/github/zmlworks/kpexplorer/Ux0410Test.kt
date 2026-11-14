@@ -137,8 +137,10 @@ class Ux0410Test {
         val bin = Tree.recycleBinId(Session.db!!)!!
         val tree = ex.folderTree!!
         Menus.lastView = null
-        assertFalse("other folders: no long-press menu (tap still opens)", tree.longPress(ids["G"]!!))
-        assertNull(Menus.lastView)
+        // 0.4.23: other folders have a menu too (開く / 下部ファイルをすべて表示), without the bin item
+        assertTrue(tree.longPress(ids["G"]!!)); idle()
+        assertFalse(texts(Menus.lastView!!).any { it.startsWith(app().getString(R.string.empty_recycle_bin)) })
+        Menus.dismiss(); Menus.lastView = null
         assertTrue(tree.longPress(bin)); idle()
         val items = texts(Menus.lastView!!)
         assertTrue(items.toString(), items.any { it.startsWith(app().getString(R.string.empty_recycle_bin)) })

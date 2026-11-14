@@ -394,16 +394,16 @@ class Ux0420Test {
         val bt = texts(a.host)
         assertTrue(bt.toString(), bt.any { it.startsWith("$dmy ") && Regex("""\d\d/\d\d/\d{4} \d\d:\d\d""").matches(it) })
         assertTrue("Japanese still", bt.contains("今すぐ作成"))
-        // menu: three date entries with today's example, one checked
-        val m = a.explorer!!.mainMenu().filter { it.label.startsWith("日付: ") }
-        assertEquals(3, m.size); assertEquals(listOf("日付: $dmy"), m.filter { it.checked }.map { it.label })
+        // menu (0.4.23: one row showing the current format)
+        val m = labels(a.explorer!!.mainMenu()).filter { it.startsWith("日付: ") }
+        assertEquals(listOf("日付: DD/MM/YYYY"), m)
     }
 
     @Test fun languageSetting_persists_andSystemDefault() {
         assertEquals(L.Lang.SYSTEM, L.lang)
         assertFalse("this test device is Japanese", L.en)
         val m = labels(a.explorer!!.mainMenu())
-        assertTrue(m.toString(), m.containsAll(listOf("言語: 端末に合わせる", "言語: 日本語", "言語: English")))
+        assertTrue(m.toString(), m.contains("言語: 端末に合わせる") && m.count { it.startsWith("言語: ") } == 1)
         L.setLang(app(), L.Lang.EN)
         L.load(app()); assertEquals(L.Lang.EN, L.lang)
         assertEquals("en", App.prefs(app()).getString(L.PREF_LANG, null))

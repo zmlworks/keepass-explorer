@@ -103,6 +103,20 @@ object Dlg {
         return d
     }
 
+    /** 0.4.23: one-of-N choice (radio buttons); tapping an option applies it and closes the box. */
+    fun choose(ctx: Context, title: String, options: List<String>, selected: Int, onPick: (Int) -> Unit): ClassicDialog {
+        val rg = android.widget.RadioGroup(ctx)
+        lateinit var d: ClassicDialog
+        options.forEachIndexed { i, s ->
+            val r = W.radio(ctx, s, i == selected).apply { id = View.generateViewId(); tag = "pick-$i" }
+            r.setOnClickListener { d.dismiss(); if (i != selected) onPick(i) }
+            rg.addView(r, W.lp(W.MATCH, W.WRAP))
+        }
+        d = ClassicDialog(ctx, title, rg, listOf(ClassicDialog.Btn(L.t("キャンセル", "Cancel")) { true }))
+        d.show(); last = d
+        return d
+    }
+
     /** Non-cancelable "working…" box with a classic block progress bar. */
     fun busy(ctx: Context, title: String, msg: String): ClassicDialog {
         val col = W.vbox(ctx)

@@ -287,9 +287,20 @@ object Order {
     }
 
     /** Folder counts as shown in the tree and paths (0.4.18): "(folders,keys,memos)", zeros included. */
-    fun counts(g: Group): String {
+    fun counts(g: Group, hidden: Set<UUID> = emptySet()): String {
         val m = g.entries.count { isMemo(it) }
-        return "(${g.groups.size},${g.entries.size - m},$m)"
+        return "(${g.groups.count { it.uuid !in hidden }},${g.entries.size - m},$m)"
+    }
+
+    /**
+     * 0.4.23: every key and memo below [g] (all levels), in display order, depth first (a folder's items where
+     * the folder is). Folders in [skip] (the recycle bin) are left out.
+     */
+    fun subtreeEntries(g: Group, skip: Set<UUID> = emptySet()): List<Node.E> = children(g).flatMap { n ->
+        when (n) {
+            is Node.E -> listOf(n)
+            is Node.F -> if (n.uuid in skip) emptyList() else subtreeEntries(n.g, skip)
+        }
     }
 
     fun renameEntry(db: KeePassDatabase, id: UUID, title: String): KeePassDatabase {

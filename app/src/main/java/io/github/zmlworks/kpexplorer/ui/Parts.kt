@@ -40,7 +40,7 @@ object Parts {
             row.addView(W.text(ctx, name, 15f, bold = i == path.size - 1).apply { isSingleLine = true; ellipsize = TextUtils.TruncateAt.END },
                 W.lp(W.WRAP, W.WRAP))
             if (showCounts) {
-                row.addView(W.text(ctx, " " + io.github.zmlworks.kpexplorer.db.Order.counts(g), 13f, color = W.SHADOW).apply { isSingleLine = true; tag = "count" },
+                row.addView(W.text(ctx, " " + io.github.zmlworks.kpexplorer.db.Order.counts(g, io.github.zmlworks.kpexplorer.Session.db?.let { io.github.zmlworks.kpexplorer.db.Tree.hiddenGroups(it) }.orEmpty()), 13f, color = W.SHADOW).apply { isSingleLine = true; tag = "count" },
                     W.lp(0, W.WRAP, 1f))
             }
             if (onTap != null) { row.isClickable = true; row.background = W.Bevel(W.Style.NONE); row.setOnClickListener { onTap(g) } }

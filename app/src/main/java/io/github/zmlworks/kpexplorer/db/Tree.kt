@@ -305,24 +305,15 @@ object Tree {
         reparentRecycleBinToRoot(ensureRecycleBin(db, displayName, now), now)
 
     /**
-     * Ensure Meta.recycleBinEnabled and a real Recycle Bin group exist.
-     * Identity is [Meta.recycleBinUuid] (stable across locale renames).
-     * [displayName] is applied so the tree shows the localized label without creating a second bin.
+     * A real Recycle Bin group exists when the database uses one (Meta.recycleBinEnabled). Identity is
+     * [Meta.recycleBinUuid]; [displayName] is used only when the group has to be created.
+     * 0.4.23: the bin is no longer renamed to the app's language on every open, and Meta.recycleBinEnabled is no
+     * longer forced on: a database that deletes immediately (KeePass "use recycle bin" off) stays that way.
      */
     fun ensureRecycleBin(db: KeePassDatabase, displayName: String, now: Instant = Instant.now()): KeePassDatabase {
         var out = db
-        val meta = out.content.meta
-        // 0.4.20: HistoryMaxItems is left as the database has it (KeePass standard)
-        if (!meta.recycleBinEnabled) {
-            out = out.modifyContent { copy(meta = meta.copy(recycleBinEnabled = true, settingsChanged = now)) }
-        }
-        val existing = recycleBinId(out)?.let { findGroup(out, it) }
-        if (existing != null) {
-            if (existing.name != displayName) {
-                out = renameGroup(out, existing.uuid, displayName, now)
-            }
-            return out
-        }
+        if (!out.content.meta.recycleBinEnabled) return out
+        if (recycleBinId(out)?.let { findGroup(out, it) } != null) return out
         // Create bin under root with a fresh UUID and wire Meta.recycleBinUuid.
         val bin = Group(
             uuid = UUID.randomUUID(),
@@ -361,6 +352,59 @@ object Tree {
             rootG.copy(groups = rootG.groups + relocated)
         }
         return db.modifyContent { copy(group = nr) }
+    }
+
+    // ---------------------------------------------------------------- 0.4.23 recycle bin settings
+
+    /** Database (Meta) CustomData: the bin is not shown in the tree / list (still opened from the menu). */
+    const val CD_BIN_HIDDEN = "KPExplorer.RecycleBinHidden"
+    /** Database (Meta) CustomData: items in the bin longer than this many days are deleted permanently on open. */
+    const val CD_BIN_DAYS = "KPExplorer.RecycleBinAutoDeleteDays"
+
+    private fun setMetaCd(db: KeePassDatabase, key: String, value: String?, now: Instant): KeePassDatabase = db.modifyContent {
+        val cd = if (value == null) meta.customData - key else meta.customData + (key to CustomDataValue(value, now))
+        copy(meta = meta.copy(customData = cd, settingsChanged = now))
+    }
+
+    fun binHidden(db: KeePassDatabase): Boolean = db.content.meta.customData[CD_BIN_HIDDEN]?.value == "true"
+    fun setBinHidden(db: KeePassDatabase, hidden: Boolean, now: Instant = Instant.now()): KeePassDatabase =
+        if (binHidden(db) == hidden) db else setMetaCd(db, CD_BIN_HIDDEN, if (hidden) "true" else null, now)
+
+    /** Groups not to show in the tree / list: the hidden bin, unless [current] is the bin or inside it. */
+    fun hiddenGroups(db: KeePassDatabase, current: UUID? = null): Set<UUID> {
+        val bin = recycleBinId(db) ?: return emptySet()
+        if (!binHidden(db)) return emptySet()
+        if (current != null && isInRecycleBin(db, current)) return emptySet()
+        return setOf(bin)
+    }
+
+    /** 0 = off. */
+    fun binAutoDeleteDays(db: KeePassDatabase): Int = db.content.meta.customData[CD_BIN_DAYS]?.value?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+    fun setBinAutoDeleteDays(db: KeePassDatabase, days: Int, now: Instant = Instant.now()): KeePassDatabase =
+        if (binAutoDeleteDays(db) == days) db else setMetaCd(db, CD_BIN_DAYS, if (days > 0) days.toString() else null, now)
+
+    /**
+     * Permanently deletes the items directly in the bin that went there more than [binAutoDeleteDays] days ago
+     * (the time it was moved = LocationChanged, else Last Modified). Runs whenever the database is opened and
+     * when the setting changes. Nothing to do → the same database.
+     */
+    fun purgeOldInBin(db: KeePassDatabase, now: Instant = Instant.now()): KeePassDatabase {
+        val days = binAutoDeleteDays(db)
+        if (days <= 0) return db
+        val bin = recycleBinId(db)?.let { findGroup(db, it) } ?: return db
+        val limit = now.minus(java.time.Duration.ofDays(days.toLong()))
+        fun old(t: TimeData?) = (t?.locationChanged ?: t?.lastModificationTime)?.isBefore(limit) == true
+        val ids = bin.groups.filter { old(it.times) }.map { it.uuid } + bin.entries.filter { old(it.times) }.map { it.uuid }
+        var out = db
+        for (id in ids) out = deletePermanently(out, id, now)
+        return out
+    }
+
+    /** KeePass "use recycle bin": off = delete permanently at once. On again creates the bin when missing. */
+    fun setRecycleBinEnabled(db: KeePassDatabase, on: Boolean, displayName: String, now: Instant = Instant.now()): KeePassDatabase {
+        var out = db
+        if (out.content.meta.recycleBinEnabled != on) out = out.modifyContent { copy(meta = meta.copy(recycleBinEnabled = on, settingsChanged = now)) }
+        return if (on) ensureRecycleBinAtRoot(out, displayName, now) else out
     }
 
     /** Move [id] into the recycle bin (creates bin if needed). Refuses root and the bin itself. */

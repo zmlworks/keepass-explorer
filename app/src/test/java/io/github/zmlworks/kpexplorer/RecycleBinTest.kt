@@ -12,14 +12,15 @@ import java.util.UUID
 class RecycleBinTest {
     private fun db() = Kdbx.create("t", Kdbx.compositeKey("pw-recycle-bin-test"), rootName = "")
 
-    @Test fun ensureCreatesStableUuidAcrossRename() {
+    /** 0.4.23: the bin is never renamed automatically (language change); its name is the user's. */
+    @Test fun ensureCreatesStableUuid_andKeepsTheName() {
         var d = db()
         d = Tree.ensureRecycleBin(d, "ごみ箱")
         val id1 = Tree.recycleBinId(d)!!
         d = Tree.ensureRecycleBin(d, "Recycle Bin")
         val id2 = Tree.recycleBinId(d)!!
         assertEquals(id1, id2)
-        assertEquals("Recycle Bin", Tree.findGroup(d, id2)!!.name)
+        assertEquals("ごみ箱", Tree.findGroup(d, id2)!!.name)
         val bins = Tree.root(d).groups.filter { it.uuid == id2 }
         assertEquals(1, bins.size)
     }

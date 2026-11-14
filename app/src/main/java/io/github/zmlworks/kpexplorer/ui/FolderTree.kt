@@ -36,7 +36,9 @@ class FolderTree(
      * 0.4.10: long press on a row (screen x, y). Return true when a menu was shown; the release is then
      * ignored (no navigation). Returning false keeps the normal tap behaviour on release.
      */
-    private val onLongPress: ((UUID, Int, Int) -> Boolean)? = null
+    private val onLongPress: ((UUID, Int, Int) -> Boolean)? = null,
+    /** 0.4.23: folders not shown (the hidden recycle bin). */
+    private val hidden: Set<UUID> = emptySet()
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -67,7 +69,8 @@ class FolderTree(
         fun walk(g: Group, depth: Int, flags: List<Boolean>, last: Boolean) {
             out.add(Node(g, depth, flags, last))
             if (!isExpanded(g)) return
-            g.groups.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == g.groups.size - 1) }
+            val kids = g.groups.filter { it.uuid !in hidden }
+            kids.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == kids.size - 1) }
         }
         walk(root, 0, emptyList(), true)
         return out
@@ -106,7 +109,7 @@ class FolderTree(
             n.g.uuid == binId -> Px.bin16
             else -> Px.folder16
         }
-        val hasKids = n.g.groups.isNotEmpty()
+        val hasKids = n.g.groups.any { it.uuid !in hidden }
 
         /** Test hook: same as a tap on the label. */
         fun tapLabel() { val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, width - 1f, height / 2f, 0); onTouchEvent(e); e.recycle() }
@@ -170,7 +173,7 @@ class FolderTree(
             c.drawText(label, tx.toFloat(), cy + W.dp(5).toFloat(), p)
             if (showCounts) {
                 val cp = Paint(p).apply { color = W.SHADOW; isFakeBoldText = false; textSize = W.dp(13).toFloat() }
-                c.drawText(" " + io.github.zmlworks.kpexplorer.db.Order.counts(n.g), tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
+                c.drawText(" " + io.github.zmlworks.kpexplorer.db.Order.counts(n.g, hidden), tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
             }
         }
 

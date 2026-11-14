@@ -59,6 +59,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     var cut: UUID? = null
     var search: String? = null
         private set
+    /** 0.4.23: 「下部ファイルをすべて表示」 — every key / memo below [current] is listed (tree long-press menu). */
+    var flat = false
+        private set
 
     private val frame = FrameLayout(ctx)
     private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
@@ -66,6 +69,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     lateinit var caption: W.Caption
         private set
     private val pathBox = FrameLayout(ctx)
+    /** 0.4.23: shown under the path tree in 「下部ファイルをすべて表示」; tap = back to the folder view. */
+    private val flatBand = W.text(ctx, "", 14f, true, W.NAVY).apply {
+        tag = "flat-band"; setPadding(W.dp(8), W.dp(5), W.dp(8), W.dp(5)); setBackgroundColor(W.FACE); visibility = View.GONE
+        contentDescription = L.t("フォルダーの表示に戻す", "Back to the folder view"); isClickable = true
+        setOnClickListener { exitFlat() }
+    }
     private val tempBanner = W.hbox(ctx).apply {
         setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
         setBackgroundColor(W.BAND_SEPIA)
@@ -172,6 +181,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         root.addView(searchPanel, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, t = 2))
         pathBox.background = W.Bevel(W.Style.FIELD)
         root.addView(pathBox, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, t = 2, b = 2))
+        root.addView(flatBand, W.lp(W.MATCH, W.WRAP, l = 2, r = 2, b = 2))
 
         content.background = W.Bevel(W.Style.FIELD)
         content.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
@@ -229,9 +239,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 tg.takeIf { it.isNotEmpty() }?.let { L.t("タグ: ${it.joinToString(" + ")}", "Tags: ${it.joinToString(" + ")}") }).joinToString("  ")
             pathBox.addView(W.text(ctx, if (q.isEmpty()) L.t("文字を入力するか、タグを選んでください", "Type some text or pick a tag") else L.t("検索結果 ${rows.size} 件  $desc", "${rows.size} results  $desc"), 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
         } else {
-            rows = Order.children(g)
-            caption.title.text = "${groupLabel(g)} - KeePass Explorer"
-            val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d),
+            val hidden = Tree.hiddenGroups(d, g.uuid)
+            val bin = Tree.recycleBinId(d)
+            rows = if (flat) Order.subtreeEntries(g, if (bin != null && g.uuid != bin) setOf(bin) else emptySet())
+                else Order.children(g).filter { it.uuid !in hidden }
+            caption.title.text = if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
+                else "${groupLabel(g)} - KeePass Explorer"
+            val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
                 onLongPress = { gid, x, y -> pathLongPress(gid, x, y) })
@@ -244,9 +258,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             pathBox.addView(MaxScroll(ctx, (ctx.resources.displayMetrics.heightPixels * 0.3f).toInt()).apply {
                 W.classicScrollbars(this); addView(tree) })
             post { folderTree?.rows?.firstOrNull { it.tag == g.uuid }?.let { v -> (pathBox.getChildAt(0) as? ScrollView)?.scrollTo(0, maxOf(0, v.top - W.dp(32))) } }
+            flatBand.visibility = if (flat) View.VISIBLE else View.GONE
+            if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
         searchPanel.visibility = if (q != null) View.VISIBLE else View.GONE
+        if (q != null) flatBand.visibility = View.GONE
         if (selection != null && rows.none { it.uuid == selection }) selection = null
         if (cut != null && Tree.parentOf(Tree.root(d), cut!!) == null) cut = null
         content.removeAllViews()
@@ -269,9 +286,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         }
         val ro = Session.readOnlyTemp
         val isRoot = current == Tree.root(d).uuid && search == null
-        en("back", history.isNotEmpty() || search != null)
-        en("up", !isRoot)
-        en("newFolder", search == null && !ro); en("newKey", search == null && !ro); en("newMemo", search == null && !ro)
+        en("back", history.isNotEmpty() || search != null || flat)
+        en("up", !isRoot || flat)
+        en("newFolder", search == null && !flat && !ro); en("newKey", search == null && !ro); en("newMemo", search == null && !ro)
         en("save", !ro)
         // Temp banner
         if (ro) {
@@ -315,12 +332,25 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * 0.4.10: long press in the path tree. Only the recycle bin has a menu there (the same one as its icon in
      * the list: 開く / ごみ箱を空にする); other folders keep tap-to-open on release.
      */
+    /**
+     * 0.4.23: long press on a folder of the path tree: 開く (= one tap) and 下部ファイルをすべて表示; the recycle bin
+     * also offers 空にする.
+     */
     fun pathLongPress(gid: UUID, x: Int, y: Int): Boolean {
-        val d = db()
-        if (gid != Tree.recycleBinId(d)) return false
-        val g = Tree.findGroup(d, gid) ?: return false
-        Menus.at(pathBox, x, y, itemMenu(Order.Node.F(g)))
+        Menus.at(pathBox, x, y, treeMenu(gid))
         return true
+    }
+
+    fun treeMenu(gid: UUID): List<Menus.Item> {
+        val d = db()
+        val out = arrayListOf(
+            Menus.Item(ctx.getString(R.string.open)) { navigate(gid) },
+            Menus.Item(L.t("下部ファイルをすべて表示", "Show all files below")) { showAllBelow(gid) })
+        if (gid == Tree.recycleBinId(d) && !Session.readOnlyTemp) {
+            out.add(Menus.sep())
+            out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(d) > 0) { askEmptyBin() })
+        }
+        return out
     }
     private fun post(f: () -> Unit) { pathBox.post(f) }
 
@@ -990,6 +1020,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 if (best >= 0 && bestD <= (W.dp(12) * W.dp(12)).toFloat()) pos = v.firstVisiblePosition + best
             }
         }
+        // 0.4.23: the flat list (items of many folders) has no order of its own: drop only on the path tree
+        if (flat && search == null) return null
         val r = rowAt(v, pos) ?: return if (search == null) Drop(Drop.Mode.END, null) else null
         if (search != null) return if (!binDrag && r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
         if (r.uuid == dragged) return null
@@ -1025,16 +1057,27 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     // ------------------------------------------------------------------ navigation
 
     fun navigate(id: UUID, push: Boolean = true) {
-        if (search == null && id == current) return
-        if (push) { history.add(current); if (history.size > 50) history.removeAt(0) }
-        search = null
+        if (search == null && id == current && !flat) return
+        if (push && id != current) { history.add(current); if (history.size > 50) history.removeAt(0) }
+        search = null; flat = false
         current = id
         selection = null
         refresh()
     }
 
+    /** 0.4.23: list every key / memo below folder [id] (as if it were one folder). */
+    fun showAllBelow(id: UUID) {
+        if (Tree.findGroup(db(), id) == null) return
+        if (id != current) { history.add(current); if (history.size > 50) history.removeAt(0) }
+        search = null; current = id; selection = null; flat = true
+        refresh()
+    }
+
+    fun exitFlat() { if (!flat) return; flat = false; selection = null; refresh() }
+
     fun goUp() {
         if (search != null) { search = null; refresh(); return }
+        if (flat) { exitFlat(); return }
         val p = Tree.parentOf(Tree.root(db()), current) ?: return
         val from = current
         navigate(p.uuid)
@@ -1043,12 +1086,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun goBack() {
         if (search != null) { search = null; refresh(); return }
+        if (flat) { exitFlat(); return }
         val prev = history.removeLastOrNull() ?: return
         if (Tree.findGroup(db(), prev) != null) navigate(prev, push = false) else goBack()
     }
 
     override fun onBack(): Boolean {
         if (search != null) { search = null; refresh(); return true }
+        if (flat) { exitFlat(); return true }
         if (current != Tree.root(db()).uuid) { goUp(); return true }
         if (Session.readOnlyTemp) { TempImport.exitTemp(a); return true }
         return false
@@ -1159,24 +1204,43 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.menu_secure_screen), checked = p.getBoolean("secure", true)) {
             p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
         })
-        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_now), checked = lockMin == 0) { p.edit().putInt("autolock", 0).apply() })
-        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_5), checked = lockMin == 5) { p.edit().putInt("autolock", 5).apply() })
-        out.add(Menus.Item(ctx.getString(R.string.menu_autolock_never), checked = lockMin < 0) { p.edit().putInt("autolock", -1).apply() })
+        // 0.4.23: one row per setting; tap → choose
+        out.add(Menus.Item(ctx.getString(when { lockMin == 0 -> R.string.menu_autolock_now; lockMin < 0 -> R.string.menu_autolock_never; else -> R.string.menu_autolock_5 })) { pickAutoLock() })
+        out.add(Menus.Item(L.t("言語: ", "Language: ") + langName(L.lang)) { pickLanguage() })
+        out.add(Menus.Item(L.t("日付: ", "Date: ") + dateName(L.dateOrder)) { pickDateOrder() })
         out.add(Menus.sep())
-        // 0.4.20: display language and date order
-        for ((l, name) in listOf(L.Lang.SYSTEM to L.t("言語: 端末に合わせる", "Language: system"), L.Lang.JA to L.t("言語: 日本語", "Language: 日本語"),
-                L.Lang.EN to L.t("言語: English", "Language: English")))
-            out.add(Menus.Item(name, checked = L.lang == l) { a.setLanguage(l) })
-        val today = java.time.Instant.now()
-        for (d in L.DateOrder.entries) {
-            val ex = java.time.format.DateTimeFormatter.ofPattern(d.pattern).withZone(java.time.ZoneId.systemDefault()).format(today)
-            out.add(Menus.Item(L.t("日付: ", "Date: ") + ex, checked = L.dateOrder == d) { L.setDateOrder(ctx, d); refresh() })
-        }
+        val bin = Tree.recycleBinId(db())?.takeIf { Tree.findGroup(db(), it) != null }
+        out.add(Menus.Item(L.t("ごみ箱を開く", "Open Recycle Bin"), bin != null) { bin?.let { navigate(it) } })
+        out.add(Menus.Item(L.t("ごみ箱の設定…", "Recycle Bin settings…"), !ro) { BinSettings.show(a) })
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.menu_usage)) { Help.usage(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_about)) { Help.about(a) })
         return out
+    }
+
+    fun langName(l: L.Lang) = when (l) { L.Lang.SYSTEM -> L.t("端末に合わせる", "System"); L.Lang.JA -> "日本語"; L.Lang.EN -> "English" }
+    fun dateName(d: L.DateOrder) = when (d) { L.DateOrder.YMD -> "YYYY/MM/DD"; L.DateOrder.MDY -> "MM/DD/YYYY"; L.DateOrder.DMY -> "DD/MM/YYYY" }
+
+    fun pickLanguage(): ClassicDialog {
+        val all = L.Lang.entries
+        return Dlg.choose(ctx, L.t("言語", "Language"), all.map { langName(it) }, all.indexOf(L.lang)) { a.setLanguage(all[it]) }
+    }
+
+    fun pickDateOrder(): ClassicDialog {
+        val all = L.DateOrder.entries
+        val today = java.time.Instant.now()
+        return Dlg.choose(ctx, L.t("日付の表示", "Date format"),
+            all.map { dateName(it) + "  (" + java.time.format.DateTimeFormatter.ofPattern(it.pattern).withZone(java.time.ZoneId.systemDefault()).format(today) + ")" },
+            all.indexOf(L.dateOrder)) { L.setDateOrder(ctx, all[it]); refresh() }
+    }
+
+    fun pickAutoLock(): ClassicDialog {
+        val vals = listOf(0, 5, -1)
+        val cur = a.autoLockMinutes().let { if (it < 0) -1 else if (it == 0) 0 else 5 }
+        return Dlg.choose(ctx, L.t("自動ロック", "Auto-lock"),
+            listOf(L.t("すぐ (アプリを離れたとき)", "Immediately (when leaving the app)"), L.t("5 分後", "After 5 minutes"), L.t("しない", "Never")),
+            vals.indexOf(cur)) { App.prefs(ctx).edit().putInt("autolock", vals[it]).apply() }
     }
 
     fun itemMenu(r: Order.Node): List<Menus.Item> {
@@ -1254,7 +1318,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) }) +
             (if (cut != null) listOf(Menus.Item(ctx.getString(R.string.cancel_cut)) { cancelCut() }) else emptyList()) + listOf(
             Menus.sep(),
-            Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !ro) { askNewFolder() },
+            Menus.Item(ctx.getString(R.string.tool_new_folder), ns && !flat && !ro) { askNewFolder() },
             Menus.Item(ctx.getString(R.string.tool_new_key), ns && !ro) { newKey() },
             Menus.Item(ctx.getString(R.string.tool_new_memo), ns && !ro) { askNewMemo() }
         )
@@ -1264,7 +1328,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /** 0.4.15: ask for the name first (default name pre-selected); キャンセル creates nothing; blank = default. */
     fun askNewFolder(): ClassicDialog? {
-        if (Session.readOnlyTemp || search != null) return null
+        if (Session.readOnlyTemp || search != null || flat) return null
         val def = Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default))
         return Dlg.prompt(ctx, ctx.getString(R.string.tool_new_folder), ctx.getString(R.string.new_name_label), def) { n ->
             newFolder(n.trim().ifEmpty { def }); true }
@@ -1341,7 +1405,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             Session.update { Order.moveTo(it, id, dest, 0) }
             selection = id
             // Navigate to destination so the user sees the entry at the front
-            if (search == null) navigate(dest)
+            if (search == null && !flat) navigate(dest)
             refresh()
         } catch (e: Tree.TreeException) {
             Dlg.message(ctx, L.t("移動エラー", "Move Error"), L.t("移動できませんでした。", "Could not move it."), 'x')
@@ -1351,7 +1415,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveToDialog(id: UUID) {
         val d = db()
         var target: UUID? = null
-        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id),
+        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id), hidden = Tree.hiddenGroups(d),
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)
