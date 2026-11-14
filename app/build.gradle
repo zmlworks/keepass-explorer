@@ -20,8 +20,8 @@ android {
         // 30 (Android 11): framework BiometricPrompt with BIOMETRIC_STRONG + per-use Keystore keys, no AndroidX
         minSdk 30
         targetSdk 35
-        versionCode 51
-        versionName '0.4.32'
+        versionCode 52
+        versionName '0.4.33'
         resourceConfigurations += ['en', 'ja']
     }
     signingConfigs {

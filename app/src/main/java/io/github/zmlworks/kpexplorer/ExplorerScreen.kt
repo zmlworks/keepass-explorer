@@ -165,8 +165,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         tool("newKey", Ico.newKey16, L.t("鍵", "Key")) { newKey() }
         tool("newMemo", Ico.newMemo16, L.t("メモ", "Memo")) { askNewMemo() }
         sep()
-        tool("save", Px.floppy16, L.t("保存", "Save")) { Security.saveDialog(a) }
-        tool("menu", Ico.menu16, L.t("メニュー", "Menu")) { Menus.dropDown(tools["menu"]!!, mainMenu()) }
+        // 0.4.33: 保存 / メニュー / 検索 stay pressed in while their box / menu / panel is open
+        tool("save", Px.floppy16, L.t("保存", "Save")) {
+            holdTool("save", true)
+            Security.saveDialog(a).onGone.add { holdTool("save", false) }
+        }
+        tool("menu", Ico.menu16, L.t("メニュー", "Menu")) {
+            holdTool("menu", true)
+            Menus.dropDown(tools["menu"]!!, mainMenu()).setOnDismissListener { holdTool("menu", false) }
+        }
         tool("find", Px.find16, L.t("検索", "Search")) { if (search == null) openSearch() else closeSearch() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         root.addView(W.hsep(ctx))
@@ -305,8 +312,22 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         updateStatus()
     }
 
+    /** Shows the tool button [key] latched down ([W.Bevel.held]); its icon and label move down-right by one pixel. */
+    fun holdTool(key: String, on: Boolean) {
+        val v = tools[key] ?: return
+        val b = v.background as? W.Bevel ?: return
+        if (b.held == on) return
+        b.held = on
+        val s = if (on) W.px else 0
+        v.setPadding(s, W.dp(3) + s, 0, W.dp(2) - s)
+    }
+
+    /** Whether the tool button [key] is latched down (tests). */
+    fun toolHeld(key: String) = (tools[key]?.background as? W.Bevel)?.held == true
+
     private fun updateTools() {
         val d = db()
+        holdTool("find", search != null)
         fun en(k: String, on: Boolean) {
             val v = tools[k] as? LinearLayout ?: return
             v.isEnabled = on
@@ -409,7 +430,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (gid == Tree.recycleBinId(d)) {
             out.add(Menus.sep())
             out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), w && Tree.recycleBinChildCount(d) > 0) { askEmptyBin() })
-            out.add(Menus.Item(L.t("ごみ箱の設定…", "Recycle Bin settings…"), w) { BinSettings.show(a) })
+            out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings"), w) { BinSettings.show(a) })
             return out
         }
         if (inBin) {   // a folder inside the bin: as in the list
@@ -1341,7 +1362,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.import_menu), !ro) { TempImport.showImportMenu(a) })
         out.add(Menus.Item(ctx.getString(R.string.passgen_menu)) { PassGen.show(a) })
         out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.menu_internal_save), !ro) { Security.internalBackup(a) })
+        out.add(Menus.Item(ctx.getString(R.string.menu_internal_save), !ro) { Security.confirmBackup(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_export), !ro) { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } })
         out.add(Menus.Item(ctx.getString(R.string.menu_backup_list), !ro) { a.show(BackupScreen(a)) })
         out.add(Menus.Item(ctx.getString(R.string.menu_change_master), !ro) { Security.changeMasterPassword(a) })
@@ -1358,9 +1379,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.sep())
         val bin = Tree.recycleBinId(db())?.takeIf { Tree.findGroup(db(), it) != null }
         out.add(Menus.Item(L.t("ごみ箱を開く", "Open Recycle Bin"), bin != null) { bin?.let { navigate(it) } })
-        out.add(Menus.Item(L.t("ごみ箱の設定…", "Recycle Bin settings…"), !ro) { BinSettings.show(a) })
+        out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings"), !ro) { BinSettings.show(a) })
         out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.menu_usage)) { Help.usage(a) })
+        // 0.4.33: 使い方 removed (the README has the full description)
         out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_about)) { Help.about(a) })
         return out

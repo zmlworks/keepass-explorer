@@ -271,7 +271,7 @@ class Ux0424Test {
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|",
             "名前の変更", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除"), labels(ex.treeMenu(g)))
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|", "ここに貼り付け"), labels(ex.treeMenu(root)))
-        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする", "ごみ箱の設定…"), labels(ex.treeMenu(bin())))
+        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする", "ごみ箱の設定"), labels(ex.treeMenu(bin())))
         assertFalse("paste: nothing cut", ex.treeMenu(g).first { it.label == "ここに貼り付け" }.enabled)
         val row = treeRow(g)
         val l = IntArray(2); row.getLocationInWindow(l)

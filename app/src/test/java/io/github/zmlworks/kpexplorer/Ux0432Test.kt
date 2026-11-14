@@ -377,7 +377,7 @@ class Ux0432Test {
         L.setLang(app(), L.Lang.JA)
         val ex = a.explorer!!
         val l = labels(ex.mainMenu())
-        assertTrue(l.contains("ランダム文字列生成…"))
+        assertTrue(l.contains("ランダム文字列生成"))
         assertFalse(l.any { it.contains("パスワード生成") })
         val i = l.indexOf("Language: 日本語")
         assertTrue("Language row: $l", i > 0)
@@ -393,7 +393,7 @@ class Ux0432Test {
         val le = labels(a.explorer!!.mainMenu())
         // (resources follow the language once the activity is recreated)
         val en = L.wrap(app())
-        assertEquals("Random string generator…", en.getString(R.string.passgen_menu))
+        assertEquals("Random string generator", en.getString(R.string.passgen_menu))
         assertEquals("Random string generator", en.getString(R.string.passgen_title))
         assertEquals("Generated string", en.getString(R.string.passgen_result))
         assertTrue(le.contains("Language: English"))

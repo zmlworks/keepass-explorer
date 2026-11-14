@@ -286,8 +286,13 @@ class Ux0428Test {
         v.layout(0, 0, v.measuredWidth, v.measuredHeight)
     }
 
+    /** A message much taller than the screen (up to 0.4.32 this was 使い方, removed in 0.4.33). */
+    private fun longMessage(en: Boolean = false) = Dlg.message(a, "t", (1..80).joinToString("\n") {
+        if (en) "Line $it of a long message: the Recycle Bin is always last" else "長いお知らせの $it 行目"
+    })
+
     @Test fun usage_isScrollable_withTheButtonOnScreen_shortMessagesStaySmall() {
-        Help.usage(a); idle()
+        longMessage(); idle()
         val d = Dlg.last!!
         val f = measureDialog(d)
         val sv = d.bodyScroll!!
@@ -314,7 +319,7 @@ class Ux0428Test {
 
     @Test fun english_usage_scrolls_and_explainsTheOrder() {
         L.setLang(app(), L.Lang.EN)
-        Help.usage(a); idle()
+        longMessage(en = true); idle()
         val d = Dlg.last!!
         measureDialog(d)
         val sv = d.bodyScroll!!

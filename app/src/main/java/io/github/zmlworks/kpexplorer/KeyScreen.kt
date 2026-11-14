@@ -126,13 +126,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 when (ev.actionMasked) {
                     android.view.MotionEvent.ACTION_UP -> {
                         outsideArmed = false
-                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside UP -> end")
                         commitActiveFieldEdit()
                         hideTagButtons()
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         outsideArmed = false
-                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside CANCEL (keep editing)")
                     }
                 }
                 return true
@@ -152,7 +150,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                     if (!inside && !onChips) {
                         // IME lives in another window — its taps never reach here. Consume the whole stream.
                         outsideArmed = true
-                        io.github.zmlworks.kpexplorer.ui.BackTrace.log("outside DOWN (armed)")
                         return true
                     }
                 } else if (tagsShown) {
@@ -603,7 +600,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
         col.addView(W.text(ctx, L.t("種類:", "Type:"), 14f), W.lp(W.MATCH, W.WRAP, t = 10))
         val rg = android.widget.RadioGroup(ctx)
-        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers…)")).apply { id = View.generateViewId() }
+        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers)")).apply { id = View.generateViewId() }
         val r2 = W.radio(ctx, L.t("複数行 (メモのように改行・折り返し)", "Multi-line (line breaks and wrapping, like notes)")).apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)
@@ -700,7 +697,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     fun setupOtp() {
         val col = W.vbox(ctx)
         col.addView(W.text(ctx, L.t("otpauth:// で始まる URI (QR コードの中身) か、Base32 の秘密鍵を入力してください。\nKeePassXC と同じ「otp」欄に保存します。", "Enter a URI starting with otpauth:// (the content of the QR code) or a Base32 secret.\nIt is saved in the \"otp\" field, like KeePassXC."), 14f).apply { setLineSpacing(0f, 1.1f) })
-        val f = W.field(ctx, "otpauth://totp/...?secret=...").apply { setText(currentOtpUri().orEmpty()) }
+        val f = W.field(ctx, "otpauth://totp/Name?secret=BASE32").apply { setText(currentOtpUri().orEmpty()) }
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 8))
         ClassicDialog(ctx, L.t("ワンタイムパスワード", "One-time password"), col, listOf(
             ClassicDialog.Btn("OK", true) {
@@ -783,7 +780,6 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     override fun onImeHidden() {
         val b = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active
         if (b != null && b.editing) {
-            io.github.zmlworks.kpexplorer.ui.BackTrace.log("end by imeHidden")
             io.github.zmlworks.kpexplorer.ui.FieldEditSession.implicitEndAt = android.os.SystemClock.uptimeMillis()
             io.github.zmlworks.kpexplorer.ui.FieldEditSession.commitActive()
         }

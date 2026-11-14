@@ -21,16 +21,16 @@ class LocaleStringsTest {
     @Test fun englishDefaults() {
         val c = ctx("en")
         assertEquals("Recycle Bin", c.getString(R.string.recycle_bin))
-        assertEquals("Import…", c.getString(R.string.import_menu))
+        assertEquals("Import", c.getString(R.string.import_menu))
         assertEquals("Read-only", c.getString(R.string.read_only))
-        assertEquals("Random string generator…", c.getString(R.string.passgen_menu))
+        assertEquals("Random string generator", c.getString(R.string.passgen_menu))
     }
 
     @Test fun japaneseOverrides() {
         val c = ctx("ja")
         assertEquals("ごみ箱", c.getString(R.string.recycle_bin))
-        assertEquals("インポート…", c.getString(R.string.import_menu))
+        assertEquals("インポート", c.getString(R.string.import_menu))
         assertEquals("閲覧専用", c.getString(R.string.read_only))
-        assertEquals("ランダム文字列生成…", c.getString(R.string.passgen_menu))
+        assertEquals("ランダム文字列生成", c.getString(R.string.passgen_menu))
     }
 }

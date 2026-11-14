@@ -113,7 +113,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         inputRow(Order.F_URL, "URL", Glyph(Glyph.Kind.URL), false)
         // 0.4.11: OTP on the create form (otpauth:// URI or Base32 secret); empty = not added (restorable later)
         inputRow(Order.F_OTP, Order.OTP, Glyph(Glyph.Kind.OTP), false)
-        editors[Order.F_OTP]?.hint = L.t("otpauth://… または Base32 の秘密鍵", "otpauth://… or a Base32 secret")
+        editors[Order.F_OTP]?.hint = L.t("otpauth:// の URI または Base32 の秘密鍵", "An otpauth:// URI or a Base32 secret")
         inputRow(Order.F_NOTES, "Notes", Glyph(Glyph.Kind.MEMO), true)
         for (name in customs) {
             inputRow(name, name, Glyph(Glyph.Kind.CUSTOM), name in multi)
@@ -311,7 +311,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
         col.addView(f, W.lp(W.MATCH, W.WRAP, t = 4))
         col.addView(W.text(ctx, L.t("種類:", "Type:"), 14f), W.lp(W.MATCH, W.WRAP, t = 10))
         val rg = android.widget.RadioGroup(ctx)
-        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers…)")).apply { id = View.generateViewId() }
+        val r1 = W.radio(ctx, L.t("1 行 (ID・番号など)", "Single line (IDs, numbers)")).apply { id = View.generateViewId() }
         val r2 = W.radio(ctx, L.t("複数行 (メモのように改行・折り返し)", "Multi-line (line breaks and wrapping, like notes)")).apply { id = View.generateViewId() }
         rg.addView(r1); rg.addView(r2); rg.check(r1.id)
         col.addView(rg)

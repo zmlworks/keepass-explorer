@@ -94,6 +94,12 @@ object W {
         private var checked = false
         var forcePressed = false
             set(v) { field = v; invalidateSelf() }
+        /**
+         * 0.4.33: a tool button held down while what it opened is showing (Save box, Menu, Search panel):
+         * sunken frame on a light dithered face, like a latched classic toolbar button.
+         */
+        var held = false
+            set(v) { field = v; invalidateSelf() }
 
         override fun isStateful() = style == Style.BUTTON || style == Style.FLAT_TOOL || style == Style.HEADER ||
             style == Style.DEFAULT_BUTTON
@@ -150,8 +156,13 @@ object W {
                 Style.THIN_RAISED -> { rect(c, b.left, b.top, b.right, b.bottom, fill); frame(c, b, 0, HILITE, SHADOW) }
                 Style.THIN_SUNKEN -> { rect(c, b.left, b.top, b.right, b.bottom, fill); frame(c, b, 0, SHADOW, HILITE) }
                 Style.FLAT_TOOL -> {
-                    rect(c, b.left, b.top, b.right, b.bottom, fill)
-                    if (down) frame(c, b, 0, SHADOW, HILITE)
+                    if (held) {
+                        Stipple().apply { bounds = b }.draw(c)
+                        frame(c, b, 0, SHADOW, HILITE); frame(c, b, 1, DARK, LIGHT)
+                    } else {
+                        rect(c, b.left, b.top, b.right, b.bottom, fill)
+                        if (down) frame(c, b, 0, SHADOW, HILITE)
+                    }
                 }
             }
         }
@@ -465,8 +476,37 @@ object W {
             bar.addView(cap('o', onMax, 0))
         }
         var close: TextView? = null
-        if (onClose != null) close = cap('x', onClose, 3).also { bar.addView(it) }
+        if (onClose != null) close = cap('x', onClose, 3).also { bar.addView(it); widenCloseTarget(bar, it) }
         return Caption(bar, t, close)
+    }
+
+    /** Least size of the area that presses a caption's × (the button itself keeps its classic 26 × 22 dp look). */
+    const val CLOSE_TARGET_DP = 48
+
+    /**
+     * 0.4.33: the small classic × was hard to hit. Taps in a [CLOSE_TARGET_DP] square around it (reaching the
+     * window's right edge, downwards when the bar is at the top) press it too, unless they land on something
+     * else that takes taps. The area is set on the bar's parent once laid out.
+     */
+    private fun widenCloseTarget(bar: LinearLayout, close: View) {
+        bar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val parent = bar.parent as? ViewGroup ?: return@addOnLayoutChangeListener
+            parent.touchDelegate = android.view.TouchDelegate(closeTargetRect(parent, close), close)
+        }
+    }
+
+    /** The widened × area in [parent]'s coordinates (tests read it too). */
+    fun closeTargetRect(parent: ViewGroup, close: View): Rect {
+        val r = Rect(0, 0, close.width, close.height)
+        parent.offsetDescendantRectToMyCoords(close, r)
+        val n = dp(CLOSE_TARGET_DP)
+        val cy = r.centerY()
+        var top = (cy - n / 2).coerceAtLeast(0)
+        val bottom = maxOf(top + n, r.bottom).coerceAtMost(maxOf(parent.height, r.bottom))
+        if (bottom - top < n) top = (bottom - n).coerceAtLeast(0)
+        val right = maxOf(parent.width, r.right)
+        val left = minOf(r.left, right - n).coerceAtLeast(0)
+        return Rect(left, top, right, bottom)
     }
 
     /** A raised window frame: title bar on top, [body] below. */

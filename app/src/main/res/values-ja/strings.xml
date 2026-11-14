@@ -35,10 +35,10 @@
 
     <string name="read_only">閲覧専用</string>
     <string name="read_only_banner">閲覧専用 · %1$s</string>
-    <string name="browse_external">外部ファイルを閲覧…</string>
+    <string name="browse_external">外部ファイルを閲覧</string>
     <string name="browse_backup">閲覧 (読み取り専用)</string>
     <string name="temp_open_title">ファイルを開く (閲覧専用)</string>
-    <string name="temp_trying_same">同じパスワードで試しています…</string>
+    <string name="temp_trying_same">同じパスワードで試しています</string>
     <string name="temp_need_password">今のパスワードでは開けませんでした。このファイルのパスワードを入力してください。</string>
     <string name="temp_wrong_password">このファイルのパスワードが違います。</string>
     <string name="temp_invalid_file">有効な KeePass データベースではないか、ファイルが壊れています。</string>
@@ -48,11 +48,11 @@
     <string name="password_confirm_label">パスワードの確認入力:</string>
     <string name="show_password">パスワードを表示する</string>
 
-    <string name="import_menu">インポート…</string>
+    <string name="import_menu">インポート</string>
     <string name="import_title">メインのデータベースとしてインポート</string>
     <string name="import_explain">選んだファイルで、このアプリが扱うメインのデータベースを置き換えます。\n\n必ず先に、現在のメインを日時付きファイル名でバックアップします。バックアップに失敗した場合は置き換えません。</string>
-    <string name="import_from_external">外部ファイルを選ぶ…</string>
-    <string name="import_from_backup">内部バックアップを選ぶ…</string>
+    <string name="import_from_external">外部ファイルを選ぶ</string>
+    <string name="import_from_backup">内部バックアップを選ぶ</string>
     <string name="import_confirm_title">メインのデータベースを置き換えますか?</string>
     <string name="import_confirm_body">現在のメインを %1$s としてバックアップしてから、次のファイルで置き換えます:\n%2$s\n\nそのバックアップから復元する以外に元には戻せません。</string>
     <string name="import_backup_failed">必須のバックアップを作れませんでした。メインのデータベースは変更していません。</string>
@@ -60,10 +60,10 @@
     <string name="import_wrong_password">候補ファイルのパスワードが違います。メインは変更していません。</string>
     <string name="import_cancelled">インポートをキャンセルしました。メインは変更していません。</string>
     <string name="import_ok">インポートしました。メインのデータベースを置き換えました。</string>
-    <string name="import_working">インポートしています…</string>
-    <string name="import_backing_up">必須のバックアップを作成しています…</string>
+    <string name="import_working">インポートしています</string>
+    <string name="import_backing_up">必須のバックアップを作成しています</string>
 
-    <string name="passgen_menu">ランダム文字列生成…</string>
+    <string name="passgen_menu">ランダム文字列生成</string>
     <string name="passgen_title">ランダム文字列生成</string>
     <string name="passgen_classes">文字種 (1 つ以上):</string>
     <string name="passgen_lower">英小文字 (a–z)</string>
@@ -79,17 +79,16 @@
 
     <string name="menu_lock">ロック</string>
     <string name="menu_history">履歴</string>
-    <string name="menu_internal_save">アプリ内に保存 (日付.kdbx)</string>
-    <string name="menu_export">外部に書き出す (パスワード付き)…</string>
-    <string name="menu_backup_list">保存したファイルの一覧…</string>
-    <string name="menu_change_master">マスターパスワードの変更…</string>
+    <string name="menu_internal_save">現在のバックアップを作成</string>
+    <string name="menu_export">外部に書き出す</string>
+    <string name="menu_backup_list">内部バックアップの一覧</string>
+    <string name="menu_change_master">マスターパスワードの変更</string>
     <string name="menu_secure_screen">画面を保護 (スクリーンショット禁止)</string>
     <string name="menu_autolock_now">自動ロック: すぐ</string>
     <string name="menu_autolock_5">自動ロック: 5 分後</string>
     <string name="menu_autolock_never">自動ロック: しない</string>
-    <string name="menu_usage">使い方</string>
-    <string name="menu_db_info">データベースの情報</string>
-    <string name="menu_about">バージョン情報</string>
+    <string name="menu_db_info">データベースのプロパティ</string>
+    <string name="menu_about">About</string>
 
     <string name="tool_up">上へ</string>
     <string name="tool_view">表示</string>
@@ -132,15 +131,15 @@
     <string name="move_to_label">「%1$s」の移動先:</string>
     <string name="move_btn">移動</string>
 
-    <string name="backup_title">保存したファイル</string>
+    <string name="backup_title">内部バックアップ</string>
     <string name="backup_need_select">先に一覧からバックアップを選んでください。</string>
-    <string name="backup_export">外部に書き出す…</string>
-    <string name="backup_restore">復元…</string>
+    <string name="backup_export">外部に書き出す</string>
+    <string name="backup_restore">復元</string>
     <string name="backup_delete">削除</string>
     <string name="backup_create">バックアップを作成</string>
 
     <string name="logon_title">ログオン</string>
-    <string name="opening_db">データベースを開いています…</string>
+    <string name="opening_db">データベースを開いています</string>
     <string name="wrong_master">マスターパスワードが違います。</string>
     <string name="cannot_open_db">データベースを開けませんでした。\n%1$s</string>
     <string name="open_url_title">ブラウザで開く</string>

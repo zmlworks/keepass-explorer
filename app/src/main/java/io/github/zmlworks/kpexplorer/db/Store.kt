@@ -28,17 +28,53 @@ class Store(dataDir: File, val backupDir: File) {
         dbFile.delete()
     }
 
-    /** Copy the saved database to backupDir/yyyy-MM-dd.kdbx (…_2, _3 if taken). */
+    /**
+     * 0.4.33: the name the next backup of [today] gets: yyyy-MM-dd.kdbx, then yyyy-MM-dd-2.kdbx, -3 and so on
+     * (shown in the Save box before it is made). Up to 0.4.32 the same-day suffix was _2, _3; those names stay.
+     */
+    @Synchronized
+    fun nextBackupName(today: LocalDate = LocalDate.now()): String {
+        val base = today.toString()
+        val taken = (backupDir.listFiles() ?: emptyArray()).map { it.name.lowercase() }.toSet()
+        if ("$base.kdbx" !in taken) return "$base.kdbx"
+        var i = 2
+        while ("$base-$i.kdbx" in taken) i++
+        return "$base-$i.kdbx"
+    }
+
+    /** Copy the saved database to backupDir/[nextBackupName]. */
     @Synchronized
     fun backup(today: LocalDate = LocalDate.now()): File {
         check(exists()) { "no database" }
         backupDir.mkdirs()
-        val base = today.toString()
-        var f = File(backupDir, "$base.kdbx")
-        var i = 2
-        while (f.exists()) f = File(backupDir, "${base}_${i++}.kdbx")
+        val f = File(backupDir, nextBackupName(today))
         writeAtomic(f, read())
         return f
+    }
+
+    /** What [rekeyBackups] did: rewritten, left as they were (do not open with the old key), could not be written. */
+    data class Rekey(val rewritten: List<String>, val skipped: List<String>, val failed: List<String>)
+
+    /**
+     * 0.4.33 (master password change): every internal backup that opens with [old] is encrypted again for [new]
+     * (fresh salt, verified by decoding before anything is written, then written to a temporary file and renamed
+     * over it; its modification time is kept, so the list order stays). Backups that do not open with [old] (another
+     * password, a key file, damaged) are not touched. Neither key is changed or wiped here.
+     */
+    @Synchronized
+    fun rekeyBackups(old: ByteArray, new: ByteArray): Rekey {
+        val done = ArrayList<String>(); val skipped = ArrayList<String>(); val failed = ArrayList<String>()
+        for (f in backups()) {
+            val db = try { Kdbx.open(f.readBytes(), old) } catch (_: Throwable) { skipped.add(f.name); continue }
+            try {
+                val bytes = Kdbx.encodeVerified(Kdbx.withHeader(Kdbx.withCredentials(db, new), light = false))
+                val mtime = f.lastModified()
+                writeAtomic(f, bytes)
+                if (mtime > 0) f.setLastModified(mtime)
+                done.add(f.name)
+            } catch (_: Throwable) { failed.add(f.name) }
+        }
+        return Rekey(done, skipped, failed)
     }
 
     /**

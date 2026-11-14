@@ -36,6 +36,8 @@ class ClassicDialog(ctx: Context, title: String, body: View, buttons: List<Btn>,
     /** The scroll view around the body ([scroll] or [fit]), else null. */
     var bodyScroll: ScrollView? = null
         private set
+    /** Run when the box goes away (any way: a button, ×, Back). */
+    val onGone = ArrayList<() -> Unit>()
 
     init {
         val content = W.vbox(ctx)
@@ -64,7 +66,7 @@ class ClassicDialog(ctx: Context, title: String, body: View, buttons: List<Btn>,
         window?.setLayout(minOf(dm.widthPixels - W.dp(24), W.dp(460)),
             if (scroll) (dm.heightPixels * 0.8f).toInt() else ViewGroup.LayoutParams.WRAP_CONTENT)
         setOnShowListener { Dlg.last = this }
-        setOnDismissListener { if (Dlg.last === this) Dlg.last = null }
+        setOnDismissListener { if (Dlg.last === this) Dlg.last = null; onGone.forEach { it() } }
     }
 }
 

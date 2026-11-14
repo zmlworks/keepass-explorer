@@ -67,7 +67,6 @@ class MainActivity : Activity() {
             val ime: Insets = ins.getInsets(WindowInsets.Type.ime())
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
             val vis = ins.isVisible(WindowInsets.Type.ime())
-            if (imeShown != vis) io.github.zmlworks.kpexplorer.ui.BackTrace.log(if (vis) "imeShown" else "imeHidden")
             if (imeShown && !vis) screen?.onImeHidden()
             imeShown = vis
             WindowInsets.CONSUMED
@@ -172,7 +171,6 @@ class MainActivity : Activity() {
         if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
             val s = io.github.zmlworks.kpexplorer.ui.FieldEditSession
             val ed = s.editing
-            io.github.zmlworks.kpexplorer.ui.BackTrace.log("act ${if (event.action == 0) "DOWN" else "UP"} dt=${event.downTime % 100000} ed=$ed imeEnd=${s.implicitEndAt != 0L && event.downTime <= s.implicitEndAt}")
             when (event.action) {
                 android.view.KeyEvent.ACTION_DOWN -> {
                     if (event.repeatCount == 0) {
@@ -194,7 +192,6 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        io.github.zmlworks.kpexplorer.ui.BackTrace.log("onBackPressed ed=${io.github.zmlworks.kpexplorer.ui.FieldEditSession.editing}")
         if (Menus.current?.isShowing == true) { Menus.dismiss(); return }
         if (screen?.onBack() == true) return
         if (Session.isOpen) Session.lock()

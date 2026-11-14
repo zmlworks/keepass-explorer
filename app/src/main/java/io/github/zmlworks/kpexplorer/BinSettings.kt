@@ -40,15 +40,15 @@ object BinSettings {
         val bin = Tree.recycleBinId(db)?.let { Tree.findGroup(db, it) }
         val ro = Session.readOnlyTemp
         val name = bin?.name?.ifEmpty { L.t("(名前なし)", "(no name)") } ?: L.t("(なし)", "(none)")
-        row(a, body, L.t("名前: ", "Name: ") + name, L.t("名前の変更…", "Rename…"), "bin-rename", bin != null && !ro) { rename(a, body) }
+        row(a, body, L.t("名前: ", "Name: ") + name, L.t("名前の変更", "Rename"), "bin-rename", bin != null && !ro) { rename(a, body) }
         val n = Tree.recycleBinChildCount(db)
-        row(a, body, L.t("中身: $n 個", "Contains: $n"), L.t("空にする…", "Empty…"), "bin-empty", bin != null && n > 0 && !ro) {
+        row(a, body, L.t("中身: $n 個", "Contains: $n"), L.t("空にする", "Empty"), "bin-empty", bin != null && n > 0 && !ro) {
             Dlg.confirm(a, a.getString(R.string.empty_recycle_bin), a.getString(R.string.confirm_empty_bin), '!') {
                 Session.update { Tree.emptyRecycleBin(it) }; a.explorer?.selection = null; changed(a, body)
             }
         }
         val days = Tree.binAutoDeleteDays(db)
-        row(a, body, L.t("日数で自動削除: ", "Auto-delete: ") + daysLabel(days), L.t("変更…", "Change…"), "bin-days", !ro) { pickDays(a, body) }
+        row(a, body, L.t("日数で自動削除: ", "Auto-delete: ") + daysLabel(days), L.t("変更", "Change"), "bin-days", !ro) { pickDays(a, body) }
         body.addView(W.text(a, L.t("ごみ箱に入れてから指定の日数が過ぎた項目を、データベースを開いたときに完全に削除します。",
             "Items that have been in the bin longer than this are deleted permanently when the database is opened."), 13f, color = W.SHADOW),
             W.lp(W.MATCH, W.WRAP, t = 2))

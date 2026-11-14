@@ -371,10 +371,10 @@ class Ux0420Test {
         assertTrue(v.buttonViews.map { it.text.toString() }.containsAll(listOf("Delete all", "Close")))
         Dlg.last = v; shot("v0420/07-english-history.png", dialog = true)
         v.dismiss()
-        // Help is English too
-        Help.usage(a); idle()
+        // Help is English too (0.4.33: 使い方 is gone; the database properties box)
+        Help.dbInfo(a); idle()
         val help = texts(latestDialog().frame).joinToString("\n")
-        assertTrue(help, help.contains("Folders = KeePass groups") && help.none { it in '\u3040'..'\u30ff' && !"日本語".contains(it) })
+        assertTrue(help, help.contains("Database Properties") && help.none { it in '\u3040'..'\u30ff' && !"日本語".contains(it) })
         latestDialog().dismiss()
     }
 

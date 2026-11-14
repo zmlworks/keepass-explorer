@@ -192,7 +192,7 @@ class Ux0423Test {
         val m = labels(ex.mainMenu())
         assertEquals(m.toString(), listOf("自動ロック: 5 分後", "Language: 端末に合わせる", "日付: YYYY/MM/DD"),
             m.filter { it.startsWith("自動ロック") || it.startsWith("Language") || it.startsWith("日付") })
-        assertTrue(m.containsAll(listOf("ごみ箱を開く", "ごみ箱の設定…")))
+        assertTrue(m.containsAll(listOf("ごみ箱を開く", "ごみ箱の設定")))
         assertTrue("no checked radio-like rows left", ex.mainMenu().none { it.checked && (it.label.startsWith("Language") || it.label.startsWith("日付") || it.label.startsWith("自動ロック")) })
         showMainMenu(); shot("v0423/01-main-menu.png", menuAt = (W_ - W.dp(240)) to W.dp(60)); Menus.dismiss()
         // date picker: options with today's example, current one checked; tap applies and closes
@@ -256,7 +256,7 @@ class Ux0423Test {
 
     @Test fun binSettings_rename_empty_once_hide_days() {
         val ex = a.explorer!!
-        item(ex.mainMenu(), "ごみ箱の設定…").action(); idle()
+        item(ex.mainMenu(), "ごみ箱の設定").action(); idle()
         val d = Dlg.last!!
         fun t(tag: String) = (findTag<View>(d.frame, tag) as android.widget.TextView)
         assertEquals("名前: ごみ箱", t("bin-rename-text").text.toString())
@@ -421,7 +421,7 @@ class Ux0423Test {
         assertEquals("All keys and memos under \"仕事\" (3)  ×", (findTag<View>(ex.view, "flat-band") as android.widget.TextView).text.toString())
         BinSettings.show(act); idle()
         val tx = texts(Dlg.last!!.frame)
-        assertTrue(tx.toString(), tx.containsAll(listOf("Name: ごみ箱", "Rename…", "Contains: 1", "Empty…", "Auto-delete: Off", "Change…",
+        assertTrue(tx.toString(), tx.containsAll(listOf("Name: ごみ箱", "Rename", "Contains: 1", "Empty", "Auto-delete: Off", "Change",
             "Delete permanently at once (no recycle bin)", "Hide the recycle bin (open it with \"Open Recycle Bin\" in the menu)", "Close")))
         assertTrue("no Japanese in the settings box (bin name aside)", tx.none { s -> s.any { it in '\u3040'..'\u30ff' } && !s.contains("ごみ箱") })
         Dlg.last!!.dismiss()

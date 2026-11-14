@@ -42,18 +42,22 @@ object TempImport {
         }
     }
 
-    fun browseBackupFile(a: MainActivity, f: File) {
+    /** [back] (0.4.33): what to show when the read-only view ends (the backup list), instead of the main folder. */
+    fun browseBackupFile(a: MainActivity, f: File, back: ((MainActivity) -> Unit)? = null) {
         if (Session.readOnlyTemp) {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_no_edit), 'i')
             return
         }
-        openBytesAsTemp(a, f.readBytes(), f.name)
+        openBytesAsTemp(a, f.readBytes(), f.name, back)
     }
+
+    /** Where [exitTemp] goes back to (set when the read-only view starts; null = the main folder). */
+    private var afterExit: ((MainActivity) -> Unit)? = null
 
     private fun readUri(a: MainActivity, uri: Uri): ByteArray =
         a.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
 
-    private fun openBytesAsTemp(a: MainActivity, bytes: ByteArray, label: String) {
+    private fun openBytesAsTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)? = null) {
         if (bytes.isEmpty()) {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_invalid_file), 'x')
             return
@@ -70,10 +74,10 @@ object TempImport {
             } else Result.failure(IllegalStateException("no composite"))
             a.runOnUiThread {
                 busy.dismiss()
-                tried.onSuccess { db -> enterTemp(a, db, label) }
+                tried.onSuccess { db -> enterTemp(a, db, label, back) }
                     .onFailure { err ->
                         if (err is Kdbx.WrongPasswordException || compositeFailedAsWrong(err)) {
-                            promptPasswordForTemp(a, bytes, label)
+                            promptPasswordForTemp(a, bytes, label, back)
                         } else {
                             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_invalid_file), 'x')
                         }
@@ -85,7 +89,7 @@ object TempImport {
     private fun compositeFailedAsWrong(t: Throwable): Boolean =
         t is Kdbx.WrongPasswordException || t.message?.contains("password", true) == true
 
-    private fun promptPasswordForTemp(a: MainActivity, bytes: ByteArray, label: String) {
+    private fun promptPasswordForTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)?) {
         val col = W.vbox(a)
         col.addView(W.text(a, a.getString(R.string.temp_need_password), 14f).apply { setLineSpacing(0f, 1.1f) })
         col.addView(W.text(a, a.getString(R.string.password_label), 14f), W.lp(W.MATCH, W.WRAP, t = 8))
@@ -104,7 +108,7 @@ object TempImport {
                     Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_need_password), '!')
                     return@Btn false
                 }
-                tryOpenWithPassword(a, bytes, label, pw)
+                tryOpenWithPassword(a, bytes, label, pw, back)
                 field.setText("")
                 true
             },
@@ -112,7 +116,7 @@ object TempImport {
         )).show()
     }
 
-    private fun tryOpenWithPassword(a: MainActivity, bytes: ByteArray, label: String, password: String) {
+    private fun tryOpenWithPassword(a: MainActivity, bytes: ByteArray, label: String, password: String, back: ((MainActivity) -> Unit)?) {
         val busy = Dlg.busy(a, a.getString(R.string.temp_open_title), a.getString(R.string.opening_db))
         Session.io.execute {
             val key = Kdbx.compositeKey(password)
@@ -120,7 +124,7 @@ object TempImport {
             key.fill(0)
             a.runOnUiThread {
                 busy.dismiss()
-                r.onSuccess { enterTemp(a, it, label) }
+                r.onSuccess { enterTemp(a, it, label, back) }
                     .onFailure { t ->
                         val msg = if (t is Kdbx.WrongPasswordException)
                             a.getString(R.string.temp_wrong_password)
@@ -131,7 +135,7 @@ object TempImport {
         }
     }
 
-    private fun enterTemp(a: MainActivity, db: KeePassDatabase, label: String) {
+    private fun enterTemp(a: MainActivity, db: KeePassDatabase, label: String, back: ((MainActivity) -> Unit)?) {
         // Flush pending primary saves first so stash is consistent; do not touch primary file after.
         Session.flush()
         Session.afterSave({ Unit }) { res ->
@@ -145,6 +149,7 @@ object TempImport {
                 Dlg.message(a, a.getString(R.string.temp_open_title), t.message ?: t.toString(), 'x')
                 return@afterSave
             }
+            afterExit = back
             a.explorer = null
             a.showExplorer()
         }
@@ -154,7 +159,8 @@ object TempImport {
         if (!Session.readOnlyTemp) return
         Session.exitTempView()
         a.explorer = null
-        a.showExplorer()
+        val back = afterExit; afterExit = null
+        if (back != null) back(a) else a.showExplorer()
     }
 
     // ------------------------------------------------------------------ import (replace primary)
@@ -249,7 +255,7 @@ object TempImport {
         val field = W.field(a, password = true)
         col.addView(field, W.lp(W.MATCH, W.WRAP, t = 3))
         ClassicDialog(a, a.getString(R.string.import_title), col, listOf(
-            ClassicDialog.Btn(a.getString(R.string.import_menu).removeSuffix("…").removeSuffix("..."), true) {
+            ClassicDialog.Btn(a.getString(R.string.import_menu).removeSuffix("").removeSuffix(""), true) {
                 val pw = field.text?.toString().orEmpty()
                 if (pw.isEmpty()) {
                     Dlg.message(a, a.getString(R.string.import_title), a.getString(R.string.temp_need_password), '!')

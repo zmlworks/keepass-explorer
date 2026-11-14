@@ -12,7 +12,6 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import io.github.zmlworks.kpexplorer.db.Kdbx
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.Menus
@@ -23,8 +22,12 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Internal backups (app storage): list, create, password-protected export (SAF), restore, delete. */
-class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
+/**
+ * Internal backups (app storage): list, create, password-protected export (SAF), restore, delete.
+ * 0.4.33: titled 「内部バックアップ」 without an icon, no 場所 row, the columns sort by a tap on their header
+ * (again = the other way; remembered), 「今すぐ作成」 asks first, 閲覧 comes back here when it ends.
+ */
+class BackupScreen(private val a: MainActivity, select: String? = null) : MainActivity.Screen {
     private val ctx = a
     private val root = W.vbox(ctx)
     override val view: View get() = root
@@ -34,47 +37,72 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     private val listHolder = FrameLayout(ctx)
     private val fmt: DateTimeFormatter get() = L.dateTime(false)
 
+    enum class SortBy(val key: String) { NAME("name"), SIZE("size"), DATE("date") }
+    var sortBy: SortBy = SortBy.DATE
+        private set
+    var ascending = false
+        private set
+
     init {
-        val cap = W.titleBar(ctx, L.t("バックアップ - KeePass Explorer", "Backup - KeePass Explorer"), Px.floppy16, onClose = { a.showExplorer() })
+        App.prefs(ctx).getString(PREF_SORT, null)?.split('-')?.let { p ->
+            SortBy.entries.firstOrNull { it.key == p.getOrNull(0) }?.let { sortBy = it; ascending = p.getOrNull(1) == "asc" }
+        }
+        val cap = W.titleBar(ctx, L.t("内部バックアップ", "Internal backups"), null, onClose = { a.showExplorer() })
         root.addView(cap.bar, W.lp())
         val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
         fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
-        b(L.t("今すぐ作成", "Create now")) { create() }
-        b(ctx.getString(R.string.browse_backup)) { selected?.let { TempImport.browseBackupFile(a, it) } ?: need() }
-        b(L.t("外部に書き出す...", "Export...")) { selected?.let { export(it) } ?: need() }
-        b(L.t("復元...", "Restore...")) { selected?.let { restore(it) } ?: need() }
-        b(L.t("名前の変更...", "Rename...")) { selected?.let { rename(it) } ?: need() }
+        b(L.t("今すぐ作成", "Create now")) { Security.confirmBackup(a) { f -> selected = f; reload() } }
+        b(ctx.getString(R.string.browse_backup)) { selected?.let { browse(it) } ?: need() }
+        b(L.t("外部に書き出す", "Export")) { selected?.let { export(it) } ?: need() }
+        b(L.t("復元", "Restore")) { selected?.let { restore(it) } ?: need() }
+        b(L.t("名前の変更", "Rename")) { selected?.let { rename(it) } ?: need() }
         b(L.t("削除", "Delete")) { selected?.let { delete(it) } ?: need() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
-        val addr = W.hbox(ctx).apply { setPadding(W.dp(6), W.dp(2), W.dp(4), W.dp(5)) }
-        addr.addView(W.text(ctx, L.t("場所", "Location"), 14f), W.lp(W.WRAP, W.WRAP, r = 6))
-        addr.addView(W.text(ctx, displayPath(), 14f).apply {
-            background = W.Bevel(W.Style.FIELD); setPadding(W.dp(6), W.dp(7), W.dp(6), W.dp(7)); isSingleLine = true
-            ellipsize = TextUtils.TruncateAt.START
-        }, W.lp(0, W.WRAP, 1f))
-        root.addView(addr, W.lp())
         listHolder.background = W.Bevel(W.Style.FIELD)
         listHolder.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
         root.addView(listHolder, W.lp(W.MATCH, 0, 1f, l = 2, r = 2))
+        if (select != null) selected = a.store.backupFile(select)
         reload()
     }
 
-    private fun displayPath(): String {
-        return L.t("アプリ内 / backups", "In app / backups")
+    /** 閲覧 (read-only); when it ends the app comes back to this list with the file selected. */
+    private fun browse(f: File) {
+        val name = f.name
+        TempImport.browseBackupFile(a, f) { act -> act.show(BackupScreen(act, name)) }
+    }
+
+    /** Tap on a column header: sort by it, or the other way when it already sorts the list (remembered). */
+    fun sortOn(by: SortBy) {
+        ascending = if (by == sortBy) !ascending else by != SortBy.DATE   // a new column: names / sizes up, dates newest first
+        sortBy = by
+        App.prefs(ctx).edit().putString(PREF_SORT, by.key + "-" + if (ascending) "asc" else "desc").apply()
+        reload()
+    }
+
+    private fun sorted(list: List<File>): List<File> {
+        val byName = compareBy<File, String>(String.CASE_INSENSITIVE_ORDER) { it.name }
+        val c = when (sortBy) {
+            SortBy.NAME -> byName
+            SortBy.SIZE -> compareBy<File> { it.length() }.then(byName)
+            SortBy.DATE -> compareBy<File> { it.lastModified() }.then(byName)
+        }
+        return list.sortedWith(if (ascending) c else c.reversed())
     }
 
     private fun need() = Dlg.message(ctx, L.t("バックアップ", "Backup"), L.t("先に一覧からバックアップを選んでください。", "Select a backup in the list first."), 'i')
 
     fun reload() {
-        files = a.store.backups()
+        files = sorted(a.store.backups())
         if (selected != null && files.none { it.name == selected!!.name }) selected = null
         listHolder.removeAllViews()
         val col = W.vbox(ctx).apply { setBackgroundColor(W.WINDOW) }
         val header = W.hbox(ctx)
-        fun h(s: String, w: Int, weight: Float) = header.addView(W.text(ctx, s, 13f).apply {
-            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(6), W.dp(4), W.dp(6))
+        fun h(s: String, by: SortBy, w: Int, weight: Float) = header.addView(W.text(ctx, s + if (by == sortBy) (if (ascending) " ▲" else " ▼") else "", 13f).apply {
+            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(10), W.dp(4), W.dp(10))
+            isSingleLine = true; tag = "sort-" + by.key
+            isClickable = true; setOnClickListener { sortOn(by) }
         }, W.lp(w, W.WRAP, weight))
-        h(L.t("名前", "Name"), 0, 1f); h(L.t("サイズ", "Size"), W.dp(70), 0f); h(L.t("更新日時", "Modified"), W.dp(122), 0f)
+        h(L.t("名前", "Name"), SortBy.NAME, 0, 1f); h(L.t("サイズ", "Size"), SortBy.SIZE, W.dp(78), 0f); h(L.t("更新日時", "Modified"), SortBy.DATE, W.dp(130), 0f)
         col.addView(header)
         val list = ListView(ctx)
         list.divider = null
@@ -97,8 +125,8 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
                     if (sel) setBackgroundColor(W.NAVY)
                 }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
                 row.addView(nb, W.lp(0, W.WRAP, 1f))
-                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(70), W.WRAP))
-                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(122), W.WRAP))
+                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(78), W.WRAP))
+                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(130), W.WRAP))
                 return row
             }
         }
@@ -131,29 +159,22 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
         updateStatus()
     }
 
+    /** 0.4.33: 名前の変更 first. */
     fun menuFor(f: File) = listOf(
-        Menus.Item(ctx.getString(R.string.browse_backup)) { TempImport.browseBackupFile(a, f) },
-        Menus.Item(L.t("外部に書き出す (パスワード付き)...", "Export (with password)...")) { export(f) },
+        Menus.Item(L.t("名前の変更", "Rename")) { rename(f) },
         Menus.sep(),
-        Menus.Item(L.t("このバックアップから復元...", "Restore from this backup...")) { restore(f) },
+        Menus.Item(ctx.getString(R.string.browse_backup)) { browse(f) },
+        Menus.Item(L.t("外部に書き出す", "Export")) { export(f) },
+        Menus.sep(),
+        Menus.Item(L.t("このバックアップから復元", "Restore from this backup")) { restore(f) },
         Menus.Item(ctx.getString(R.string.import_menu)) {
             TempImport.confirmAndImport(a, f.readBytes(), f.name)
         },
         Menus.sep(),
-        Menus.Item(L.t("名前の変更...", "Rename...")) { rename(f) },
         Menus.Item(L.t("削除", "Delete")) { delete(f) }
     )
 
     private fun updateStatus() {}
-
-    fun create() {
-        val busy = Dlg.busy(ctx, L.t("バックアップ", "Backup"), L.t("保存してからバックアップしています…", "Saving, then backing up…"))
-        Session.afterSave({ a.store.backup() }) { r ->
-            busy.dismiss()
-            r.onSuccess { f -> selected = f; reload(); Toast.makeText(ctx, L.t("バックアップ: ${f.name}", "Backup: ${f.name}"), Toast.LENGTH_SHORT).show() }
-             .onFailure { Dlg.message(ctx, L.t("バックアップ", "Backup"), L.t("作成できませんでした。\n${it.message ?: it}", "Could not create it.\n${it.message ?: it}"), 'x') }
-        }
-    }
 
     /** Decrypt the internal copy with the current key, then write it out under a password the user chooses. */
     private fun export(f: File) {
@@ -166,7 +187,7 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun restore(f: File) {
         Dlg.confirm(ctx, L.t("バックアップから復元", "Restore from backup"), L.t("現在のデータベースを「${f.name}」の内容で置き換えますか?\n\n置き換える前に、現在の内容も自動でバックアップします。", "Replace the current database with the contents of \"${f.name}\"?\n\nThe current contents are backed up automatically first."), '!') {
             val key = Session.compositeCopy() ?: return@confirm
-            val busy = Dlg.busy(ctx, L.t("復元", "Restore"), L.t("バックアップを確認しています…", "Checking the backup…"))
+            val busy = Dlg.busy(ctx, L.t("復元", "Restore"), L.t("バックアップを確認しています", "Checking the backup"))
             Session.afterSave({
                 try {
                     val bytes = f.readBytes()
@@ -212,4 +233,8 @@ class BackupScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     override fun onBack(): Boolean { a.showExplorer(); return true }
+
+    companion object {
+        const val PREF_SORT = "backup_sort"
+    }
 }

@@ -273,7 +273,7 @@ class Ux0410Test {
         a.store.backup(java.time.LocalDate.of(2026, 11, 3))
         val bs = BackupScreen(a); a.show(bs); idle()
         val f = bs.files.first()
-        assertTrue(bs.menuFor(f).any { it.label == "名前の変更..." })
+        assertTrue(bs.menuFor(f).any { it.label == "名前の変更" })
         bs.rename(f); idle()
         val d = Dlg.last!!
         val field = find(d.frame, android.widget.EditText::class.java)!!

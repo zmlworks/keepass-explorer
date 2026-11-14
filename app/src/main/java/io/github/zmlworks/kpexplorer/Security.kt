@@ -26,7 +26,7 @@ import java.time.LocalDate
 object Security {
     /** Decrypt the app database with [composite] on the I/O thread. [composite] is wiped unless [keep]. */
     fun openStored(a: MainActivity, composite: ByteArray, onError: (String) -> Unit, onOk: () -> Unit, keep: Boolean = false) {
-        val busy = Dlg.busy(a, L.t("ログオン", "Log On"), L.t("データベースを開いています…", "Opening the database…"))
+        val busy = Dlg.busy(a, L.t("ログオン", "Log On"), L.t("データベースを開いています", "Opening the database"))
         Session.io.execute {
             val r = runCatching { Kdbx.open(a.store.read(), composite) }
             if (!keep) composite.fill(0)
@@ -72,7 +72,7 @@ object Security {
     /** First run: create db.kdbx with [password]; then offer fingerprint / screen-lock unlock (wrap). */
     fun firstRun(a: MainActivity, password: String, onError: (String) -> Unit, onOk: () -> Unit) {
         val composite = Kdbx.compositeKey(password)
-        val busy = Dlg.busy(a, L.t("セットアップ", "Setup"), L.t("データベースを作成しています…", "Creating the database…"))
+        val busy = Dlg.busy(a, L.t("セットアップ", "Setup"), L.t("データベースを作成しています", "Creating the database"))
         Session.io.execute {
             val r = runCatching { newDatabase(composite).also { a.store.write(Kdbx.encodeVerified(it, keepSalt = true)) } }
             a.runOnUiThread {
@@ -87,30 +87,62 @@ object Security {
         }
     }
 
-    /** Menu: new master password (twice). The file is re-encrypted (new Argon2 salt) and the wrapped key replaced. */
+    /**
+     * Menu: new master password (twice). The file is re-encrypted (new Argon2 salt) and the wrapped key replaced.
+     * 0.4.33: then the internal backups that open with the current password are encrypted again for the new one
+     * ([io.github.zmlworks.kpexplorer.db.Store.rekeyBackups]; others are left as they are), unless the user ticks
+     * 「内部バックアップのパスワードを書き換えない」 (after a confirmation). Backups are only touched after the database
+     * itself was saved with the new password.
+     */
     fun changeMasterPassword(a: MainActivity): ClassicDialog {
+        val title = L.t("マスターパスワードの変更", "Change Master Password")
         val col = W.vbox(a)
-        col.addView(W.text(a, L.t("新しいマスターパスワードを 2 回入力してください。アプリ内に保存済みの日付ファイルは、", "Enter the new master password twice. Dated files already saved inside the app ") +
-            L.t("それぞれ作成時のマスターパスワードのままです。", "keep the master password they were made with."), 14f).apply { setLineSpacing(0f, 1.1f) })
-        val (p1, p2) = passwordPair(a, col)
-        return ClassicDialog(a, L.t("マスターパスワードの変更", "Change Master Password"), col, listOf(
+        col.addView(W.text(a, L.t("現在のパスワードで開けられる内部バックアップも新しいパスワードに書き換えます",
+            "Internal backups that open with the current password are rewritten for the new password too"), 14f).apply { setLineSpacing(0f, 1.1f) },
+            W.lp(W.MATCH, W.WRAP, b = 8))
+        val (p1, p2) = passwordPair(a, col, L.t("新しいパスワード", "New password"), L.t("新しいパスワードの確認", "Confirm new password"))
+        val keep = W.check(a, L.t("内部バックアップのパスワードを書き換えない", "Do not change the password of internal backups"), false)
+        keep.tag = "keep-backups"
+        var sure = false
+        keep.setOnCheckedChangeListener { box, on ->
+            if (!on || sure) { sure = false; return@setOnCheckedChangeListener }
+            box.isChecked = false   // ticked only after the warning is accepted
+            Dlg.confirm(a, title, L.t("バックアップを開くのに古いパスワードの入力が必要になります", "Opening the backups will need the old password"), '!',
+                yes = "OK", no = L.t("キャンセル", "Cancel")) { sure = true; box.isChecked = true }
+        }
+        col.addView(keep, W.lp(W.MATCH, W.WRAP, t = 2))
+        return ClassicDialog(a, title, col, listOf(
             ClassicDialog.Btn(L.t("変更", "Change"), true) {
-                val pw = checkPair(a, L.t("マスターパスワードの変更", "Change Master Password"), p1, p2) ?: return@Btn false
+                val pw = checkPair(a, title, p1, p2) ?: return@Btn false
+                val old = Session.compositeCopy() ?: return@Btn false
+                val rekey = !keep.isChecked
                 val k = Kdbx.compositeKey(pw)
                 Session.update { Kdbx.withHeader(Kdbx.withCredentials(it, k), light = false) }
-                val busy = Dlg.busy(a, L.t("マスターパスワードの変更", "Change Master Password"), L.t("暗号化し直しています…", "Re-encrypting…"))
-                Session.afterSave({ Unit }) { res ->
+                val busy = Dlg.busy(a, title, L.t("暗号化し直しています", "Re-encrypting"))
+                Session.afterSave({ if (rekey) a.store.rekeyBackups(old, k) else null }) { res ->
+                    old.fill(0)
                     busy.dismiss()
-                    res.onSuccess {
-                        toast(a, L.t("マスターパスワードを変更しました", "Master password changed"))
+                    res.onSuccess { r ->
+                        Dlg.message(a, title, changedMessage(r), 'i')
                         if (a.vault.isAvailable() && Vault.forceAvailableForTest == null)
                             a.vault.wrap(a, k) { err -> k.fill(0); if (!err.isNullOrEmpty()) toast(a, L.t("指紋・画面ロックの登録に失敗: $err", "Could not set up fingerprint / screen lock: $err")) }
                         else { a.vault.clear(); k.fill(0) }
-                    }.onFailure { k.fill(0); Dlg.message(a, L.t("マスターパスワードの変更", "Change Master Password"), L.t("保存できませんでした。\n${it.message ?: it}", "Could not save.\n${it.message ?: it}"), 'x') }
+                    }.onFailure { k.fill(0); Dlg.message(a, title, L.t("保存できませんでした。\n${it.message ?: it}", "Could not save.\n${it.message ?: it}"), 'x') }
                 }
                 true
             },
             ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).also { it.show() }
+    }
+
+    /** The report after a master password change: how many internal backups were rewritten / left alone. */
+    fun changedMessage(r: io.github.zmlworks.kpexplorer.db.Store.Rekey?): String {
+        val head = L.t("マスターパスワードを変更しました。", "The master password was changed.")
+        if (r == null) return head + "\n" + L.t("内部バックアップはそのままです (開くには古いパスワードが必要です)。", "Internal backups were left as they were (they need the old password).")
+        val sb = StringBuilder(head).append("\n")
+        sb.append(L.t("内部バックアップ: ${r.rewritten.size} 件を新しいパスワードに書き換えました。", "Internal backups: ${r.rewritten.size} rewritten for the new password."))
+        if (r.skipped.isNotEmpty()) sb.append("\n").append(L.t("${r.skipped.size} 件は現在のパスワードで開けないため、そのままです。", "${r.skipped.size} do not open with the current password and were left as they were."))
+        if (r.failed.isNotEmpty()) sb.append("\n").append(L.t("${r.failed.size} 件は書き換えられませんでした (元のまま): ", "${r.failed.size} could not be rewritten (unchanged): ") + r.failed.joinToString(", "))
+        return sb.toString()
     }
 
     private fun toast(a: MainActivity, s: String) = Toast.makeText(a, s, Toast.LENGTH_LONG).show()
@@ -140,24 +172,42 @@ object Security {
 
     // ---------------------------------------------------------------- save dialog / export
 
-    /** Toolbar 保存: internal dated copy, or password-protected export outside the app (SAF). */
+    /**
+     * Toolbar 保存 (0.4.33 wording): [アプリ内に保存] makes the dated internal backup whose name is shown under it,
+     * [外部に書き出す] the password-protected export (SAF); [キャンセル] at the bottom.
+     */
     fun saveDialog(a: MainActivity, onInternal: (File) -> Unit = {}): ClassicDialog {
         val col = W.vbox(a)
-        col.addView(W.text(a, L.t("保存方法を選んでください。", "Choose how to save."), 15f, true), W.lp(W.MATCH, W.WRAP, b = 8))
-        col.addView(W.text(a, L.t("・アプリ内に保存: backups/${LocalDate.now()}.kdbx として、アプリの中に日付のコピーを作ります (同じ日は _2, _3…)。\n", "• Save in app: makes a dated copy inside the app as backups/${LocalDate.now()}.kdbx (_2, _3… on the same day).\n") +
-            L.t("・外部に書き出す: 保存先 (ダウンロード、クラウドなど) を選び、パスワードを付けた KDBX として書き出します。KeePass / KeePassXC で開けます。", "• Export: choose a place (Downloads, cloud storage…) and write a password-protected KDBX there. Opens in KeePass / KeePassXC."), 14f)
-            .apply { setLineSpacing(0f, 1.15f) })
-        return ClassicDialog(a, L.t("保存", "Save"), col, listOf(
-            ClassicDialog.Btn(L.t("アプリ内に保存", "Save in app"), true) { internalBackup(a, onInternal); true },
-            ClassicDialog.Btn(L.t("外部に書き出す...", "Export...")) { askExportPassword(a, "keepass-explorer-${LocalDate.now()}.kdbx") { Session.db }; true },
-            ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).also { it.show() }
+        lateinit var d: ClassicDialog
+        val name = a.store.nextBackupName()
+        fun choice(label: String, tag: String, note: String, f: () -> Unit) {
+            col.addView(W.button(a, label) { d.dismiss(); f() }.apply { this.tag = tag }, W.lp(W.MATCH, W.WRAP, t = if (col.childCount == 0) 0 else 12))
+            col.addView(W.text(a, note, 14f).apply { setLineSpacing(0f, 1.1f); setPadding(W.dp(10), 0, 0, 0) }, W.lp(W.MATCH, W.WRAP, t = 4))
+        }
+        choice(L.t("アプリ内に保存", "Save in app"), "save-internal",
+            L.t("$name として内部にバックアップします", "Backs up inside the app as $name")) { internalBackup(a, onInternal) }
+        choice(L.t("外部に書き出す", "Export"), "save-export",
+            L.t("保存先を選び、パスワード付きKDBXファイルを書き出します", "Choose a location and write a password-protected KDBX file")) {
+            askExportPassword(a, "keepass-explorer-${LocalDate.now()}.kdbx") { Session.db }
+        }
+        d = ClassicDialog(a, L.t("保存", "Save"), col, listOf(ClassicDialog.Btn(L.t("キャンセル", "Cancel"))))
+        d.show()
+        return d
+    }
+
+    /** 0.4.33: menu 「現在のバックアップを作成」 and the backup list's 「今すぐ作成」 ask first, naming the file. */
+    fun confirmBackup(a: MainActivity, done: (File) -> Unit = {}): ClassicDialog {
+        val name = a.store.nextBackupName()
+        return Dlg.confirm(a, L.t("現在のバックアップを作成", "Back up the current database"),
+            L.t("現在のデータベースを $name として内部にバックアップしますか?", "Back up the current database inside the app as $name?"), '?',
+            yes = L.t("作成", "Create"), no = L.t("キャンセル", "Cancel")) { internalBackup(a, done) }
     }
 
     fun internalBackup(a: MainActivity, done: (File) -> Unit = {}) {
-        val busy = Dlg.busy(a, L.t("保存", "Save"), L.t("保存しています…", "Saving…"))
+        val busy = Dlg.busy(a, L.t("保存", "Save"), L.t("保存しています", "Saving"))
         Session.afterSave({ a.store.backup() }) { res ->
             busy.dismiss()
-            res.onSuccess { f -> Toast.makeText(a, L.t("保存しました: backups/${f.name}", "Saved: backups/${f.name}"), Toast.LENGTH_SHORT).show(); done(f) }
+            res.onSuccess { f -> Toast.makeText(a, L.t("内部にバックアップしました: ${f.name}", "Backed up inside the app: ${f.name}"), Toast.LENGTH_SHORT).show(); done(f) }
                .onFailure { Dlg.message(a, L.t("保存", "Save"), L.t("保存できませんでした。\n${it.message ?: it}", "Could not save.\n${it.message ?: it}"), 'x') }
         }
     }
@@ -181,7 +231,7 @@ object Security {
         rg.setOnCheckedChangeListener { _, id -> pwBox.visibility = if (id == other.id) View.VISIBLE else View.GONE }
         same.isChecked = true; pwBox.visibility = View.GONE
         return ClassicDialog(a, L.t("外部に書き出す", "Export"), col, listOf(
-            ClassicDialog.Btn(L.t("保存先を選ぶ...", "Choose location..."), true) {
+            ClassicDialog.Btn(L.t("保存先を選ぶ", "Choose location"), true) {
                 if (same.isChecked) { pickAndWrite(a, fileName, null, source); true }
                 else {
                     val pw = checkPair(a, L.t("外部に書き出す", "Export"), p1, p2) ?: return@Btn false
@@ -200,7 +250,7 @@ object Security {
         a.startForResult(i) { rc, data ->
             val uri: Uri = data?.data ?: return@startForResult
             if (rc != Activity.RESULT_OK) return@startForResult
-            val busy = Dlg.busy(a, L.t("外部に書き出す", "Export"), L.t("暗号化して書き出しています…", "Encrypting and exporting…"))
+            val busy = Dlg.busy(a, L.t("外部に書き出す", "Export"), L.t("暗号化して書き出しています", "Encrypting and exporting"))
             Session.io.execute {
                 val r = runCatching {
                     val db = source() ?: error(L.t("データベースが開かれていません", "No database is open"))

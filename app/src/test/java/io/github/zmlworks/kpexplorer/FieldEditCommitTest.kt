@@ -391,12 +391,11 @@ class FieldEditCommitTest {
         val (a, ks) = openKey(); val box = ks.boxes["UserName"]!!
         a.window.decorView.requestFocus(); box.startEdit(); box.field.setText("s1"); idle()
         val cb = systemBack(a)
-        println("system back callback = $cb\n" + io.github.zmlworks.kpexplorer.ui.BackTrace.dump())
         assertFalse("callback=$cb", box.editing); assertTrue(a.screen === ks)
-        assertTrue("no prompt; trace=\n${io.github.zmlworks.kpexplorer.ui.BackTrace.dump()}", Dlg.last == null || !Dlg.last!!.isShowing)
+        assertTrue("no prompt", Dlg.last == null || !Dlg.last!!.isShowing)
         assertEquals("s1", ks.values["UserName"]); assertEquals("u", dbUser())
         systemBack(a)
-        assertTrue("2nd system back prompts; trace=\n${io.github.zmlworks.kpexplorer.ui.BackTrace.dump()}", Dlg.last != null && Dlg.last!!.isShowing)
+        assertTrue("2nd system back prompts", Dlg.last != null && Dlg.last!!.isShowing)
         assertEquals("u", dbUser())
     }
 
