@@ -148,11 +148,11 @@ class UiScreenshotsTest {
         // tap: file selects, tap again opens; folder opens on one tap
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertEquals(ids["Wi-Fi (自宅)"], ex.selection)
-        val pt = findTag(a.host, "pass") as android.widget.TextView   // 0.4.25: 「表示する」 in place of ******
-        assertEquals("表示する", pt.text.toString())
+        val pt = findTag(a.host, "pass") as android.widget.TextView   // 0.4.26: 「表示する」 → one line → whole → 「表示する」
+        assertEquals("表示する", shown(pt))
         save(shot(a.host), "02-main-selected.png")
         pt.performClick()
-        assertEquals("pass-value", pt.tag); assertFalse(pt.text.toString() == "表示する")
+        assertEquals("pass", pt.tag); assertFalse(shown(pt) == "表示する")
         ex.tap(ex.rows.first { it.uuid == ids["Wi-Fi (自宅)"] }); idle()
         assertTrue(a.screen is KeyScreen)
         a.showExplorer(); idle()
@@ -165,11 +165,11 @@ class UiScreenshotsTest {
         val row = ex.rows.first { it.uuid == ids["メール"] }
         save(overlay(shot(a.host), Menus.build(a, ex.itemMenu(row)) {}, 150, 640, 700), "03-context-menu.png")
 
-        // 0.3.11: 一つ上のフォルダへ移動 (entry only; root-level disabled)
+        // 0.3.11: 一つ上のフォルダへ移動 (root-level disabled); 0.4.26: folders have it too
         val gmailId = ids["Gmail"]!!
         assertTrue(ex.canMoveToParentFolder(gmailId))
         assertFalse(ex.canMoveToParentFolder(ids["Wi-Fi (自宅)"]!!))
-        assertFalse(ex.itemMenu(row).any { it.label == "一つ上の階層へ移動" }) // row is folder メール
+        assertTrue(ex.itemMenu(row).any { it.label == "一つ上の階層へ移動" && !it.enabled }) // row is folder メール at the root
         ex.navigate(ids["メール"]!!); idle()
         val gRow = ex.rows.first { it.uuid == gmailId }
         assertTrue(ex.itemMenu(gRow).any { it.label == "一つ上の階層へ移動" && it.enabled })
@@ -699,6 +699,7 @@ class UiScreenshotsTest {
         assertTrue(note.width == 48)
     }
 
+    private fun shown(t: android.widget.TextView) = t.transformationMethod?.getTransformation(t.text, t)?.toString() ?: t.text.toString()
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -719,6 +720,4 @@ class DataWipeTest {
         App.wipeOldData(app)
         assertTrue(st.dbFile.exists())
     }
-
-
 }

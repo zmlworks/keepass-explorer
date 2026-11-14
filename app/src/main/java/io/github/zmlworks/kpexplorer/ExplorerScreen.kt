@@ -362,7 +362,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         }
         if (inBin) {   // a folder inside the bin: as in the list
             out.add(Menus.sep())
-            out.add(Menus.Item(ctx.getString(R.string.restore), w) { restoreItem(gid) })
+            out.add(Menus.Item(restoreLabel(gid), w) { restoreItem(gid) })
             out.add(Menus.Item(ctx.getString(R.string.delete_permanently), w) { askDelete(gid) })
             return out
         }
@@ -376,6 +376,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.paste_here), w && cut != null && cut != gid) { paste(gid) })
         if (!isRoot) {
             out.add(Menus.Item(ctx.getString(R.string.move_to_folder), w) { moveToDialog(gid) })
+            out.add(Menus.Item(ctx.getString(R.string.move_up_folder), w && canMoveToParentFolder(gid)) { moveToParentFolder(gid) })
             out.add(Menus.sep())
             out.add(Menus.Item(ctx.getString(R.string.delete), w) { askDelete(gid) })
         }
@@ -415,8 +416,16 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     @android.annotation.SuppressLint("ViewConstructor")
     class PreviewBox(ctx: android.content.Context, private val onTap: () -> Unit) : LinearLayout(ctx) {
         private var x0 = 0f; private var y0 = 0f; private var t0 = 0L; private var candidate = false
+        companion object {
+            /** [x] (view coordinates) is on the drawn text of [t], not the empty space right of it. */
+            fun onText(t: TextView, x: Float): Boolean {
+                val l = t.layout ?: return true
+                var w = 0f; for (i in 0 until l.lineCount) w = maxOf(w, l.getLineWidth(i))
+                return x <= t.totalPaddingLeft + w + W.dp(8)
+            }
+        }
         private fun onPass(v: View, x: Float, y: Float): Boolean {
-            if (v.tag == "pass") return true
+            if (v.tag == "pass") return v !is TextView || onText(v, x)
             if (v is ViewGroup) for (i in v.childCount - 1 downTo 0) {
                 val c = v.getChildAt(i)
                 if (c.visibility == View.VISIBLE && x >= c.left && x < c.right && y >= c.top && y < c.bottom &&
@@ -487,6 +496,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val title = W.text(ctx, label(r), 17f, true).apply { setPadding(W.dp(3), W.dp(1), W.dp(3), W.dp(1)) }
         head.addView(FrameLayout(ctx).apply { addView(title, FrameLayout.LayoutParams(W.WRAP, W.WRAP)) }, W.lp(0, W.WRAP, 1f))
         preview.addView(head, W.lp(W.MATCH, W.WRAP, b = 6))
+        // 0.4.26: an item in the bin shows where 元に戻す puts it
+        if (!isRecycleBinFolder(r) && Tree.isInRecycleBin(db(), r.uuid)) restoreInfo(r.uuid)?.let {
+            preview.addView(W.text(ctx, it, 14f, true, W.NAVY).apply { tag = "restore-to" }, W.lp(W.MATCH, W.WRAP, b = 6))
+        }
         when (r) {
             is Order.Node.F -> {
                 val kids = Order.children(r.g)
@@ -534,26 +547,34 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     /**
-     * 0.4.25: the preview's password is not shown as ****** but as a 「表示する」 link in its place; tapping it shows
-     * the password there (no hide: it goes when the selection changes or the preview closes). Only that text is a
-     * tap target; after it is shown, a tap on the password is an ordinary preview tap.
+     * 0.4.26: the preview's password, the same cycle as the key page with 「表示する」 for ******:
+     * 表示する → one line (" …" when it does not fit) → whole (wrapped) → 表示する; when it fits: 表示する ↔ shown.
+     * Only the text itself is the tap target (to the right of it is the preview as usual).
      */
     private fun passPreview(pw: String): View {
         val box = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         if (pw.isEmpty()) { box.addView(W.text(ctx, "", 14f).apply { tag = "pass-value" }); return box }
-        val t = W.text(ctx, L.t("表示する", "Show"), 14f, color = W.NAVY).apply {
-            tag = "pass"   // [PreviewBox]: a tap here is not a preview tap
-            paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
-            setPadding(0, W.dp(4), W.dp(12), W.dp(4)); isClickable = true
-            contentDescription = L.t("パスワードを表示する", "Show the password")
+        val t = W.text(ctx, pw, 14f).apply { tag = "pass"; setPadding(0, W.dp(4), 0, W.dp(4)) }
+        val showMark = L.t("表示する", "Show")
+        lateinit var fold: io.github.zmlworks.kpexplorer.ui.ValueFold
+        fun style() {
+            val hidden = fold.state == io.github.zmlworks.kpexplorer.ui.ValueFold.State.HIDDEN
+            t.paintFlags = if (hidden) t.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG else t.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
+            t.setTextColor(if (hidden) W.NAVY else W.TEXT)
+            t.typeface = if (hidden) android.graphics.Typeface.DEFAULT else io.github.zmlworks.kpexplorer.ui.Mono.typeface(ctx)
+            t.contentDescription = if (hidden) L.t("パスワードを表示する", "Show the password") else null
         }
-        t.setOnClickListener {
-            t.text = pw; t.tag = "pass-value"; t.contentDescription = null
-            t.paintFlags = t.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
-            t.setTextColor(W.TEXT); KeyFields.valueFont(t, Order.F_PASS)
-            t.setOnClickListener(null); t.isClickable = false
+        fold = io.github.zmlworks.kpexplorer.ui.ValueFold(t, secret = true, hiddenMark = showMark) { style() }
+        style()
+        t.isClickable = true
+        t.setOnClickListener { fold.tap() }
+        // a touch right of the text is not a tap on it (it stays a preview tap, see [PreviewBox])
+        var outside = false
+        t.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) outside = !PreviewBox.onText(t, e.x)
+            outside   // true = swallowed here without a click
         }
-        box.addView(t, W.lp(W.WRAP, W.WRAP))
+        box.addView(t, W.lp(0, W.WRAP, 1f))
         return box
     }
 
@@ -1323,7 +1344,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (ro) return out
             out.add(Menus.sep())
             if (inBin) {
-                out.add(Menus.Item(ctx.getString(R.string.restore)) { restoreItem(r.uuid) })
+                out.add(Menus.Item(restoreLabel(r.uuid)) { restoreItem(r.uuid) })
                 out.add(Menus.Item(ctx.getString(R.string.delete_permanently)) { askDelete(r.uuid) })
             } else out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), Tree.recycleBinChildCount(db()) > 0) { askEmptyBin() })
             return out
@@ -1338,6 +1359,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.cut), w && !bin) { cut(r.uuid) })
         out.add(Menus.Item(ctx.getString(R.string.paste_here), w && cut != null && cut != r.uuid) { paste(r.uuid) })
         out.add(Menus.Item(ctx.getString(R.string.move_to_folder), w && !bin) { moveToDialog(r.uuid) })
+        out.add(Menus.Item(ctx.getString(R.string.move_up_folder), w && !bin && canMoveToParentFolder(r.uuid)) { moveToParentFolder(r.uuid) })
         if (inSearch) out.add(Menus.Item(ctx.getString(R.string.open_item_folder)) {
             Tree.parentOf(Tree.root(db()), r.uuid)?.let { navigate(it.uuid); select(r.uuid) } })
         out.add(Menus.sep())
@@ -1448,21 +1470,21 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveIndex(id: UUID, index: Int) { Session.update { Order.moveTo(it, id, current, index) }; selection = id; refresh() }
 
     /** Parent of the entry's containing folder (null when the entry lives in the database root). */
-    fun parentFolderOfEntry(id: UUID): UUID? {
+    fun parentFolderOf(id: UUID): UUID? {
         val root = Tree.root(db())
         val containing = Tree.parentOf(root, id) ?: return null
         if (containing.uuid == root.uuid) return null
         return Tree.parentOf(root, containing.uuid)?.uuid
     }
 
-    fun canMoveToParentFolder(id: UUID): Boolean = parentFolderOfEntry(id) != null
+    fun canMoveToParentFolder(id: UUID): Boolean = parentFolderOf(id) != null
 
     /**
-     * Move an entry into the parent of its current folder, at the front of that folder's
-     * combined display order (index 0). No-op for root-level entries.
+     * Move an entry or (0.4.26) a folder into the parent of its current folder, at the front of that folder's
+     * combined display order (index 0). No-op at the root level (and so for the bin, which stays in the root).
      */
     fun moveToParentFolder(id: UUID) {
-        val dest = parentFolderOfEntry(id) ?: return
+        val dest = parentFolderOf(id) ?: return
         try {
             Session.update { Order.moveTo(it, id, dest, 0) }
             selection = id
@@ -1530,10 +1552,31 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             ctx.getString(R.string.confirm_delete_permanent, what), '!') { perform() }
     }
 
+    /** 0.4.26: 「元に戻す (→ /仕事/メール)」 — where it goes, from [Tree.restoreTarget] (the restore uses the same). */
+    fun restoreLabel(id: UUID): String {
+        val t = runCatching { Tree.restoreTarget(db(), id) }.getOrNull() ?: return ctx.getString(R.string.restore)
+        return ctx.getString(R.string.restore) + " (→ " + Tree.pathText(db(), t.target) + ")"
+    }
+
+    /** 0.4.26: the line in the preview of an item in the bin. */
+    fun restoreInfo(id: UUID): String? {
+        val d = db()
+        val t = runCatching { Tree.restoreTarget(d, id) }.getOrNull() ?: return null
+        val p = Tree.pathText(d, t.target)
+        return when (t.reason) {
+            Tree.RestoreTarget.Reason.ORIGINAL -> L.t("元の場所: $p", "Original location: $p")
+            Tree.RestoreTarget.Reason.GONE -> L.t("元のフォルダーはありません → / に戻します", "The original folder no longer exists → restores to /")
+            Tree.RestoreTarget.Reason.IN_BIN -> L.t("元のフォルダーもごみ箱の中です → / に戻します", "The original folder is in the Recycle Bin too → restores to /")
+            Tree.RestoreTarget.Reason.NO_RECORD -> L.t("元の場所の記録がありません → / に戻します", "No original location recorded → restores to /")
+        }
+    }
+
     fun restoreItem(id: UUID) {
         if (Session.readOnlyTemp) return
         try {
+            val to = Tree.pathText(db(), Tree.restoreTarget(db(), id).target)
             Session.update { Tree.restoreFromBin(it, id) }
+            Toast.makeText(ctx, L.t("$to に戻しました", "Restored to $to"), Toast.LENGTH_SHORT).show()
             selection = id; refresh()
         } catch (e: Tree.TreeException) {
             Dlg.message(ctx, ctx.getString(R.string.restore), e.message ?: e.toString(), 'x')

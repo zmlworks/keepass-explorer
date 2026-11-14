@@ -67,11 +67,11 @@ object KeyFields {
         Order.F_TAGS -> "Tag:"; Order.F_OTP -> "OTP:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
     }
     /**
-     * 0.4.24: field values shown in a monospace font (0.4.25: the bundled [io.github.zmlworks.kpexplorer.ui.Mono]) (user name, password, URL, custom fields) so that
+     * 0.4.24: field values shown in a monospace font (0.4.25: the bundled [io.github.zmlworks.kpexplorer.ui.Mono]) (user name, password, custom fields; not the URL since 0.4.26) so that
      * look-alike characters (0/O, l/1/I) are easier to tell apart. Title, notes and tags keep the normal font.
      * One place to change: every value view goes through [valueFont].
      */
-    fun monospace(k: String) = k != Order.F_TITLE && k != Order.F_NOTES && k != Order.F_TAGS
+    fun monospace(k: String) = k != Order.F_TITLE && k != Order.F_NOTES && k != Order.F_TAGS && k != Order.F_URL   // 0.4.26: URL normal font
     fun valueFont(t: android.widget.TextView, k: String) { if (monospace(k)) t.typeface = io.github.zmlworks.kpexplorer.ui.Mono.typeface(t.context) }
 
     /** Small label shown above the value in a field well. */
@@ -195,8 +195,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     private val editors = HashMap<String, EditText>()
     /** Framed field boxes, by layout key (tests / Pass toggle). */
     val boxes = LinkedHashMap<String, io.github.zmlworks.kpexplorer.ui.FieldBox>()
-    var passShown = false
-        private set
+    /** Password visible (any step of the cycle but ******). */
+    val passShown: Boolean get() = (folds[Order.F_PASS]?.state ?: foldStates[Order.F_PASS]) .let { it != null && it != io.github.zmlworks.kpexplorer.ui.ValueFold.State.HIDDEN }
+    /** 0.4.26: one-line values (" …" / whole) — the views of this build, and their states across rebuilds. */
+    val folds = HashMap<String, io.github.zmlworks.kpexplorer.ui.ValueFold>()
+    private val foldStates = HashMap<String, io.github.zmlworks.kpexplorer.ui.ValueFold.State>()
     private var otpView: KeyFields.OtpView? = null
     private lateinit var bar: Parts.AppBar
     private val body = W.vbox(ctx, 8)
@@ -246,7 +249,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
      * value, trailing action) with a ⋮ menu button, 「カスタム項目の追加」, and 戻る / 保存 at the bottom.
      */
     private fun build() {
-        body.removeAllViews(); editors.clear(); boxes.clear(); otpView = null; tableHost = null
+        body.removeAllViews(); editors.clear(); boxes.clear(); folds.clear(); otpView = null; tableHost = null
         val d = Session.db ?: return
         val path = Tree.path(Tree.root(d), parent)
         // Proposal #3: navy header band with icon tile + light path / Last Modified
@@ -467,10 +470,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             box.onSwipeLeft = { confirmOpenUrl(f.text.toString()) }
             box.setLeftSwipeGlyph(Glyph(Glyph.Kind.OPEN, W.HILITE))
         }
+        if (!multi) {
+            // 0.4.26: " …" when it does not fit; tap = whole value / one line (password: ****** → one line → whole)
+            val fold = io.github.zmlworks.kpexplorer.ui.ValueFold(f, k == Order.F_PASS, foldStates[k]) { foldStates[k] = it }
+            folds[k] = fold
+            box.onEditing = { fold.setEditing(it) }
+            box.onTap = { fold.tap() }   // (tags too: a tap only folds / unfolds; editing stays on the long press)
+        }
         if (k == Order.F_PASS) {
-            io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, !passShown)
-            box.onTap = { togglePass() }
-            box.onLongPress = { passShown = true; io.github.zmlworks.kpexplorer.ui.FieldBox.mask(f, false) }
+            box.onLongPress = { folds[k]?.reveal() }
         }
         boxes[k] = box
         body.addView(box, W.lp(W.MATCH, W.WRAP))
@@ -479,10 +487,8 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         body.addView(View(ctx).apply { setBackgroundColor(W.HILITE) }, W.lp(W.MATCH, W.px, l = 8, r = 8))
     }
 
-    fun togglePass() {
-        passShown = !passShown
-        editors[Order.F_PASS]?.let { io.github.zmlworks.kpexplorer.ui.FieldBox.mask(it, !passShown) }
-    }
+    /** Next step of the password cycle (same as a tap on the Pass row). */
+    fun togglePass() { folds[Order.F_PASS]?.tap() }
 
     private fun otpRow() {
         val o = KeyFields.OtpView(ctx, L.t("未設定 (長押しで設定)", "Not set (long-press to set)")) { currentOtpUri() }

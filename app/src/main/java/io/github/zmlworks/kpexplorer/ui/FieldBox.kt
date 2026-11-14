@@ -148,6 +148,9 @@ class FieldBox(
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
+    /** 0.4.26: true when an inline edit starts, false when it ends (the value's [ValueFold]). */
+    var onEditing: ((Boolean) -> Unit)? = null
+
     /** Called whenever an edit ends (any path: Back, Done, outside tap, other field). */
     var onEditEnd: (() -> Unit)? = null
     private var preImeBackDown = false
@@ -232,6 +235,7 @@ class FieldBox(
         FieldEditSession.begin(this)
         BackTrace.log("editStart")
         editing = true; setEditable(true)
+        onEditing?.invoke(true)
         frameBg.fill = if (table || plain) EDIT_FILL else W.WINDOW; front.invalidate()
         onLongPress?.invoke()
         field.requestFocus(); field.setSelection(field.text.length)
@@ -248,6 +252,7 @@ class FieldBox(
         editing = false
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(field.windowToken, 0)
         field.clearFocus(); setEditable(false)
+        onEditing?.invoke(false)
         frameBg.fill = idleFill; front.invalidate()
         FieldEditSession.clear(this)
         onEditEnd?.invoke()

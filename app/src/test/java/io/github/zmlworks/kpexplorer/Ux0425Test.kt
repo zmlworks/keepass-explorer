@@ -235,7 +235,8 @@ class Ux0425Test {
         shot("v0425/03-preview-monospace.png")
         val ks = openKey(id)
         val ed = allViews(ks.view).filterIsInstance<android.widget.EditText>()
-        for (v in listOf("iiii.WWWW@gmail.com", "iI1l|0Oo-WWmm", "https://mail.google.com", "0O1lI 日本語")) {
+        assertNotSame("0.4.26: URL not monospace", mono(), ed.first { it.text.toString() == "https://mail.google.com" }.typeface)
+        for (v in listOf("iiii.WWWW@gmail.com", "iI1l|0Oo-WWmm", "0O1lI 日本語")) {
             val f = ed.first { it.text.toString() == v }
             assertSame(v, mono(), f.typeface)
             assertEquals(v, f.paint.measureText("iiii"), f.paint.measureText("WWWW"), 0.01f)
@@ -243,47 +244,14 @@ class Ux0425Test {
         val t = ed.first { it.text.toString() == "Gmail" }
         assertTrue(t.paint.measureText("WWWW") > t.paint.measureText("iiii") * 1.5f)
         // reveal the password on the key page for the picture
-        (ed.first { it.text.toString() == "iI1l|0Oo-WWmm" }).let { io.github.zmlworks.kpexplorer.ui.FieldBox.mask(it, false) }
+        ks.togglePass()
         layoutHost(); shot("v0425/04-key-page-monospace.png")
         // new key page: the password well
         a.show(NewKeyScreen(a, Tree.root(Session.db!!).uuid)); idle(); layoutHost()
         assertTrue(allViews(a.host).filterIsInstance<android.widget.EditText>().any { it.typeface === mono() })
     }
 
-    @Test fun preview_password_showTextInPlaceOfStars_noHide() {
-        val ex = a.explorer!!; layoutHost()
-        val id = ids["Gmail"]!!
-        setValues(id); ex.refresh(); ex.select(id); idle(); layoutHost()
-        val t = findTag<View>(ex.view, "pass") as android.widget.TextView
-        assertEquals("表示する", t.text.toString())
-        assertFalse("no ****** any more", allViews(ex.view).filterIsInstance<android.widget.TextView>().any { it.text.toString().contains("******") ||
-            (it.transformationMethod?.getTransformation(it.text, it)?.toString()?.contains("*") == true) })
-        val tl = IntArray(2); t.getLocationInWindow(tl)
-        val row = t.parent as View
-        assertTrue("small target: ${t.width} of ${row.width}", t.width < row.width / 2)
-        shot("v0425/01-preview-show-link.png")
-        // tap the link → the password in its place (monospace), nothing to hide it again
-        tapView(t); layoutHost()
-        val v = findTag<View>(ex.view, "pass-value") as android.widget.TextView
-        assertSame(t, v)
-        assertEquals("iI1l|0Oo-WWmm", v.text.toString())
-        assertSame(mono(), v.typeface)
-        assertFalse(v.isClickable)
-        assertNull(findTag<View>(ex.view, "pass"))
-        assertFalse(allViews(ex.view).filterIsInstance<android.widget.TextView>().any { it.text.toString() == "隠す" })
-        assertFalse("the link tap was not a preview tap", ex.previewSelected)
-        shot("v0425/02-preview-shown.png")
-        // a tap on the shown password = ordinary preview tap
-        tapView(v); assertTrue(ex.previewSelected)
-        // another selection and back: hidden again
-        ex.select(ids["Amazon"]!!); idle(); ex.select(id); idle(); layoutHost()
-        assertEquals("表示する", (findTag<View>(ex.view, "pass") as android.widget.TextView).text.toString())
-        // empty password: nothing to show
-        ex.select(ids["S1"]!!); idle()
-        Session.update { Order.saveEntry(it, ids["S1"]!!, mapOf("Title" to "サービス01", "UserName" to "user1", "Password" to ""), emptyList(), null) }
-        ex.refresh(); ex.select(ids["S1"]!!); idle()
-        assertNull(findTag<View>(ex.view, "pass"))
-    }
+    // 0.4.26: preview_password_showTextInPlaceOfStars_noHide was superseded by the cycle in Ux0426Test
 
     @Test fun english_show() {
         L.setLang(app(), L.Lang.EN)
@@ -292,12 +260,14 @@ class Ux0425Test {
         val ex = act.explorer!!
         ex.select(ids["Gmail"]!!); idle()
         val t = findTag<View>(ex.view, "pass") as android.widget.TextView
-        assertEquals("Show", t.text.toString())
-        t.performClick(); assertEquals("p", t.text.toString())
+        assertEquals("Show", shown(t))
+        t.performClick(); assertEquals("p", shown(t))
     }
 
     @Test fun notices_listTheFont() {
         val n = app().assets.open("THIRD_PARTY_NOTICES.txt").bufferedReader().readText()
         assertTrue(n.contains("JetBrains Mono") && n.contains("SIL OPEN FONT LICENSE Version 1.1"))
     }
+
+    private fun shown(t: android.widget.TextView) = t.transformationMethod?.getTransformation(t.text, t)?.toString() ?: t.text.toString()
 }

@@ -148,7 +148,7 @@ class Ux0415Test {
     }
 
     private val FIVE = listOf("名前の変更", "|", "切り取り", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除")
-    private val FOLDER = listOf("下部ファイルをすべて表示", "|", "名前の変更", "|", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "|", "削除")
+    private val FOLDER = listOf("下部ファイルをすべて表示", "|", "名前の変更", "|", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除")
     private val ICON_HEAD = listOf("表示: 詳細", "|")
     private val DETAIL_HEAD = listOf("表示: アイコン", "列の幅を元に戻す", "|")
     private fun tapAt(v: android.widget.AbsListView, id: UUID) { val (x, y) = cellCenter(v, id); touch(MotionEvent.ACTION_DOWN, x, y); touch(MotionEvent.ACTION_UP, x, y); idle(); layoutHost() }

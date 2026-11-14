@@ -269,7 +269,7 @@ class Ux0424Test {
         val root = Tree.root(Session.db!!).uuid
         val g = ids["G"]!!
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|",
-            "名前の変更", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "|", "削除"), labels(ex.treeMenu(g)))
+            "名前の変更", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除"), labels(ex.treeMenu(g)))
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|", "ここに貼り付け"), labels(ex.treeMenu(root)))
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする", "ごみ箱の設定…"), labels(ex.treeMenu(bin())))
         assertFalse("paste: nothing cut", ex.treeMenu(g).first { it.label == "ここに貼り付け" }.enabled)
@@ -325,7 +325,7 @@ class Ux0424Test {
         val tv = allViews(ex.view).filterIsInstance<android.widget.TextView>()
         fun font(s: String) = tv.first { it.text.toString() == s }.typeface
         assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("taro.yamada@gmail.com"))
-        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("https://mail.google.com"))
+        assertNotEquals("0.4.26: URL not monospace", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("https://mail.google.com"))
         assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("0O1lI"))
         assertNotEquals("labels stay", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), tv.first { it.text.toString() == "User:" }.typeface)
         assertNotEquals("notes stay", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("メモ本文"))
@@ -334,7 +334,7 @@ class Ux0424Test {
         val ed = allViews(ks.view).filterIsInstance<android.widget.EditText>()
         fun ef(s: String) = ed.first { it.text.toString() == s }.typeface
         assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("taro.yamada@gmail.com"))
-        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("https://mail.google.com"))
+        assertNotEquals("0.4.26: URL not monospace", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("https://mail.google.com"))
         assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("0O1lI"))
         assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("p"))
         assertNotEquals("title stays", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("Gmail"))
@@ -342,7 +342,7 @@ class Ux0424Test {
         shot("v0424/07-key-page-monospace.png")
         // new key page: user name / password / URL in monospace too
         a.show(NewKeyScreen(a, Tree.root(Session.db!!).uuid)); idle(); layoutHost()
-        assertTrue(KeyFields.monospace(Order.F_USER) && KeyFields.monospace(Order.F_URL) && KeyFields.monospace("暗証番号"))
+        assertTrue(KeyFields.monospace(Order.F_USER) && !KeyFields.monospace(Order.F_URL) && KeyFields.monospace("暗証番号"))
         assertFalse(KeyFields.monospace(Order.F_TITLE) || KeyFields.monospace(Order.F_NOTES) || KeyFields.monospace(Order.F_TAGS))
     }
 
@@ -351,9 +351,11 @@ class Ux0424Test {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup(); idle()
         val act = ctl.get(); if (act.explorer == null) act.showExplorer(); idle()
         val ex = act.explorer!!
-        assertEquals(listOf("Open", "Show all files below", "|", "New folder", "New key", "New memo", "|", "Rename", "Cut", "Paste here", "Move to a chosen folder", "|", "Delete"),
+        assertEquals(listOf("Open", "Show all files below", "|", "New folder", "New key", "New memo", "|", "Rename", "Cut", "Paste here", "Move to a chosen folder", "Move up one level", "|", "Delete"),
             labels(ex.treeMenu(ids["G"]!!)))
         ex.select(ids["Gmail"]!!); idle()
-        assertEquals("Show", (findTag<View>(ex.view, "pass") as android.widget.TextView).text.toString())
+        assertEquals("Show", shown(findTag<View>(ex.view, "pass") as android.widget.TextView))
     }
+
+    private fun shown(t: android.widget.TextView) = t.transformationMethod?.getTransformation(t.text, t)?.toString() ?: t.text.toString()
 }

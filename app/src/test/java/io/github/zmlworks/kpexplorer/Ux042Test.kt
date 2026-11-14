@@ -87,7 +87,9 @@ class Ux042Test {
         assertFalse(ks.passShown)
         val f = ks.boxes[Order.F_PASS]!!.field
         assertSame(Stars, f.transformationMethod)
-        ks.togglePass(); assertTrue(ks.passShown); assertNull(f.transformationMethod)
+        ks.togglePass(); assertTrue(ks.passShown)
+        // 0.4.26: shown on one line first (" …" only when it does not fit)
+        assertSame(io.github.zmlworks.kpexplorer.ui.ValueFold.Ellipsis, f.transformationMethod)
         val ks2 = KeyScreen(activity, ids["Key"], ids["Folder"]!!); activity.show(ks2); idle()
         assertFalse(ks2.passShown)
     }

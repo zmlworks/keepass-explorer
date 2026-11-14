@@ -455,23 +455,40 @@ object Tree {
      * Restore from recycle bin: prefer PreviousParentGroup when it still exists and is not inside the bin;
      * otherwise place under root. Clears previousParentGroup after restore.
      */
-    fun restoreFromBin(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
-        if (!isInRecycleBin(db, id)) throw TreeException("not in recycle bin")
+    /** 0.4.26: where [restoreFromBin] puts an item, and why (shown before restoring). */
+    data class RestoreTarget(val target: UUID, val reason: Reason) {
+        enum class Reason { ORIGINAL, NO_RECORD, GONE, IN_BIN }
+    }
+
+    /**
+     * The folder an item in the bin goes back to: its PreviousParentGroup (KDBX 4.1) when that folder still exists
+     * outside the bin, else the root — [RestoreTarget.Reason] says which case.
+     */
+    fun restoreTarget(db: KeePassDatabase, id: UUID): RestoreTarget {
         val bin = recycleBinId(db) ?: throw TreeException("recycle bin missing")
-        if (id == bin) throw TreeException("cannot restore the recycle bin")
         val r = root(db)
         val prev: UUID? = when (val item = findItem(r, id)) {
             is Item.G -> item.group.previousParentGroup
             is Item.E -> item.entry.previousParentGroup
             null -> throw TreeException("item not found")
         }
-        val target = when {
-            prev == null -> r.uuid
-            prev == bin -> r.uuid
-            findGroup(r, prev) == null -> r.uuid
-            isInRecycleBin(db, prev) -> r.uuid
-            else -> prev
+        return when {
+            prev == null -> RestoreTarget(r.uuid, RestoreTarget.Reason.NO_RECORD)
+            prev == bin || (findGroup(r, prev) != null && isInRecycleBin(db, prev)) -> RestoreTarget(r.uuid, RestoreTarget.Reason.IN_BIN)
+            findGroup(r, prev) == null -> RestoreTarget(r.uuid, RestoreTarget.Reason.GONE)
+            else -> RestoreTarget(prev, RestoreTarget.Reason.ORIGINAL)
         }
+    }
+
+    /** "/仕事/メール" ("/" for the root). */
+    fun pathText(db: KeePassDatabase, gid: UUID): String =
+        "/" + path(root(db), gid).drop(1).joinToString("/") { it.name }
+
+    fun restoreFromBin(db: KeePassDatabase, id: UUID, now: Instant = Instant.now()): KeePassDatabase {
+        if (!isInRecycleBin(db, id)) throw TreeException("not in recycle bin")
+        val bin = recycleBinId(db) ?: throw TreeException("recycle bin missing")
+        if (id == bin) throw TreeException("cannot restore the recycle bin")
+        val target = restoreTarget(db, id).target
         var out = move(db, id, target, index = null, now = now)
         // Clear previousParentGroup so a later delete records the post-restore parent.
         out = when {
