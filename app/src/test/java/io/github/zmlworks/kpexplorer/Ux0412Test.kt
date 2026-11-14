@@ -224,11 +224,11 @@ class Ux0412Test {
         val (x, y) = cellCenter(grid(), ids["Gmail"]!!)
         touch(MotionEvent.ACTION_DOWN, x, y); touch(MotionEvent.ACTION_UP, x, y); idle(); layoutHost()
         assertEquals(ids["Gmail"], ex.selection); assertFalse(ex.previewSelected)
-        val sv = find(ex.view, ExplorerScreen.PreviewBox::class.java)!!.parent as android.widget.ScrollView
-        assertNull(sv.foreground)
+        val sv = find(ex.view, ExplorerScreen.PreviewBox::class.java)!!.parent as ExplorerScreen.PreviewScroll
+        assertNull(sv.frame)
         ex.onPreviewTap(); idle(); layoutHost()
         assertTrue(ex.previewSelected)
-        assertTrue(sv.foreground is ExplorerScreen.FocusFrame)
+        assertTrue(sv.frame is ExplorerScreen.FocusFrame)   // 0.4.27: drawn fixed to the window (Ux0427Test)
         val box = find(ex.view, ExplorerScreen.PreviewBox::class.java)!!
         assertEquals(ExplorerScreen.PREVIEW_SELECTED_BG, (box.background as android.graphics.drawable.ColorDrawable).color)
         val title = texts(box).let { _ -> var tv: android.widget.TextView? = null

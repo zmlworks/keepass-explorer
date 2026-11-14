@@ -47,7 +47,7 @@ import kotlin.math.abs
  * Main window: navy title bar, toolbar (戻る / 上へ / 表示 / 新しいフォルダ / 新しい鍵 / 新しいメモ / 保存 / 検索 / メニュー),
  * "└" path tree, item pane (5-column icons or details) and, once something is selected, a lower preview pane.
  * Folder: tap = open. Key / memo: tap = select + preview, tap the selected item again = open.
- * Touch an item and move = drag (no long press); scroll from empty space or the scrollbar strip on the right.
+ * Long-press an item then move = drag; scroll from a short swipe, empty space, or the scrollbar strip on the right.
  * Long press without moving = context menu.
  */
 class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
@@ -98,11 +98,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     var previewActive: UUID? = null
         private set
 
-    private lateinit var previewScroll: ScrollView
+    private lateinit var previewScroll: PreviewScroll
     private lateinit var split: View
     private var shownSaveError: String? = null
     private val tools = HashMap<String, View>()
     private var listView: AbsListView? = null
+    /** Folder, search, flat and view mode of the list now shown (0.4.27: same = keep the scroll position). */
+    private var shownKey: List<Any?>? = null
+    private var shownEmpty = false
     private val ghost = ImageView(ctx).apply { visibility = View.GONE; alpha = 0.75f }
 
     companion object {
@@ -209,7 +212,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             true
         }
 
-        previewScroll = ScrollView(ctx).apply { background = W.Bevel(W.Style.FIELD); W.classicScrollbars(this); isFillViewport = true }
+        previewScroll = PreviewScroll(ctx).apply { background = W.Bevel(W.Style.FIELD); W.classicScrollbars(this); isFillViewport = true }
         previewScroll.addView(preview)
         preview.setBackgroundColor(W.WINDOW)
         root.addView(previewScroll, W.lp(W.MATCH, 0, 0.85f, l = 2, r = 2))
@@ -228,6 +231,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val g = currentGroup()
         val q = search
         val path = Tree.path(Tree.root(d), g.uuid)
+        // 0.4.27: up to 0.4.26 every refresh built a new grid / list (and path tree), which starts at the top, so a
+        // reorder or a drop scrolled back to the top. Now the same folder / search / view keeps its list view and
+        // only reloads the rows (the adapters read [rows]); the rebuilt path tree gets its old scroll offset back.
+        val key = listOf<Any?>(g.uuid, q, flat, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"))
+        val same = key == shownKey
+        val keepTreeY = if (same) (pathBox.getChildAt(0) as? ScrollView)?.scrollY else null
+        shownKey = key
         pathBox.removeAllViews(); pathLines.clear()
         if (q != null) {
             rows = Tree.search(d, q).map { Order.Node.E(it.second) }
@@ -237,7 +247,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val tx = ws.filterNot { it.startsWith("#") && it.length > 1 }
             val desc = listOfNotNull(tx.takeIf { it.isNotEmpty() }?.let { L.t("文字: ${it.joinToString(" ")}", "Text: ${it.joinToString(" ")}") },
                 tg.takeIf { it.isNotEmpty() }?.let { L.t("タグ: ${it.joinToString(" + ")}", "Tags: ${it.joinToString(" + ")}") }).joinToString("  ")
-            pathBox.addView(W.text(ctx, if (q.isEmpty()) L.t("文字を入力するか、タグを選んでください", "Type some text or pick a tag") else L.t("検索結果 ${rows.size} 件  $desc", "${rows.size} results  $desc"), 15f, true).apply { setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) })
+            // 0.4.27: a 「検索結果」 header above the results on pale blue (the tree's stripe), with the count once searching
+            pathBox.addView(W.text(ctx, if (q.isEmpty()) L.t("検索結果", "Search results") else L.t("検索結果 ${rows.size} 件  $desc", "Search results: ${rows.size}  $desc"), 15f, true).apply {
+                tag = "search-head"; setBackgroundColor(io.github.zmlworks.kpexplorer.ui.STRIPE); setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6)) }, W.lp(W.MATCH, W.WRAP))
         } else {
             val hidden = Tree.hiddenGroups(d, g.uuid)
             val bin = Tree.recycleBinId(d)
@@ -257,7 +269,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             })
             pathBox.addView(MaxScroll(ctx, (ctx.resources.displayMetrics.heightPixels * 0.3f).toInt()).apply {
                 W.classicScrollbars(this); addView(tree) })
-            post { folderTree?.rows?.firstOrNull { it.tag == g.uuid }?.let { v -> (pathBox.getChildAt(0) as? ScrollView)?.scrollTo(0, maxOf(0, v.top - W.dp(32))) } }
+            post {
+                val sv = pathBox.getChildAt(0) as? ScrollView
+                if (keepTreeY != null) sv?.scrollTo(0, keepTreeY)
+                else folderTree?.rows?.firstOrNull { it.tag == g.uuid }?.let { v -> sv?.scrollTo(0, maxOf(0, v.top - W.dp(32))) }
+            }
             flatBand.visibility = if (flat) View.VISIBLE else View.GONE
             if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
@@ -266,8 +282,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (q != null) flatBand.visibility = View.GONE
         if (selection != null && rows.none { it.uuid == selection }) selection = null
         if (cut != null && Tree.parentOf(Tree.root(d), cut!!) == null) cut = null
-        content.removeAllViews()
-        content.addView(if (iconMode) buildGrid() else buildList(), FrameLayout.LayoutParams(W.MATCH, W.MATCH))
+        val lv = listView
+        // (an empty folder shows a note instead of the list, so a change to or from empty builds it again)
+        if (same && rows.isEmpty() == shownEmpty && lv != null && generateSequence(lv.parent) { it.parent }.any { it === content }) notifyList()
+        else {
+            content.removeAllViews()
+            content.addView(if (iconMode) buildGrid() else buildList(), FrameLayout.LayoutParams(W.MATCH, W.MATCH))
+        }
+        shownEmpty = rows.isEmpty()
         (tools["view"] as? LinearLayout)?.getChildAt(0)?.let {
             (it as ImageView).setImageDrawable(Px.drawable(ctx, if (iconMode) Ico.viewDetails16 else Ico.viewIcons16, maxOf(1, W.iconScale() - 1)))
         }
@@ -457,6 +479,24 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         highlightPreview()
     }
 
+    /**
+     * 0.4.27: the preview's scroll view. It draws the dotted [frame] fixed to its window. 0.4.12–0.4.26 set the
+     * frame as the View foreground, which a ScrollView draws in the scrolled content's coordinates, so the frame
+     * moved with the content. Drawn like the background is: shifted back by the scroll offset.
+     */
+    class PreviewScroll(c: android.content.Context) : ScrollView(c) {
+        var frame: Drawable? = null
+            set(v) { field = v; invalidate() }
+        override fun draw(canvas: Canvas) {
+            super.draw(canvas)
+            val f = frame ?: return
+            val n = canvas.save()
+            canvas.translate(scrollX.toFloat(), scrollY.toFloat())
+            f.setBounds(0, 0, width, height); f.draw(canvas)
+            canvas.restoreToCount(n)
+        }
+    }
+
     /** Dotted focus frame inside the preview window (fixed to the window, not scrolled with the content). */
     class FocusFrame : Drawable() {
         private val p = Paint().apply {
@@ -476,7 +516,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun highlightPreview() {
         val on = previewActive != null && previewActive == selection
         preview.setBackgroundColor(if (on) PREVIEW_SELECTED_BG else W.WINDOW)
-        previewScroll.foreground = if (on) FocusFrame() else null
+        previewScroll.frame = if (on) FocusFrame() else null
     }
 
     /** Preview is in the selected (first-tapped) state (tests). */
@@ -588,7 +628,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      *    drags the item (drop on a folder = into it, between items = reorder, on the path tree = there);
      *  - short tap = folder opens / file selected (or opened if it was already selected).
      */
-    private fun attachGestures(v: AbsListView, dragZone: ((Float) -> Boolean)? = null) {
+    private fun attachGestures(v: AbsListView) {
         listView = v
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop.toFloat()
         val longMs = ViewConfiguration.getLongPressTimeout().toLong()
@@ -636,17 +676,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                         }
                         return@setOnTouchListener true
                     }
-                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) {
-                        moved = true; v.removeCallbacks(long)
-                        // 0.4.15: detail view, name column — touch and move drags at once (as in 0.4.10)
-                        val r = downR
-                        if (r != null && dragZone != null && dragZone(x0) && !Session.readOnlyTemp) {
-                            MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it); it.recycle() }
-                            beginDrag(r, rx0, ry0)
-                            drag?.let { it.moving = true; dragTo(e.rawX, e.rawY) }
-                            return@setOnTouchListener true
-                        }
-                    }
+                    // 0.4.27: no drag without a long press in any column (0.4.15's name-column drag is gone)
+                    if (!moved && (abs(e.x - x0) > slop || abs(e.y - y0) > slop)) { moved = true; v.removeCallbacks(long) }
                     false
                 }
                 MotionEvent.ACTION_UP -> {
@@ -700,12 +731,13 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     var previewHeld = false
         private set
 
-    fun releasePreview() {
+    fun releasePreview(ensureVisible: Boolean = true) {
         if (!previewHeld) return
         previewHeld = false
         if (!Session.isOpen) return   // the menu can close after a lock
         updatePreview()
-        if (selection != null) content.post { if (Session.isOpen) ensureSelectionVisible() }
+        // 0.4.27: after a drag, keep the scroll where the finger left it (opening the preview must not jump the list)
+        if (ensureVisible && selection != null) content.post { if (Session.isOpen) ensureSelectionVisible() }
     }
 
     /**
@@ -762,8 +794,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     private fun notifyList() {
         val v = listView ?: return
+        // 0.4.27: GridView (and some ListView layouts) can jump on notifyDataSetChanged; pin the window.
+        val first = v.firstVisiblePosition
+        val top = v.getChildAt(0)?.top ?: 0
         (v.adapter as? BaseAdapter)?.notifyDataSetChanged()
         ((v as? ListView)?.adapter as? android.widget.HeaderViewListAdapter)?.wrappedAdapter?.let { (it as BaseAdapter).notifyDataSetChanged() }
+        v.setSelectionFromTop(first, top)
     }
 
     /** Drop-position highlight around a cell. */
@@ -992,7 +1028,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             }
         }
         // 0.4.12: same launcher-style gestures as the icon view (long press, then move = drag; else scroll)
-        attachGestures(list, dragZone = { x -> x < colName })
+        attachGestures(list)
         col.addView(if (rows.isEmpty()) empty(list) else list, W.lp(W.MATCH, 0, 1f))
         return col
     }
@@ -1036,7 +1072,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         ghost.visibility = View.GONE
         pathLines.forEach { it.setBackgroundColor(0) }
         notifyList()
-        releasePreview()
+        releasePreview(ensureVisible = false)
     }
 
     /** Move the ghost and compute the drop target under the finger (raw screen coordinates). */
@@ -1210,7 +1246,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         searchPanel.setPadding(W.dp(6), W.dp(5), W.dp(6), W.dp(6))
         val row = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
         row.addView(ImageView(ctx).apply { setImageDrawable(Px.drawable(ctx, Px.find16, maxOf(1, W.iconScale() - 1))) }, W.lp(W.WRAP, W.WRAP, r = 4))
-        searchField = W.field(ctx).apply { isSingleLine = true; hint = L.t("文字で検索 (名前・ユーザー名・URL・メモ)", "Search text (name, user name, URL, notes)") }
+        searchField = W.field(ctx).apply { isSingleLine = true; hint = "Search" }
         row.addView(searchField, W.lp(0, W.WRAP, 1f))
         row.addView(W.button(ctx, L.t("クリア", "Clear")) { searchTags.clear(); searchField.setText(""); renderSearchTags(); applyLiveSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))
         row.addView(W.button(ctx, L.t("閉じる", "Close")) { closeSearch() }, W.lp(W.WRAP, W.WRAP, l = 4))

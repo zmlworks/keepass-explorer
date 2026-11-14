@@ -240,12 +240,12 @@ class Ux0410Test {
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, xUser, y, 200))
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, xUser, y, 240)); idle()
         assertEquals(ex.rows[4].uuid, ex.selection)
-        // 0.4.15: the name column drags at once again, without a long press (as in 0.4.10)
+        // 0.4.27: the name column needs a long press again (0.4.15–0.4.26 dragged at once there)
         val xName = W.dp(60).toFloat()
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, xName, y, 300))
         list.dispatchTouchEvent(ev(MotionEvent.ACTION_MOVE, xName, y + W.dp(30), 340))
-        assertTrue(ex.dragging)
-        list.dispatchTouchEvent(ev(MotionEvent.ACTION_CANCEL, xName, y + W.dp(30), 380)); idle()
+        assertFalse(ex.dragging)
+        list.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, xName, y + W.dp(30), 380)); idle()
         assertFalse(ex.dragging)
     }
 

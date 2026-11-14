@@ -116,8 +116,16 @@ class Ux0415Test {
     private fun cellCenter(v: android.widget.AbsListView, id: UUID, fx: Float = 0.5f, fy: Float = 0.5f): Pair<Float, Float> {
         val ex = a.explorer!!
         val pos = ex.rows.indexOfFirst { it.uuid == id }
-        val c = v.getChildAt(pos - v.firstVisiblePosition)!!
-        val l = IntArray(2); c.getLocationInWindow(l)
+        assertTrue("row missing: $id", pos >= 0)
+        val lp = if (v is ListView) pos + v.headerViewsCount else pos
+        // bring the row on screen (preview can shrink the list so a once-visible row falls off)
+        if (v.getChildAt(lp - v.firstVisiblePosition) == null) {
+            if (v is ListView) v.setSelectionFromTop(lp, 0) else v.setSelection(lp)
+            layoutHost(); layoutHost()
+        }
+        val c = v.getChildAt(lp - v.firstVisiblePosition)
+        assertNotNull("cell not laid out id=$id pos=$pos first=${v.firstVisiblePosition} children=${v.childCount} h=${v.height}", c)
+        val l = IntArray(2); c!!.getLocationInWindow(l)
         return (l[0] + c.width * fx) to (l[1] + c.height * fy)
     }
     private var t = 0L
@@ -200,34 +208,34 @@ class Ux0415Test {
     }
 
     // ---------------------------------------------------------------- 2 detail drag
-    @Test fun detailView_nameColumnDragsWithoutLongPress_otherColumnsScroll() {
+    @Test fun detailView_dragNeedsLongPress_inEveryColumn_plainSwipeScrolls() {
         val ex = details()
         val steam = ids["Steam"]!!; val amazon = ids["Amazon"]!!
+        list().setSelectionFromTop(0, 0); layoutHost(); layoutHost()
         // user-name column: plain swipe = scroll, no drag, no menu
         var (x, y) = cellCenter(list(), steam, fx = 0.6f)
         touch(MotionEvent.ACTION_DOWN, x, y); touch(MotionEvent.ACTION_MOVE, x, y - W.dp(40)); hold()
         assertFalse(ex.dragging); assertFalse(menuShowing())
         touch(MotionEvent.ACTION_UP, x, y - W.dp(40)); idle(); layoutHost()
-        // name column: touch and move = drag at once
+        list().setSelectionFromTop(0, 0); layoutHost(); layoutHost()
+        // 0.4.27: name column too — plain swipe does not start a drag (0.4.15–0.4.26 dragged at once here)
         cellCenter(list(), steam, fx = 0.1f).let { x = it.first; y = it.second }
         assertTrue(x < ex.colName)
-        touch(MotionEvent.ACTION_DOWN, x, y)
-        val (tx, ty) = cellCenter(list(), amazon, fx = 0.1f, fy = 0.15f)
-        touch(MotionEvent.ACTION_MOVE, x, y - W.dp(30))
-        assertTrue("drag without long press", ex.dragging); assertFalse(menuShowing())
-        touch(MotionEvent.ACTION_MOVE, tx, ty)
-        touch(MotionEvent.ACTION_UP, tx, ty); idle(); layoutHost()
-        var o = order(); assertEquals(o.indexOf(amazon) - 1, o.indexOf(steam))
-        // long press anywhere = menu; long press then move on the user column still drags (0.4.12)
-        cellCenter(list(), ids["楽天"]!!, fx = 0.6f).let { x = it.first; y = it.second }
+        touch(MotionEvent.ACTION_DOWN, x, y); touch(MotionEvent.ACTION_MOVE, x, y - W.dp(30)); hold()
+        assertFalse("no drag without long press", ex.dragging); assertFalse(menuShowing())
+        touch(MotionEvent.ACTION_UP, x, y - W.dp(30)); idle(); layoutHost()
+        list().setSelectionFromTop(0, 0); layoutHost(); layoutHost()
+        // name column: long press, then move = drag
+        cellCenter(list(), steam, fx = 0.1f).let { x = it.first; y = it.second }
         touch(MotionEvent.ACTION_DOWN, x, y); hold()
-        assertTrue(menuShowing())
-        val (gx, gy) = cellCenter(list(), ids["Gmail"]!!, fx = 0.6f, fy = 0.15f)
-        touch(MotionEvent.ACTION_MOVE, gx, gy); assertTrue(ex.dragging); assertFalse(menuShowing())
-        touch(MotionEvent.ACTION_UP, gx, gy); idle()
-        o = order(); assertEquals(o.indexOf(ids["Gmail"]!!) - 1, o.indexOf(ids["楽天"]!!))
+        assertTrue(menuShowing()); assertFalse(ex.dragging)
+        val (tx, ty) = cellCenter(list(), amazon, fx = 0.1f, fy = 0.15f)
+        touch(MotionEvent.ACTION_MOVE, tx, ty)
+        assertTrue(ex.dragging); assertFalse(menuShowing())
+        touch(MotionEvent.ACTION_UP, tx, ty); idle(); layoutHost()
+        val o = order(); assertEquals(o.indexOf(amazon) - 1, o.indexOf(steam))
         // name column: long press without moving = menu (no drag)
-        layoutHost()
+        list().setSelectionFromTop(0, 0); layoutHost(); layoutHost()
         cellCenter(list(), ids["Amazon"]!!, fx = 0.1f).let { x = it.first; y = it.second }
         touch(MotionEvent.ACTION_DOWN, x, y); hold()
         assertTrue(menuShowing()); assertFalse(ex.dragging)
