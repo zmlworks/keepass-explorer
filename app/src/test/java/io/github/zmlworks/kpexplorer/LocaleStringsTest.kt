@@ -23,7 +23,7 @@ class LocaleStringsTest {
         assertEquals("Recycle Bin", c.getString(R.string.recycle_bin))
         assertEquals("Import…", c.getString(R.string.import_menu))
         assertEquals("Read-only", c.getString(R.string.read_only))
-        assertEquals("Password generator…", c.getString(R.string.passgen_menu))
+        assertEquals("Random string generator…", c.getString(R.string.passgen_menu))
     }
 
     @Test fun japaneseOverrides() {
@@ -31,6 +31,6 @@ class LocaleStringsTest {
         assertEquals("ごみ箱", c.getString(R.string.recycle_bin))
         assertEquals("インポート…", c.getString(R.string.import_menu))
         assertEquals("閲覧専用", c.getString(R.string.read_only))
-        assertEquals("パスワード生成…", c.getString(R.string.passgen_menu))
+        assertEquals("ランダム文字列生成…", c.getString(R.string.passgen_menu))
     }
 }

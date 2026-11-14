@@ -54,7 +54,12 @@ class FolderTree(
      */
     private val toggleSelected: Boolean = true,
     /** 0.4.31: open / closed states to use instead of the file's (a read-only browse, where toggles are not saved). */
-    expandedOverride: Map<UUID, Boolean> = emptyMap()
+    expandedOverride: Map<UUID, Boolean> = emptyMap(),
+    /**
+     * Open the folders above [current] so it shows. 0.4.32: false when the main tree is rebuilt for the same folder
+     * (with the old tree's states in [expandedOverride]), so a root / parent the user closed stays closed.
+     */
+    revealCurrent: Boolean = true
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -73,7 +78,7 @@ class FolderTree(
 
     init {
         expanded.putAll(expandedOverride)
-        current?.let { cur -> pathTo(root, cur)?.dropLast(1)?.forEach { expanded[it.uuid] = true } }
+        if (revealCurrent) current?.let { cur -> pathTo(root, cur)?.dropLast(1)?.forEach { expanded[it.uuid] = true } }
         orientation = VERTICAL
         setBackgroundColor(W.WINDOW)
         setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4))
@@ -86,7 +91,11 @@ class FolderTree(
         return null
     }
 
-    fun isExpanded(g: Group) = g.uuid == root.uuid || (expanded[g.uuid] ?: g.expanded)
+    /** 0.4.32: the root ("/") opens and closes too (its +/− left of the computer icon); before, it was always open. */
+    /** This tree's own open / closed states (toggled here, or opened to show the current folder). */
+    fun expandedState(): Map<UUID, Boolean> = HashMap(expanded)
+
+    fun isExpanded(g: Group) = expanded[g.uuid] ?: g.expanded
 
     private fun flatten(): List<Node> {
         val out = ArrayList<Node>()
@@ -124,8 +133,11 @@ class FolderTree(
     /** Tap the +/− box of [id] (tests). */
     fun toggle(id: UUID) {
         val v = rows.firstOrNull { it.tag == id } as? Row ?: return
-        val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, (v.n.depth * W.dp(22)).toFloat(), v.height / 2f, 0); v.onTouchEvent(e); e.recycle()
+        val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, boxX(v.n).toFloat(), v.height / 2f, 0); v.onTouchEvent(e); e.recycle()
     }
+
+    /** Centre x of [n]'s +/− box: on its branch line, the root's (0.4.32) left of the computer icon. */
+    private fun boxX(n: Node): Int = if (n.depth == 0) W.dp(6) else n.depth * W.dp(22)
 
     @SuppressLint("ViewConstructor")
     private inner class Row(ctx: Context, val n: Node) : View(ctx) {
@@ -161,16 +173,17 @@ class FolderTree(
                 dotV(c, cx, 0, if (n.last) cy else height)
                 dotH(c, cx, cx + indent / 2 + W.dp(4), cy)
             }
-            if (hasKids && n.depth > 0) {
+            if (hasKids) {
+                val bx = boxX(n)   // (the root's box sits left of its icon)
                 val s = 9 * W.px / 2
-                val box = Rect(cx - s, cy - s, cx + s + W.px, cy + s + W.px)
+                val box = Rect(bx - s, cy - s, bx + s + W.px, cy + s + W.px)
                 val q = Paint()
                 q.color = W.WINDOW; c.drawRect(box, q)
                 q.color = W.SHADOW; q.style = Paint.Style.STROKE; q.strokeWidth = W.px.toFloat()
                 c.drawRect(RectF(box.left + W.px / 2f, box.top + W.px / 2f, box.right - W.px / 2f, box.bottom - W.px / 2f), q)
                 q.style = Paint.Style.FILL; q.color = W.DARK
-                c.drawRect((cx - 2 * W.px).toFloat(), cy.toFloat(), (cx + 3 * W.px).toFloat(), (cy + W.px).toFloat(), q)
-                if (!isExpanded(n.g)) c.drawRect(cx.toFloat(), (cy - 2 * W.px).toFloat(), (cx + W.px).toFloat(), (cy + 3 * W.px).toFloat(), q)
+                c.drawRect((bx - 2 * W.px).toFloat(), cy.toFloat(), (bx + 3 * W.px).toFloat(), (cy + W.px).toFloat(), q)
+                if (!isExpanded(n.g)) c.drawRect(bx.toFloat(), (cy - 2 * W.px).toFloat(), (bx + W.px).toFloat(), (cy + 3 * W.px).toFloat(), q)
             }
             val sc = W.iconScale()
             val ix = cx + indent / 2 + W.dp(4)
@@ -249,9 +262,9 @@ class FolderTree(
             }
             val cx = n.depth * indent
             // 0.4.30: a tap on the folder that is already selected (a second tap, a "double tap") opens / closes it
-            // like its +/− box (the root is always open)
+            // like its +/− box (0.4.32: the root too)
             val onBox = e.x < cx + indent / 2 + W.dp(2)
-            if (hasKids && n.depth > 0 && (onBox || (toggleSelected && n.g.uuid == selected))) {
+            if (hasKids && (onBox || (toggleSelected && n.g.uuid == selected))) {
                 val now = !isExpanded(n.g)
                 expanded[n.g.uuid] = now
                 onToggle(n.g.uuid, now)

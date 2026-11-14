@@ -105,6 +105,6 @@ class Ux042Test {
     @Test fun mainMenuStillHasPassGen() {
         activity.showExplorer(); idle()
         val labels = activity.explorer!!.mainMenu().map { it.label }
-        assertTrue(labels.any { it.contains("Password generator") || it.contains("パスワード生成") })
+        assertTrue(labels.any { it.contains("Random string generator") || it.contains("ランダム文字列生成") })   // renamed in 0.4.32
     }
 }

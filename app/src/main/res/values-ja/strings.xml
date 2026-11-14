@@ -63,8 +63,8 @@
     <string name="import_working">インポートしています…</string>
     <string name="import_backing_up">必須のバックアップを作成しています…</string>
 
-    <string name="passgen_menu">パスワード生成…</string>
-    <string name="passgen_title">パスワード生成</string>
+    <string name="passgen_menu">ランダム文字列生成…</string>
+    <string name="passgen_title">ランダム文字列生成</string>
     <string name="passgen_classes">文字種 (1 つ以上):</string>
     <string name="passgen_lower">英小文字 (a–z)</string>
     <string name="passgen_upper">英大文字 (A–Z)</string>
@@ -72,10 +72,10 @@
     <string name="passgen_symbols">記号</string>
     <string name="passgen_need_one">文字種を 1 つ以上選んでください。</string>
     <string name="passgen_next">生成</string>
-    <string name="passgen_result">生成したパスワード</string>
+    <string name="passgen_result">生成した文字列</string>
     <string name="passgen_regenerate">再生成</string>
     <string name="passgen_copy">コピー</string>
-    <string name="passgen_copied">パスワードをコピーしました (%1$d 秒後に消去)</string>
+    <string name="passgen_copied">文字列をコピーしました (%1$d 秒後に消去)</string>
 
     <string name="menu_lock">ロック</string>
     <string name="menu_history">履歴</string>

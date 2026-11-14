@@ -263,7 +263,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } else tempExpanded[gid] = exp },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
                 onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat,
-                expandedOverride = if (Session.readOnlyTemp) tempExpanded else emptyMap())
+                expandedOverride = (if (Session.readOnlyTemp) tempExpanded else emptyMap()) + (if (same) folderTree?.expandedState().orEmpty() else emptyMap()),
+                revealCurrent = !same)
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
@@ -1350,7 +1351,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         })
         // 0.4.23: one row per setting; tap → choose
         out.add(Menus.Item(ctx.getString(when { lockMin == 0 -> R.string.menu_autolock_now; lockMin < 0 -> R.string.menu_autolock_never; else -> R.string.menu_autolock_5 })) { pickAutoLock() })
-        out.add(Menus.Item(L.t("言語: ", "Language: ") + langName(L.lang)) { pickLanguage() })
+        // 0.4.32: "Language" in English in every language (findable by anyone), on its own group below a line
+        out.add(Menus.sep())
+        out.add(Menus.Item("Language: " + langName(L.lang)) { pickLanguage() })
         out.add(Menus.Item(L.t("日付: ", "Date: ") + dateName(L.dateOrder)) { pickDateOrder() })
         out.add(Menus.sep())
         val bin = Tree.recycleBinId(db())?.takeIf { Tree.findGroup(db(), it) != null }

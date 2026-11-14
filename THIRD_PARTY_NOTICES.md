@@ -55,6 +55,13 @@ instance of the variable font, subset to Latin characters and common punctuation
 (code ligatures) removed so that passwords show every character as typed. The font name is unchanged (the font has
 no Reserved Font Name). License: [`LICENSES/OFL-1.1-JetBrainsMono.txt`](LICENSES/OFL-1.1-JetBrainsMono.txt).
 
+## Didact Gothic (font of the dotted logo on the unlock screen) — SIL Open Font License 1.1
+
+Copyright 2016 The Didact Gothic Project Authors (il.basso.buffo@gmail.com), version 2.101.
+Bundled as `app/src/main/res/font/kpx_logo.ttf` (since app 0.4.32): subset to the letters of "KeePass Explorer"
+(K, e, P, a, s, E, x, p, l, o, r; kerning kept). It is only drawn as the dotted watermark of the unlock screen. The font
+name is unchanged (the font has no Reserved Font Name). License: [`LICENSES/OFL-1.1-DidactGothic.txt`](LICENSES/OFL-1.1-DidactGothic.txt).
+
 ## Memo / folder / recycle-bin artwork
 
 Original pixel art by this project (MIT). The memo icon is inspired by the classic notepad motif

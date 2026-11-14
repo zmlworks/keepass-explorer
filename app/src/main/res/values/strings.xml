@@ -68,8 +68,8 @@
     <string name="import_backing_up">Creating required backup…</string>
 
     <!-- Password generator -->
-    <string name="passgen_menu">Password generator…</string>
-    <string name="passgen_title">Password generator</string>
+    <string name="passgen_menu">Random string generator…</string>
+    <string name="passgen_title">Random string generator</string>
     <string name="passgen_classes">Character classes (at least one):</string>
     <string name="passgen_lower">Lowercase (a–z)</string>
     <string name="passgen_upper">Uppercase (A–Z)</string>
@@ -77,10 +77,10 @@
     <string name="passgen_symbols">Symbols</string>
     <string name="passgen_need_one">Select at least one character class.</string>
     <string name="passgen_next">Generate</string>
-    <string name="passgen_result">Generated password</string>
+    <string name="passgen_result">Generated string</string>
     <string name="passgen_regenerate">Regenerate</string>
     <string name="passgen_copy">Copy</string>
-    <string name="passgen_copied">Password copied (%1$d s until clipboard clear)</string>
+    <string name="passgen_copied">String copied (%1$d s until clipboard clear)</string>
 
     <!-- Main menu (existing + new) -->
     <string name="menu_lock">Lock</string>

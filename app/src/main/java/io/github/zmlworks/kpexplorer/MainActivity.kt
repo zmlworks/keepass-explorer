@@ -23,6 +23,8 @@ class MainActivity : Activity() {
         val view: View
         /** Desktop screens (setup / logon) sit on the teal desktop. */
         val desktop: Boolean get() = false
+        /** Colour behind the system bars (the host's padding) for this screen. */
+        val backdrop: Int get() = if (desktop) W.DESKTOP else W.NAVY
         fun onBack(): Boolean = false
         /** Soft keyboard went from shown to hidden (e.g. Back consumed by the IME). */
         fun onImeHidden() {}
@@ -102,7 +104,7 @@ class MainActivity : Activity() {
         screen = s
         host.removeAllViews()
         // the system status bar area (host padding) shows the classic navy title colour
-        host.setBackgroundColor(if (s.desktop) W.DESKTOP else W.NAVY)
+        host.setBackgroundColor(s.backdrop)
         host.addView(s.view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         if (Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.setSystemBarsAppearance(
