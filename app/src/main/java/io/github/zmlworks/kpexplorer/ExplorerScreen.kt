@@ -260,7 +260,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
-                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true)
+                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d))
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
@@ -1535,7 +1535,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun moveToDialog(id: UUID) {
         val d = db()
         var target: UUID? = null
-        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id), hidden = Tree.hiddenGroups(d), striped = true,
+        val tree = FolderTree(ctx, Tree.root(d), null, Tree.recycleBinId(d), disabled = setOf(id), hidden = Tree.hiddenGroups(d), striped = true, binLast = Tree.binLastInTree(d),
             onToggle = { gid, exp -> Session.update { Tree.setExpanded(it, gid, exp) } },
             onSelect = { target = it })
         val col = W.vbox(ctx)

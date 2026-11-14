@@ -378,6 +378,16 @@ object Tree {
         return setOf(bin)
     }
 
+    /**
+     * 0.4.29: Database (Meta) CustomData: "false" = the folder tree shows the bin in the list's order; absent
+     * (default, as 0.4.28) = the bin is always the last folder in the tree.
+     */
+    const val CD_BIN_TREE_LAST = "KPExplorer.RecycleBinLastInTree"
+
+    fun binLastInTree(db: KeePassDatabase): Boolean = db.content.meta.customData[CD_BIN_TREE_LAST]?.value != "false"
+    fun setBinLastInTree(db: KeePassDatabase, last: Boolean, now: Instant = Instant.now()): KeePassDatabase =
+        if (binLastInTree(db) == last) db else setMetaCd(db, CD_BIN_TREE_LAST, if (last) null else "false", now)
+
     /** 0 = off. */
     fun binAutoDeleteDays(db: KeePassDatabase): Int = db.content.meta.customData[CD_BIN_DAYS]?.value?.toIntOrNull()?.coerceAtLeast(0) ?: 0
     fun setBinAutoDeleteDays(db: KeePassDatabase, days: Int, now: Instant = Instant.now()): KeePassDatabase =

@@ -279,38 +279,7 @@ class Ux0428Test {
         assertNotNull(g)
     }
 
-    @Test fun memo_eachLineSitsInTheMiddleOfItsRow_textLeftAligned() {
-        val id = memoId()
-        Session.update { Order.saveEntry(it, id, mapOf("Title" to "買い物メモ", "Notes" to "・牛乳\n・卵\n・食パン\n・洗剤 (詰め替え)\nShopping list: milk, eggs"), emptyList(), null) }
-        a.show(MemoScreen(a, id)); idle(); layoutHost(); layoutHost()
-        val rt = find(a.host, io.github.zmlworks.kpexplorer.ui.Parts.RuledText::class.java)!!
-        assertEquals(5, rt.lineCount)
-        val b = Bitmap.createBitmap(W_, H_, Bitmap.Config.ARGB_8888); a.host.draw(Canvas(b))   // rules are placed when drawn
-        val fm = rt.paint.fontMetricsInt
-        for (i in 0 until rt.lineCount) {
-            val c = rt.getLineBounds(i, android.graphics.Rect()) + (fm.ascent + fm.descent) / 2
-            val above = if (i == 0) rt.topRule else rt.ruleYs[i - 1]
-            val below = rt.ruleYs[i]
-            assertTrue("line $i: above ${c - above}, below ${below - c}", kotlin.math.abs((c - above) - (below - c)) <= 1)
-            assertTrue("line $i between its rules", above < c && c < below)
-        }
-        assertTrue(rt.topRule >= 0)
-        assertTrue("rules reach the bottom", rt.ruleYs.last() + rt.lineHeight >= rt.scrollY + rt.height)
-        assertEquals(android.view.Gravity.LEFT, android.view.Gravity.getAbsoluteGravity(rt.gravity, View.LAYOUT_DIRECTION_LTR) and android.view.Gravity.HORIZONTAL_GRAVITY_MASK)
-        // the characters themselves (pixels) sit midway: same gap to the rule above and below
-        val l = IntArray(2); rt.getLocationInWindow(l); val hl = IntArray(2); a.host.getLocationInWindow(hl)
-        val ox = l[0] - hl[0]; val oy = l[1] - hl[1] - rt.scrollY
-        fun ink(y: Int) = (ox + rt.paddingLeft until ox + rt.width - rt.paddingRight).any { x -> val p = b.getPixel(x, y)
-            android.graphics.Color.red(p) < 110 && android.graphics.Color.green(p) < 110 && android.graphics.Color.blue(p) < 110 }
-        for (i in 0 until 3) {
-            val top = (if (i == 0) rt.topRule else rt.ruleYs[i - 1]) + oy; val bot = rt.ruleYs[i] + oy
-            val rows = (top + 2 until bot - 1).filter { ink(it) }
-            assertTrue("ink in row $i", rows.isNotEmpty())
-            val gapAbove = rows.first() - top; val gapBelow = bot - rows.last()
-            assertTrue("row $i: ink gap above $gapAbove, below $gapBelow", kotlin.math.abs(gapAbove - gapBelow) <= W.dp(3))
-        }
-        shot("v0428/02-memo-lines.png")
-    }
+    // 0.4.29: memo_eachLineSitsInTheMiddleOfItsRow_textLeftAligned removed with 0.4.28's rules between the lines (see Ux0429Test)
 
     private fun measureDialog(d: io.github.zmlworks.kpexplorer.ui.ClassicDialog): View = d.frame.also { v ->
         v.measure(View.MeasureSpec.makeMeasureSpec(W_ - 72, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(H_ - 300, View.MeasureSpec.AT_MOST))

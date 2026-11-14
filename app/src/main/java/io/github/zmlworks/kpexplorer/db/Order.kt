@@ -77,7 +77,7 @@ object Order {
 
     /**
      * 0.4.28: sub-folders of [g] for the folder tree — the same order as the list ([children]), with the recycle
-     * bin ([bin]) always last. Up to 0.4.27 the tree used the file's own group order, which the list's reordering
+     * bin ([bin]) always last (0.4.29: pass null to keep the bin where the list has it, see [Tree.binLastInTree]). Up to 0.4.27 the tree used the file's own group order, which the list's reordering
      * (stored in [CD_ORDER]) never changed, so a folder restored from the bin (appended to the file's groups)
      * stayed below the bin in the tree for good.
      */

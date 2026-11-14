@@ -45,7 +45,9 @@ class FolderTree(
      */
     private val cushion: (() -> Boolean)? = null,
     /** 0.4.24: rows alternate white / pale blue. */
-    private val striped: Boolean = false
+    private val striped: Boolean = false,
+    /** 0.4.29: the bin is always the last folder (ごみ箱の設定; false = where the list has it). */
+    private val binLast: Boolean = true
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -76,7 +78,7 @@ class FolderTree(
         fun walk(g: Group, depth: Int, flags: List<Boolean>, last: Boolean) {
             out.add(Node(g, depth, flags, last))
             if (!isExpanded(g)) return
-            val kids = io.github.zmlworks.kpexplorer.db.Order.folders(g, binId).filter { it.uuid !in hidden }
+            val kids = io.github.zmlworks.kpexplorer.db.Order.folders(g, if (binLast) binId else null).filter { it.uuid !in hidden }
             kids.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == kids.size - 1) }
         }
         walk(root, 0, emptyList(), true)

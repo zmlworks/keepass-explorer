@@ -65,6 +65,15 @@ object BinSettings {
             setOnClickListener { Session.update { Tree.setBinHidden(it, isChecked) }; changed(a, body) }
         }
         body.addView(hide, W.lp(W.MATCH, W.WRAP))
+        // 0.4.29: the bin's place in the folder tree
+        val last = W.check(a, L.t("階層表示でごみ箱をいつも一番下にする", "Always show the recycle bin last in the folder tree"), Tree.binLastInTree(db)).apply {
+            tag = "bin-tree-last"; isEnabled = !ro
+            setOnClickListener { Session.update { Tree.setBinLastInTree(it, isChecked) }; changed(a, body) }
+        }
+        body.addView(last, W.lp(W.MATCH, W.WRAP))
+        body.addView(W.text(a, L.t("外すと、階層表示のごみ箱は一覧と同じ位置 (一覧でドラッグして動かせます) に出ます。",
+            "When off, the folder tree shows the bin where it is in the list (drag it there to move it)."), 13f, color = W.SHADOW),
+            W.lp(W.MATCH, W.WRAP, t = 2))
     }
 
     private fun rename(a: MainActivity, body: LinearLayout) {

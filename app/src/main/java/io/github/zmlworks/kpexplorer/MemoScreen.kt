@@ -30,7 +30,7 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
     val title: TextView = W.text(ctx, "", 18f, true, W.HILITE).apply {
         isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(8), 0, W.dp(4), 0)
     }
-    val text = Parts.RuledText(ctx, editable = true)
+    val text = Parts.RuledText(ctx, editable = true, centred = true)
     /** This app's independent memo (diff history) or a memo-like entry of another app (standard History). */
     val appMemo: Boolean
     /** 「- 差分」 / 「- 履歴」 at the right end of the title bar. */

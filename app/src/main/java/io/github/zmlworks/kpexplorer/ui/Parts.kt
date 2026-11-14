@@ -176,7 +176,12 @@ object Parts {
      * at [getLineHeight] spacing down to the bottom of the visible area. Everything is drawn in content
      * coordinates, so the rules scroll together with the text. 0.4.14: dotted rules, no red margin line.
      */
-    class RuledText(ctx: Context, editable: Boolean) : EditText(ctx) {
+    /**
+     * Ruled notebook text. [centred] (0.4.29, the memo page): a memo shorter than the page sits in the middle of
+     * the page's height (the block of lines; each line stays left-aligned). A taller one starts at the top and
+     * scrolls as before. The rules run over the whole page, above the text too, in step with the lines.
+     */
+    class RuledText(ctx: Context, editable: Boolean, centred: Boolean = false) : EditText(ctx) {
         private val rule = Paint().apply {
             color = 0xFF8FAAD6.toInt(); strokeWidth = maxOf(1f, W.px.toFloat())
             pathEffect = android.graphics.DashPathEffect(floatArrayOf(RULE_DOT_DP * W.dp(1), RULE_GAP_DP * W.dp(1)), 0f)
@@ -184,11 +189,13 @@ object Parts {
         private val r = android.graphics.Rect()
         /** Rules under each line, then on down the page (content coordinates) — exposed for tests. */
         val ruleYs = ArrayList<Int>()
+        /** Rules above the first line, nearest first (only when the text does not start at the top; tests). */
+        val ruleYsAbove = ArrayList<Int>()
         init {
             setBackgroundColor(0xFFFFFFF4.toInt())
             setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 17f)
             setTextColor(W.TEXT)
-            gravity = Gravity.TOP or Gravity.START
+            gravity = (if (centred) Gravity.CENTER_VERTICAL else Gravity.TOP) or Gravity.START
             setPadding(W.dp(12), W.dp(8), W.dp(8), W.dp(8))
             setLineSpacing(W.dp(8).toFloat(), 1f)
             includeFontPadding = false
@@ -201,35 +208,32 @@ object Parts {
             if (!editable) { isFocusable = false; isCursorVisible = false; keyListener = null; setTextIsSelectable(true) }
         }
         /**
-         * 0.4.28: each line of text sits in the middle of its ruled row (the same space above and below the
-         * characters). Up to 0.4.27 a rule was drawn just under each baseline, so the text hugged the rule below
-         * and the line spacing was all above it. The rules are midway between the centres of two lines; one more
-         * rule above the first line closes its row. The text itself stays left-aligned.
+         * A rule just under each baseline (0.4.27; 0.4.28's rules midway between lines were a misreading of
+         * 「行を中央寄せ」 and are gone), on down the page, and (0.4.29) up the page above a centred text.
          */
         override fun onDraw(c: Canvas) {
-            ruleYs.clear()
-            val fm = paint.fontMetricsInt
-            val mid = (fm.ascent + fm.descent) / 2      // centre of the characters relative to the baseline (< 0)
+            ruleYs.clear(); ruleYsAbove.clear()
+            val gap = W.dp(4)                       // rule sits a little below the baseline (under descenders of Latin text)
             val bottom = scrollY + height           // visible bottom in content coordinates
             val l = layout
+            var last = -1
             var step = lineHeight
-            val centres = ArrayList<Int>()
-            if (l != null) for (i in 0 until lineCount) {
-                centres.add(getLineBounds(i, r) + mid)  // baseline incl. padding, in content coordinates
-                if (i > 0) step = maxOf(1, l.getLineBaseline(i) - l.getLineBaseline(i - 1))
+            if (l != null) {
+                for (i in 0 until lineCount) {
+                    val base = getLineBounds(i, r)  // baseline incl. padding and the centring offset, content coordinates
+                    val y = base + gap
+                    ruleYs.add(y); last = y
+                    if (i > 0) step = maxOf(1, l.getLineBaseline(i) - l.getLineBaseline(i - 1))
+                }
             }
-            val first = centres.firstOrNull() ?: (extendedPaddingTop - fm.ascent + mid)
-            topRule = first - step / 2
-            for (cy in centres) ruleYs.add(cy + step / 2)
-            if (ruleYs.isEmpty()) ruleYs.add(topRule + step)
-            var y = ruleYs.last() + step
+            var y = if (last < 0) extendedPaddingTop + (l?.getLineBaseline(0) ?: lineHeight) + gap else last + step
             while (y < bottom) { ruleYs.add(y); y += step }
-            for (yy in listOf(topRule) + ruleYs) if (yy >= scrollY && yy >= 0) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
+            // above the first line (centred text), in step up to the top padding; none for text at the top
+            var up = (ruleYs.firstOrNull() ?: y) - step
+            while (up >= scrollY + paddingTop) { ruleYsAbove.add(up); up -= step }
+            for (yy in ruleYsAbove + ruleYs) if (yy >= scrollY) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
             super.onDraw(c)
         }
-        /** Rule above the first line (content coordinates; tests). */
-        var topRule = 0
-            private set
         /** The rule's paint (tests: dotted, no margin). */
         val rulePaint: Paint get() = rule
         companion object { const val RULE_DOT_DP = 1.5f; const val RULE_GAP_DP = 2.5f }
