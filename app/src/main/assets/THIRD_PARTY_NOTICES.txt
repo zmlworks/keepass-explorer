@@ -295,7 +295,7 @@ SOFTWARE.
 Some icons by Yusuke Kamiyamane. Licensed under a Creative Commons Attribution 3.0 License.
 Fugue Icons 3.5.6, (C) 2013 Yusuke Kamiyamane. https://p.yusukekamiyamane.com/
 License: https://creativecommons.org/licenses/by/3.0/
-Icons used (16px, icons/): key, mail, globe, wi-fi, plate-cutlery, user, credit-card, bank, shopping-basket, controller, mobile-phone, lock, home, star, document-text.
+Icons used (16px, icons/): key, lock, information-white, paper-plane, globe-green, wi-fi, media-player-phone, telephone-handset, users, briefcase, graduation-hat, home, credit-card, bank, shopping-basket, price-tag, controller, puzzle, television, music, ticket, car, train, plate-cutlery, star, document-text.
 Bundled as res/drawable-nodpi/fugue_<id>.png, renamed only; pixels and colours unchanged.
 Modification: enlarged on screen by integer nearest-neighbour scaling.
 None of the separately licensed icons listed in the Fugue README (geotag, language, open-share,

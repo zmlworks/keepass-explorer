@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.33)
+# KeePass Explorer (v0.4.34)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -30,6 +30,17 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.34 の変更
+
+- 鍵のアイコンを見直した。すべて Fugue Icons 3.5.6（Yusuke Kamiyamane, CC BY 3.0）の 16px 原画のまま（色・画素は変えず、整数倍の最近傍補間で拡大）。
+  - 差し替え: ウェブ → 緑の地球儀（globe-green）、メール → 紙飛行機（paper-plane）、アカウント → 2 人（users）、旧来の携帯電話 → スマートフォン（media-player-phone）。
+  - 追加: 電話（telephone-handset）、値札（price-tag）、仕事（briefcase）、学校（graduation-hat）、動画配信（television）、音楽（music）、車（car）、交通（train）、パズル（puzzle）、チケット（ticket）、情報（information-white）。買い物カゴはそのまま。全 26 種。
+  - 選択画面は関連するものを並べた順（鍵・ロック・情報 / 通信 / 人・場所 / お金・買い物 / 娯楽 / 乗り物 / その他）に、1 行 4 個にして、スクロールなしで全部見えるようにした。
+- ファイルに保存される ID（key, mail, web, user, phone など）は変えていないので、既存の鍵は新しい絵で表示される（以前の「携帯電話」はスマートフォンに）。KeePass 標準アイコンも従来どおり併記する。新しいアイコンの標準アイコンは 情報 = Info, 電話 = UserCommunication, スマートフォン = BlackBerry, 値札 = Money, 仕事 = ClipboardReady, 学校 = Book, 動画配信 = Screen, 音楽 = CDRom, 車・交通 = Run, パズル = Parts, チケット = PaperFlag。
+- 他のアプリで標準アイコン Info / UserCommunication / BlackBerry / Parts / Screen / CDRom を付けた鍵は、それぞれ対応する絵で表示する。
+- 修正: アイコンを変えずに鍵を保存すると、他のアプリで付けた標準アイコン（例: 62 Tux, 2 WorldStar）が鍵（0）や近い絵の標準アイコンに書き換わっていた。アイコンを選び直したときだけ書き換えるようにした。
+- AI エージェントが作成・テストした（Robolectric の JVM テスト 308 件、うち 1 件はスキップ）。実機での確認はまだしていない。
 
 ## アプリ 0.4.33 の変更
 - メニュー・ボタン・メッセージの「…」を全部なくした（日本語・英語とも。例: 「インポート…」→「インポート」、「保存しています…」→「保存しています」）。長い値の折りたたみの印「 …」はそのまま。

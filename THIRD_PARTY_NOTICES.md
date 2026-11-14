@@ -43,7 +43,7 @@ Modifications to vendored kotpass (KeePass Explorer 0.3.3): BaseKdfProvider made
 
 Some icons by Yusuke Kamiyamane. Licensed under a [Creative Commons Attribution 3.0 License](https://creativecommons.org/licenses/by/3.0/).
 Source: [Fugue Icons 3.5.6](https://p.yusukekamiyamane.com/) (© 2013 Yusuke Kamiyamane), official archive `fugue-icons-3.5.6.zip`.
-16px icons used: `key`, `mail`, `globe`, `wi-fi`, `plate-cutlery`, `user`, `credit-card`, `bank`, `shopping-basket`, `controller`, `mobile-phone`, `lock`, `home`, `star`, `document-text`.
+16px icons used (since app 0.4.34; `mail`, `globe`, `user` and `mobile-phone` were used up to 0.4.33): `key`, `lock`, `information-white`, `paper-plane`, `globe-green`, `wi-fi`, `media-player-phone`, `telephone-handset`, `users`, `briefcase`, `graduation-hat`, `home`, `credit-card`, `bank`, `shopping-basket`, `price-tag`, `controller`, `puzzle`, `television`, `music`, `ticket`, `car`, `train`, `plate-cutlery`, `star`, `document-text`.
 Bundled as `app/src/main/res/drawable-nodpi/fugue_<id>.png` (renamed only; pixels/colours unchanged).
 Modification: shown enlarged by integer nearest-neighbour scaling. See [`LICENSES/Fugue-Icons-CC-BY-3.0.txt`](LICENSES/Fugue-Icons-CC-BY-3.0.txt).
 

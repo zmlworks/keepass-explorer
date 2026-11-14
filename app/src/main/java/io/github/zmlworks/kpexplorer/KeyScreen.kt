@@ -184,6 +184,12 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         Tree.parseTags(tags), layout.toList(), iconId, multi.toSortedSet())
     /** Chosen icon id ([EntryIcon]); null = default key. */
     var iconId: String? = null
+    /**
+     * 0.4.34: the icon as loaded / last saved. While [iconId] is still this, a save leaves the entry's KeePass
+     * IconID and our CustomData as they are (an icon of another app, e.g. 23 "Screen", is not rewritten as the
+     * closest picture's standard icon or as the key).
+     */
+    private var savedIconId: String? = null
     /** Custom fields shown multi-line (memo-like). */
     val multi = LinkedHashSet<String>()
     /** Existing-tag buttons are hidden until the Tag field is long-pressed. */
@@ -219,6 +225,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             tags = Tree.formatTags(e.tags)
             layout = Order.layout(e).toMutableList()
             iconId = io.github.zmlworks.kpexplorer.db.EntryIcon.of(e)?.id
+            savedIconId = iconId
             multi.addAll(Order.multiline(e))
         } else listOf("Title", "UserName", "Password", "URL", "Notes").forEach { values[it] = "" }
         bar = Parts.keyDetailBar(ctx, titleText(), onClose = { onBack() })
@@ -742,10 +749,12 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
                 id = e.uuid; entryId = id
             }
             val ic = io.github.zmlworks.kpexplorer.db.EntryIcon.def(iconId)
-            Session.update { Order.saveEntry(it, id, vals, tagList, layout.toList(),
-                cdSet = mapOf(io.github.zmlworks.kpexplorer.db.EntryIcon.CD to iconId,
-                    Order.CD_MULTI to multi.filter { it in vals }.joinToString("\n")),
-                icon = ic?.std ?: app.keemobile.kotpass.constants.PredefinedIcon.Key, removed = removedKeys.toSet()) }
+            val iconSet = iconId != savedIconId
+            val cd = mapOf(Order.CD_MULTI to multi.filter { it in vals }.joinToString("\n")) +
+                (if (iconSet) mapOf(io.github.zmlworks.kpexplorer.db.EntryIcon.CD to iconId) else emptyMap())
+            Session.update { Order.saveEntry(it, id, vals, tagList, layout.toList(), cdSet = cd,
+                icon = if (iconSet) ic?.std ?: app.keemobile.kotpass.constants.PredefinedIcon.Key else null, removed = removedKeys.toSet()) }
+            savedIconId = iconId
             removedKeys.clear()
             Session.flush()
         } catch (t: Throwable) {

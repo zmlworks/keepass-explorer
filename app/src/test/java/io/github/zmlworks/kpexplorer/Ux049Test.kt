@@ -92,7 +92,8 @@ class Ux049Test {
 
     @Test fun persistedIconIdsMapToFugue_stable() {
         val ids = io.github.zmlworks.kpexplorer.db.EntryIcon.ALL.map { it.id }
-        assertEquals(listOf("key","mail","web","wifi","food","user","card","bank","cart","game","phone","lock","home","star","note"), ids)
+        // the ids stored since 0.4.9 are all still there (0.4.34 reordered the picker and added more)
+        assertTrue(ids.containsAll(listOf("key","mail","web","wifi","food","user","card","bank","cart","game","phone","lock","home","star","note")))
         val res = ids.map { io.github.zmlworks.kpexplorer.ui.FugueIcons.resId(it) }
         assertEquals("one distinct Fugue asset per id", ids.size, res.toSet().size)
         for (id in ids) {

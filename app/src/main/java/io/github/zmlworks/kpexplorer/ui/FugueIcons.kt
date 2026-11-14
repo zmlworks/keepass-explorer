@@ -20,6 +20,7 @@ object FugueIcons {
     private val cache = HashMap<String, Bitmap>()
     private val src = HashMap<String, Bitmap>()
 
+    /** Picture of each [EntryIcon] id: `fugue_<id>.png`, an unchanged 16 px Fugue icon (file names: THIRD_PARTY_NOTICES). */
     fun resId(id: String?): Int = when (id) {
         "mail" -> R.drawable.fugue_mail
         "web" -> R.drawable.fugue_web
@@ -35,6 +36,17 @@ object FugueIcons {
         "home" -> R.drawable.fugue_home
         "star" -> R.drawable.fugue_star
         "note" -> R.drawable.fugue_note
+        "info" -> R.drawable.fugue_info
+        "telephone" -> R.drawable.fugue_telephone
+        "work" -> R.drawable.fugue_work
+        "school" -> R.drawable.fugue_school
+        "tag" -> R.drawable.fugue_tag
+        "puzzle" -> R.drawable.fugue_puzzle
+        "video" -> R.drawable.fugue_video
+        "music" -> R.drawable.fugue_music
+        "ticket" -> R.drawable.fugue_ticket
+        "car" -> R.drawable.fugue_car
+        "train" -> R.drawable.fugue_train
         else -> R.drawable.fugue_key
     }
 
@@ -88,9 +100,9 @@ object FugueIcons {
      */
     fun pickerGrid(ctx: Context, selectedId: String?, onPick: (String) -> Unit): FlowLayout {
         val grid = FlowLayout(ctx)
-        // 0.3.11: larger glyphs; ~3 columns on phone widths
-        val cell = W.dp(100)
-        val glyph = W.dp(72)
+        // 0.4.34: 26 icons — 4 columns on phone widths (0.3.11 – 0.4.33: 100 dp tiles, 3 columns, 15 icons)
+        val cell = W.dp(80)
+        val glyph = W.dp(64)
         for (d in EntryIcon.ALL) {
             val tile = android.widget.FrameLayout(ctx).apply {
                 background = W.Bevel(if ((selectedId ?: "key") == d.id) W.Style.SUNKEN else W.Style.BUTTON)
