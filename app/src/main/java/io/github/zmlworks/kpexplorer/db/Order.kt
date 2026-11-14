@@ -223,8 +223,7 @@ object Order {
         // no empty History copy. Independent memos of this app keep only the change in the copy's Notes.
         val hadContent = content(old.fields, old.tags).let { it.first.isNotEmpty() || it.second.isNotEmpty() }
         if (contentChanged && MemoDiff.isAppMemo(old)) {
-            // 0.4.18: an ordinary History copy whose Notes hold only the change (see MemoDiff); 0.4.17 data goes
-            cd = cd - MemoDiff.LEGACY_CD
+            // 0.4.18: an ordinary History copy whose Notes hold only the change (see MemoDiff)
             MemoDiff.changeEntry(old, newFields["Title"]?.content.orEmpty(), newFields["Notes"]?.content.orEmpty())
                 ?.let { hist = (old.history + it).takeLast(max.coerceAtLeast(0)) }
         } else if (contentChanged && hadContent) hist = (old.history + changedOnlyCopy(old, newFields, nt)).takeLast(max.coerceAtLeast(0))
@@ -287,43 +286,10 @@ object Order {
         return Tree.modifyGroup(db, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) upd else it }) }
     }
 
-    /**
-     * 0.4.17: removes the empty History copy that 0.4.16 and earlier left on keys / memos created by this app
-     * (the oldest copy, with no field value and no tag, of an entry with KPExplorer.Kind). Nothing else is touched.
-     */
-    /** 0.4.18: converts 0.4.17 memo diffs (CustomData KPExplorer.MemoDiffs) to History change copies, on open. */
-    fun migrateMemoDiffs(db: KeePassDatabase): KeePassDatabase {
-        fun fix(g: Group): Group {
-            var changed = false
-            val es = g.entries.map { e -> MemoDiff.migrate(e, Tree.historyMax(db))?.also { changed = true } ?: e }
-            val gs = g.groups.map { c -> fix(c).also { if (it !== c) changed = true } }
-            return if (changed) g.copy(entries = es, groups = gs) else g
-        }
-        val r = db.content.group
-        val nr = fix(r)
-        return if (nr === r) db else db.modifyContent { copy(group = nr) }
-    }
-
     /** Folder counts as shown in the tree and paths (0.4.18): "(folders,keys,memos)", zeros included. */
     fun counts(g: Group): String {
         val m = g.entries.count { isMemo(it) }
         return "(${g.groups.size},${g.entries.size - m},$m)"
-    }
-
-    fun dropEmptyCreationHistory(db: KeePassDatabase): KeePassDatabase {
-        fun empty(e: Entry) = content(e.fields, e.tags).let { it.first.isEmpty() && it.second.isEmpty() }
-        fun fix(g: Group): Group {
-            var changed = false
-            val es = g.entries.map { e ->
-                val h = e.history
-                if (e.customData[CD_KIND] != null && h.isNotEmpty() && empty(h[0])) { changed = true; e.copy(history = h.drop(1)) } else e
-            }
-            val gs = g.groups.map { c -> fix(c).also { if (it !== c) changed = true } }
-            return if (changed) g.copy(entries = es, groups = gs) else g
-        }
-        val r = db.content.group
-        val nr = fix(r)
-        return if (nr === r) db else db.modifyContent { copy(group = nr) }
     }
 
     fun renameEntry(db: KeePassDatabase, id: UUID, title: String): KeePassDatabase {

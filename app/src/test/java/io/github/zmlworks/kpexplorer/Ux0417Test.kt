@@ -209,7 +209,7 @@ class Ux0417Test {
         val ms = openMemo(id)
         assertFalse(ms.appMemo); assertEquals("- 履歴", ms.historyLink.text.toString())
         saveMemo(ms, "一行目\n変更")
-        assertEquals(1, hist(id).size); assertNull(entry(id).customData[io.github.zmlworks.kpexplorer.db.MemoDiff.LEGACY_CD])
+        assertEquals(1, hist(id).size)
         val v = openMemo(id).openHistory()!!; idle()
         assertSame(io.github.zmlworks.kpexplorer.ui.HistoryViewer.current, v)
         assertNotNull(findTag<View>(v.frame, "history-delete-1")); v.dismiss()
@@ -239,19 +239,6 @@ class Ux0417Test {
         // the first real edit keeps exactly the created content
         val ks = openKey(id); ks.boxes["Password"]!!.field.setText("pw2"); assertTrue(ks.save(silent = true)); idle()
         assertEquals(listOf("pw"), hist(id).map { Tree.password(it) })
-        // an empty copy left by 0.4.16 or earlier on an app-made key is removed on open; real copies, and
-        // entries of other apps, are left alone
-        val made = entry(id)
-        val emptyCopy = Order.newKey().copy(uuid = id)
-        val foreignId = ids["Gmail"]!!
-        Session.update { d -> Tree.modifyGroup(d, Tree.root(d).uuid) { g -> g.copy(entries = g.entries.map {
-            when (it.uuid) { id -> it.copy(history = listOf(emptyCopy) + it.history); foreignId -> it.copy(history = listOf(Order.newKey().copy(uuid = foreignId, customData = emptyMap()))); else -> it } }) } }
-        assertEquals(2, hist(id).size)
-        val cleaned = Order.dropEmptyCreationHistory(Session.db!!)
-        assertEquals(listOf("pw"), Tree.findEntry(cleaned, id)!!.second.history.map { Tree.password(it) })
-        assertEquals(1, Tree.findEntry(cleaned, foreignId)!!.second.history.size)
-        assertSame("nothing to drop → same database", cleaned, Order.dropEmptyCreationHistory(cleaned))
-        assertEquals(made.fields.entries.associate { it.key to it.value.content }, Tree.findEntry(cleaned, id)!!.second.fields.entries.associate { it.key to it.value.content })
         // the key screen's own "new key" path (no NewKeyScreen) also leaves none
         val k2 = KeyScreen(a, null, Tree.root(Session.db!!).uuid); a.show(k2); idle()
         k2.values["Title"] = "別の鍵"; k2.values["Password"] = "x"; k2.dirty = true

@@ -218,7 +218,6 @@ class Ux0418Test {
         assertEquals("買い物メモ", Tree.title(h[0])); assertEquals("- 卵2個\n+ 卵3個", Tree.notes(h[0]))
         assertTrue(D.isChangeEntry(entry(id), h[0]))
         assertTrue("no special marker", h[0].customData.keys.none { it.contains("Diff") })
-        assertNull(entry(id).customData[D.LEGACY_CD])
         for (s in V.drop(2)) saveMemo(openMemo(id), s)
         assertEquals(5, hist(id).size)
         assertEquals("the newest", "- 卵3個\n+ 卵4個", Tree.notes(hist(id).last()))
@@ -288,30 +287,6 @@ class Ux0418Test {
         saveMemo(ms, "一行目\n変更")
         // 0.4.19: like a key, the copy holds only what changed (Notes as the change text)
         assertEquals("- ↵二行目\n+ ↵変更", Tree.notes(hist(id).single()))
-    }
-
-    // ---------------------------------------------------------------- 0.4.17 data
-    @Test fun migration_from0417_convertsToChangeCopies_andRemovesCustomData() {
-        val id = memoId()
-        fun legacy(e: app.keemobile.kotpass.models.Entry, recs: List<io.github.zmlworks.kpexplorer.db.MemoDiff.Rec>) =
-            e.copy(customData = e.customData + (D.LEGACY_CD to app.keemobile.kotpass.models.CustomDataValue(D.encode(recs), java.time.Instant.now())))
-        val c = "A\nB2\nC"; val v1 = "A\nB1\nC"; val v0 = "A\nB0"
-        val recs = listOf(io.github.zmlworks.kpexplorer.db.MemoDiff.Rec(3_000_000L, D.hash(c), null, D.diff(c, v1)), io.github.zmlworks.kpexplorer.db.MemoDiff.Rec(2_000_000L, D.hash(v1), "旧題", D.diff(v1, v0)))
-        Session.update { d -> Tree.modifyGroup(d, Tree.root(d).uuid) { g -> g.copy(entries = g.entries.map {
-            if (it.uuid == id) legacy(it.copy(fields = it.fields + ("Notes" to app.keemobile.kotpass.models.EntryValue.Plain(c))), recs) else it }) } }; idle()
-        val m = Order.migrateMemoDiffs(Session.db!!)
-        val e = Tree.findEntry(m, id)!!.second
-        assertNull(e.customData[D.LEGACY_CD])
-        assertEquals(listOf(D.changeText(v0, v1), D.changeText(v1, c)), e.history.map { Tree.notes(it) })
-        assertEquals(listOf("旧題", "買い物メモ"), e.history.map { Tree.title(it) })
-        assertEquals(java.time.Instant.ofEpochMilli(2_000_000L), e.history[1].times!!.lastModificationTime)
-        assertEquals(c, Tree.notes(e))
-        assertSame("nothing left to do", m, Order.migrateMemoDiffs(m))
-        // a chain that no longer fits the text (edited elsewhere, no copy) is dropped, the CustomData removed
-        Session.update { d -> Tree.modifyGroup(d, Tree.root(d).uuid) { g -> g.copy(entries = g.entries.map {
-            if (it.uuid == id) it.copy(fields = it.fields + ("Notes" to app.keemobile.kotpass.models.EntryValue.Plain("別の本文"))) else it }) } }; idle()
-        val e2 = Tree.findEntry(Order.migrateMemoDiffs(Session.db!!), id)!!.second
-        assertNull(e2.customData[D.LEGACY_CD]); assertEquals(0, e2.history.size); assertEquals("別の本文", Tree.notes(e2))
     }
 
     // ---------------------------------------------------------------- folder counts
