@@ -534,29 +534,26 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     /**
-     * 0.4.24: the preview's password, masked; only the small 「表示する」/「隠す」 text toggles it (the whole value
-     * used to, and was tapped by mistake). The value itself is like the rest of the preview (tap = preview tap).
+     * 0.4.25: the preview's password is not shown as ****** but as a 「表示する」 link in its place; tapping it shows
+     * the password there (no hide: it goes when the selection changes or the preview closes). Only that text is a
+     * tap target; after it is shown, a tap on the password is an ordinary preview tap.
      */
     private fun passPreview(pw: String): View {
         val box = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL }
-        val v = W.text(ctx, pw, 14f).apply { KeyFields.valueFont(this, Order.F_PASS); tag = "pass-value" }
-        io.github.zmlworks.kpexplorer.ui.FieldBox.mask(v, true)
-        box.addView(v, W.lp(0, W.WRAP, 1f))
-        if (pw.isEmpty()) return box
-        var shown = false
+        if (pw.isEmpty()) { box.addView(W.text(ctx, "", 14f).apply { tag = "pass-value" }); return box }
         val t = W.text(ctx, L.t("表示する", "Show"), 14f, color = W.NAVY).apply {
             tag = "pass"   // [PreviewBox]: a tap here is not a preview tap
             paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
-            setPadding(W.dp(10), W.dp(4), W.dp(6), W.dp(4)); isClickable = true
+            setPadding(0, W.dp(4), W.dp(12), W.dp(4)); isClickable = true
             contentDescription = L.t("パスワードを表示する", "Show the password")
-            setOnClickListener {
-                shown = !shown
-                io.github.zmlworks.kpexplorer.ui.FieldBox.mask(v, !shown)
-                text = if (shown) L.t("隠す", "Hide") else L.t("表示する", "Show")
-                contentDescription = if (shown) L.t("パスワードを隠す", "Hide the password") else L.t("パスワードを表示する", "Show the password")
-            }
         }
-        box.addView(t, W.lp(W.WRAP, W.WRAP, l = 4))
+        t.setOnClickListener {
+            t.text = pw; t.tag = "pass-value"; t.contentDescription = null
+            t.paintFlags = t.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
+            t.setTextColor(W.TEXT); KeyFields.valueFont(t, Order.F_PASS)
+            t.setOnClickListener(null); t.isClickable = false
+        }
+        box.addView(t, W.lp(W.WRAP, W.WRAP))
         return box
     }
 

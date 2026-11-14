@@ -315,31 +315,7 @@ class Ux0424Test {
         assertEquals(3, ex.rows.size)
     }
 
-    @Test fun preview_password_onlyTheShowTextToggles() {
-        val ex = a.explorer!!; layoutHost()
-        ex.select(ids["Gmail"]!!); idle(); layoutHost()
-        val v = findTag<View>(ex.view, "pass-value") as android.widget.TextView
-        val t = findTag<View>(ex.view, "pass") as android.widget.TextView
-        assertNotNull("masked", v.transformationMethod)
-        assertEquals("表示する", t.text.toString())
-        assertFalse("the value is not a toggle any more", v.isClickable)
-        shot("v0424/04-preview-pass-hidden.png")
-        // tapping the value: a normal preview tap (focus), still masked
-        tapView(v); layoutHost()
-        assertNotNull(v.transformationMethod)
-        assertTrue(ex.previewSelected)
-        // tapping 表示する: shown; not a preview tap (no open)
-        tapView(t); layoutHost()
-        assertNull(v.transformationMethod)
-        assertEquals("隠す", t.text.toString())
-        assertTrue("still on the explorer", a.explorer!!.view.isAttachedToWindow)
-        assertTrue(ex.previewSelected)
-        shot("v0424/05-preview-pass-shown.png")
-        t.performClick(); idle()
-        assertNotNull(v.transformationMethod); assertEquals("表示する", t.text.toString())
-        // the toggle sits right after the value, much smaller than the row
-        assertTrue(t.width < (v.parent as View).width / 2)
-    }
+    // preview password: changed in 0.4.25 (「表示する」 in place of ******) — see Ux0425Test
 
     @Test fun monospace_onlyForFieldValues() {
         val ex = a.explorer!!; layoutHost()
@@ -348,22 +324,21 @@ class Ux0424Test {
         ex.refresh(); ex.select(id); idle(); layoutHost()
         val tv = allViews(ex.view).filterIsInstance<android.widget.TextView>()
         fun font(s: String) = tv.first { it.text.toString() == s }.typeface
-        assertEquals(android.graphics.Typeface.MONOSPACE, font("taro.yamada@gmail.com"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, font("https://mail.google.com"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, font("0O1lI"))
-        assertNotEquals("labels stay", android.graphics.Typeface.MONOSPACE, tv.first { it.text.toString() == "User:" }.typeface)
-        assertNotEquals("notes stay", android.graphics.Typeface.MONOSPACE, font("メモ本文"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, (findTag<View>(ex.view, "pass-value") as android.widget.TextView).typeface)
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("taro.yamada@gmail.com"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("https://mail.google.com"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("0O1lI"))
+        assertNotEquals("labels stay", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), tv.first { it.text.toString() == "User:" }.typeface)
+        assertNotEquals("notes stay", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), font("メモ本文"))
         shot("v0424/06-preview-monospace.png")
         val ks = openKey(id)
         val ed = allViews(ks.view).filterIsInstance<android.widget.EditText>()
         fun ef(s: String) = ed.first { it.text.toString() == s }.typeface
-        assertEquals(android.graphics.Typeface.MONOSPACE, ef("taro.yamada@gmail.com"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, ef("https://mail.google.com"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, ef("0O1lI"))
-        assertEquals(android.graphics.Typeface.MONOSPACE, ef("p"))
-        assertNotEquals("title stays", android.graphics.Typeface.MONOSPACE, ef("Gmail"))
-        assertNotEquals("notes stay", android.graphics.Typeface.MONOSPACE, ef("メモ本文"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("taro.yamada@gmail.com"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("https://mail.google.com"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("0O1lI"))
+        assertEquals(io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("p"))
+        assertNotEquals("title stays", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("Gmail"))
+        assertNotEquals("notes stay", io.github.zmlworks.kpexplorer.ui.Mono.typeface(app()), ef("メモ本文"))
         shot("v0424/07-key-page-monospace.png")
         // new key page: user name / password / URL in monospace too
         a.show(NewKeyScreen(a, Tree.root(Session.db!!).uuid)); idle(); layoutHost()
@@ -379,7 +354,6 @@ class Ux0424Test {
         assertEquals(listOf("Open", "Show all files below", "|", "New folder", "New key", "New memo", "|", "Rename", "Cut", "Paste here", "Move to a chosen folder", "|", "Delete"),
             labels(ex.treeMenu(ids["G"]!!)))
         ex.select(ids["Gmail"]!!); idle()
-        val t = findTag<View>(ex.view, "pass") as android.widget.TextView
-        assertEquals("Show", t.text.toString()); t.performClick(); assertEquals("Hide", t.text.toString())
+        assertEquals("Show", (findTag<View>(ex.view, "pass") as android.widget.TextView).text.toString())
     }
 }

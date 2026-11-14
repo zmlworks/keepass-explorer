@@ -195,7 +195,7 @@ class NewKeyScreen(private val a: MainActivity, private val parent: UUID) : Main
     private fun passRow() {
         val f = W.field(ctx).apply {
             background = null; setPadding(0, W.dp(1), 0, W.dp(1)); textSize = 16f
-            isSingleLine = true; typeface = android.graphics.Typeface.MONOSPACE
+            isSingleLine = true; typeface = io.github.zmlworks.kpexplorer.ui.Mono.typeface(ctx)
             setText(values["Password"].orEmpty())
             // Visible by default on create. If ever remasked, use length-preserving PTM
             // (never FieldBox.Stars on editable text — 0.4.1 crash).

@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.24)
+# KeePass Explorer (v0.4.25)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -30,6 +30,14 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.25 の変更
+- 簡易表示のパスワード: 「******」の所に「表示する」と出し、そこをタップするとその場にパスワードを表示する。隠す操作は無くした（別の項目を選ぶか簡易表示を閉じると、また「表示する」に戻る）。0.4.24 の右端の「表示する」「隠す」は取り除いた。表示した後のパスワードの所のタップは、簡易表示のほかの所と同じ。
+- 等幅の文字が実機で効いていなかった問題を直した。0.4.24 は端末の「monospace」の文字（`Typeface.MONOSPACE`）を指定していたが、端末によってはこれが普通の（幅が文字ごとに違う）文字になっていた（機種や着せ替えの文字の設定で、monospace も端末の文字に置き換わる）。テストは「MONOSPACE を指定したか」しか見ておらず、文字の幅を測っていなかった。
+  - 直し方: 等幅の文字 JetBrains Mono（SIL Open Font License 1.1）をアプリに入れ、欄の値はこれで表示する。入れたのは Regular の太さ、英数字・記号の部分だけ（約 18 KB）。合字（`->` や `!=` を一つの記号にする機能）は外し、パスワードの文字がそのまま見えるようにした。日本語などこの文字に無い字は、端末の文字で表示する。
+  - テストでは、実際の文字で「iiii」と「WWWW」の幅を測り、同じになることを確かめている（普通の文字では 1.5 倍以上違う）。
+  - ライセンス: `LICENSES/OFL-1.1-JetBrainsMono.txt`、`THIRD_PARTY_NOTICES.md`（アプリ内のライセンス表示にも追加）。
+- AI エージェントが作成・テストした（Robolectric の JVM テスト 250 件、うち 1 件はスキップ）。実機での確認はまだしていない。
 
 ## アプリ 0.4.24 の変更
 - 「ワンクッション」を入れた。ある所で何かを選んでいるとき、別の所の最初のタップは選択を外すだけにして、そのタップの動作（フォルダーを開くなど）はしない。次のタップからは普通に動く。

@@ -47,6 +47,14 @@ Source: [Fugue Icons 3.5.6](https://p.yusukekamiyamane.com/) (© 2013 Yusuke Kam
 Bundled as `app/src/main/res/drawable-nodpi/fugue_<id>.png` (renamed only; pixels/colours unchanged).
 Modification: shown enlarged by integer nearest-neighbour scaling. See [`LICENSES/Fugue-Icons-CC-BY-3.0.txt`](LICENSES/Fugue-Icons-CC-BY-3.0.txt).
 
+## JetBrains Mono (font for field values) — SIL Open Font License 1.1
+
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono), version 2.211.
+Bundled as `app/src/main/res/font/kpx_mono.ttf` (since app 0.4.25): the Regular (weight 400)
+instance of the variable font, subset to Latin characters and common punctuation, with the OpenType layout features
+(code ligatures) removed so that passwords show every character as typed. The font name is unchanged (the font has
+no Reserved Font Name). License: [`LICENSES/OFL-1.1-JetBrainsMono.txt`](LICENSES/OFL-1.1-JetBrainsMono.txt).
+
 ## Memo / folder / recycle-bin artwork
 
 Original pixel art by this project (MIT). The memo icon is inspired by the classic notepad motif

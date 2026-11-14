@@ -67,12 +67,12 @@ object KeyFields {
         Order.F_TAGS -> "Tag:"; Order.F_OTP -> "OTP:"; Order.F_NOTES -> "Memo:"; else -> "$k:"
     }
     /**
-     * 0.4.24: field values shown in the system monospace font (user name, password, URL, custom fields) so that
+     * 0.4.24: field values shown in a monospace font (0.4.25: the bundled [io.github.zmlworks.kpexplorer.ui.Mono]) (user name, password, URL, custom fields) so that
      * look-alike characters (0/O, l/1/I) are easier to tell apart. Title, notes and tags keep the normal font.
      * One place to change: every value view goes through [valueFont].
      */
     fun monospace(k: String) = k != Order.F_TITLE && k != Order.F_NOTES && k != Order.F_TAGS
-    fun valueFont(t: android.widget.TextView, k: String) { if (monospace(k)) t.typeface = android.graphics.Typeface.MONOSPACE }
+    fun valueFont(t: android.widget.TextView, k: String) { if (monospace(k)) t.typeface = io.github.zmlworks.kpexplorer.ui.Mono.typeface(t.context) }
 
     /** Small label shown above the value in a field well. */
     fun name(k: String) = label(k).removeSuffix(":")
@@ -81,7 +81,7 @@ object KeyFields {
     /** Live TOTP text: "123 456 (10s)", refreshed every second while attached. */
     class OtpView(ctx: Context, private val placeholder: String = "", private val uri: () -> String?) : TextView(ctx) {
         private val tick = object : Runnable { override fun run() { update(); postDelayed(this, 1000) } }
-        init { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 22f); typeface = android.graphics.Typeface.MONOSPACE; setTextColor(W.TEXT); update() }
+        init { setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 22f); typeface = io.github.zmlworks.kpexplorer.ui.Mono.typeface(ctx); setTextColor(W.TEXT); update() }
         fun current(): String? = runCatching { uri()?.let { Totp.code(Totp.parse(it), Instant.now().epochSecond) } }.getOrNull()
         fun update() {
             val u = uri()

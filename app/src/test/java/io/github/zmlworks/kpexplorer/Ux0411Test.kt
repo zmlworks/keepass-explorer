@@ -244,14 +244,13 @@ class Ux0411Test {
         assertEquals(ids["Gmail"], ex.selection)
         assertNull(ex.previewActive)
         val pane = ex.view.findViewWithTag<View>("pass")!!.let { var v: View = it; while (v !is ExplorerScreen.PreviewBox) v = v.parent as View; v }
-        // Pass tap = show / hide only (does not count as a preview tap)
+        // 「表示する」 tap = show only (does not count as a preview tap)
         val pass = ex.view.findViewWithTag<View>("pass")!!
         val pl = IntArray(2); pass.getLocationInWindow(pl); val bl = IntArray(2); pane.getLocationInWindow(bl)
         val px = (pl[0] - bl[0] + pass.width / 2).toFloat(); val py = (pl[1] - bl[1] + pass.height / 2).toFloat()
         pane.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, px, py, 0)); pane.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, px, py, 50)); idle()
         assertNull(ex.previewActive)
-        pane.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, px, py, 60)); pane.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, px, py, 90)); idle()  // hide again
-        assertNull(ex.previewActive)
+        // 0.4.25: no hide; a tap on the shown password is an ordinary preview tap (checked in Ux0425Test)
         // first tap elsewhere in the preview: selected (title highlighted), still on the explorer
         pane.dispatchTouchEvent(ev(MotionEvent.ACTION_DOWN, 40f, 30f, 100)); pane.dispatchTouchEvent(ev(MotionEvent.ACTION_UP, 40f, 30f, 150)); idle()
         assertEquals(ids["Gmail"], ex.previewActive)
