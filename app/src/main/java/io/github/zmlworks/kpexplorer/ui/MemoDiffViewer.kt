@@ -49,7 +49,7 @@ object MemoDiffViewer {
         val e = Tree.findEntry(Session.db ?: return null, entryId)?.second ?: return null
         val hist = e.history
         val ro = Session.readOnlyTemp
-        val title = L.t("差分 — ${Tree.title(e).ifEmpty { "(無題)" }}", "Changes — ${Tree.title(e).ifEmpty { "(Untitled)" }}")
+        val title = L.t("履歴 — ${Tree.title(e).ifEmpty { "(無題)" }}", "History — ${Tree.title(e).ifEmpty { "(Untitled)" }}")
         val body = W.vbox(ctx)
         lateinit var dlg: ClassicDialog
         fun delete(index: Int?) {

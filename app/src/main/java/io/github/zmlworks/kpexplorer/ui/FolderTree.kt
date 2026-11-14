@@ -15,7 +15,7 @@ import java.util.UUID
 
 /**
  * Explorer-style folder tree (dotted lines, +/− boxes). Expansion follows the KeePass Group IsExpanded flag;
- * toggling calls [onToggle] so the caller can persist it.
+ * toggling (the +/− box, or a tap on the selected folder since 0.4.30) calls [onToggle] so the caller can persist it.
  */
 @SuppressLint("ViewConstructor")
 class FolderTree(
@@ -47,7 +47,12 @@ class FolderTree(
     /** 0.4.24: rows alternate white / pale blue. */
     private val striped: Boolean = false,
     /** 0.4.29: the bin is always the last folder (ごみ箱の設定; false = where the list has it). */
-    private val binLast: Boolean = true
+    private val binLast: Boolean = true,
+    /**
+     * 0.4.30: a tap on the selected folder (a second tap) opens / closes it. False keeps that tap for [onJump]
+     * (main tree while 「下部ファイルをすべて表示」 is on: the tap returns to the folder's normal view, 0.4.23).
+     */
+    private val toggleSelected: Boolean = true
 ) : LinearLayout(ctx) {
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
@@ -224,7 +229,10 @@ class FolderTree(
                 else -> return true
             }
             val cx = n.depth * indent
-            if (hasKids && n.depth > 0 && e.x < cx + indent / 2 + W.dp(2)) {
+            // 0.4.30: a tap on the folder that is already selected (a second tap, a "double tap") opens / closes it
+            // like its +/− box (the root is always open)
+            val onBox = e.x < cx + indent / 2 + W.dp(2)
+            if (hasKids && n.depth > 0 && (onBox || (toggleSelected && n.g.uuid == selected))) {
                 val now = !isExpanded(n.g)
                 expanded[n.g.uuid] = now
                 onToggle(n.g.uuid, now)

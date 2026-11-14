@@ -181,7 +181,7 @@ object Parts {
      * the page's height (the block of lines; each line stays left-aligned). A taller one starts at the top and
      * scrolls as before. The rules run over the whole page, above the text too, in step with the lines.
      */
-    class RuledText(ctx: Context, editable: Boolean, centred: Boolean = false) : EditText(ctx) {
+    class RuledText(ctx: Context, editable: Boolean, private val centred: Boolean = false) : EditText(ctx) {
         private val rule = Paint().apply {
             color = 0xFF8FAAD6.toInt(); strokeWidth = maxOf(1f, W.px.toFloat())
             pathEffect = android.graphics.DashPathEffect(floatArrayOf(RULE_DOT_DP * W.dp(1), RULE_GAP_DP * W.dp(1)), 0f)
@@ -234,6 +234,57 @@ object Parts {
             for (yy in ruleYsAbove + ruleYs) if (yy >= scrollY) c.drawLine(scrollX.toFloat(), yy.toFloat(), (scrollX + width).toFloat(), yy.toFloat(), rule)
             super.onDraw(c)
         }
+        /**
+         * 0.4.30: a centred text moves inside the view when the view's height changes (the keyboard opening or
+         * closing), but the view itself stays put, so the editor kept its cursor / selection handles where the
+         * text used to be (a stray teardrop below or above the cursor). Telling it that the content moved —
+         * which is what the editor watches for, as after a scroll — places them on the text again.
+         */
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            if (centred && h != oldh) onScrollChanged(scrollX, scrollY, scrollX, scrollY)
+        }
+
+        private var downX = 0f
+        private var downY = 0f
+        private var tapCandidate = false
+        /**
+         * 0.4.30: the tap that starts editing (the page is not focused yet) only puts the cursor where it was
+         * tapped and opens the keyboard — no teardrop handle, which Android otherwise shows on every tap. Taps
+         * while already editing, long presses (word selection) and drags (scrolling) are left to the EditText.
+         */
+        @android.annotation.SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(e: android.view.MotionEvent): Boolean {
+            if (!isEditableText || isFocused) return super.onTouchEvent(e)
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y; tapCandidate = true }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                    if (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop) tapCandidate = false
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (tapCandidate && e.eventTime - e.downTime < android.view.ViewConfiguration.getLongPressTimeout()) {
+                        tapCandidate = false
+                        val cancel = android.view.MotionEvent.obtain(e).apply { action = android.view.MotionEvent.ACTION_CANCEL }
+                        super.onTouchEvent(cancel); cancel.recycle()
+                        startEditingAt(e.x, e.y)
+                        performClick()
+                        return true
+                    }
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> tapCandidate = false
+            }
+            return super.onTouchEvent(e)
+        }
+        private val isEditableText: Boolean get() = isFocusableInTouchMode && keyListener != null
+
+        /** Focus, cursor at the tapped point ([x], [y] in view coordinates) and the keyboard. */
+        fun startEditingAt(x: Float, y: Float) {
+            requestFocus()
+            setSelection(getOffsetForPosition(x, y))
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(this, 0)
+        }
+
         /** The rule's paint (tests: dotted, no margin). */
         val rulePaint: Paint get() = rule
         companion object { const val RULE_DOT_DP = 1.5f; const val RULE_GAP_DP = 2.5f }

@@ -260,7 +260,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } },
                 onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
-                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d))
+                onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat)
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {

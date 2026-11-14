@@ -20,8 +20,10 @@ import java.util.UUID
 
 /**
  * Memo window. 0.4.17: no back button in the bar; the title is shown in bold and is not edited here (名前の変更
- * in the file menu renames); 「- 差分」 at the right end opens the diff history (MemoDiffViewer) of a memo made by
- * this app, 「- 履歴」 the standard History viewer of other memos. A ruled notebook page, 戻る / 保存 at the bottom.
+ * in the file menu renames); 「- 履歴」 at the right end opens the diff history (MemoDiffViewer) of a memo made by
+ * this app, or the standard History viewer of other memos (0.4.30: both are called 履歴, as on a key page).
+ * A ruled notebook page; at the bottom one long [OK] while nothing has changed, 戻る / 保存 once something has
+ * (0.4.30, as on a key page).
  */
 class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainActivity.Screen {
     private val ctx = a
@@ -33,13 +35,15 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
     val text = Parts.RuledText(ctx, editable = true, centred = true)
     /** This app's independent memo (diff history) or a memo-like entry of another app (standard History). */
     val appMemo: Boolean
-    /** 「- 差分」 / 「- 履歴」 at the right end of the title bar. */
+    /** 「- 履歴」 at the right end of the title bar. */
     val historyLink: TextView
     /** Unsaved = the text differs from what was loaded or last saved (see [KeyScreen.dirty]). */
     var dirty: Boolean
         get() = text.text.toString() != baseline
-        set(v) { if (!v) baseline = text.text.toString() }
+        set(v) { if (!v) baseline = text.text.toString(); footer.setChanged(dirty) }
     private var baseline: String? = null
+    /** [OK] / 戻る・保存 (0.4.30). */
+    val footer: Parts.OkFooter = Parts.okFooter(ctx, onBack = { onBack() }, onSave = { save() }, onOk = { onBack() })
 
     init {
         val e = Session.db?.let { Tree.findEntry(it, entryId)?.second }
@@ -47,7 +51,7 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
         title.text = e?.let { Tree.title(it) }.orEmpty().ifEmpty { L.t("(無題)", "(Untitled)") }
         text.setText(e?.let { Tree.notes(it) }.orEmpty())
         val bar = Parts.appBar(ctx, "", onBack = { onBack() }, titleView = title, back = false)
-        val word = if (appMemo) L.t("差分", "Changes") else L.t("履歴", "History")
+        val word = L.t("履歴", "History")
         historyLink = W.text(ctx, "", 15f, true, W.HILITE).apply {
             text = SpannableString("- $word").apply { setSpan(UnderlineSpan(), 2, length, 0) }
             contentDescription = word; isClickable = true; gravity = Gravity.CENTER
@@ -58,8 +62,13 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
         root.addView(bar.bar, W.lp())
         root.addView(text, W.lp(W.MATCH, 0, 1f))
         root.addView(W.hsep(ctx), W.lp(W.MATCH, 4 * W.px))
-        root.addView(Parts.footer(ctx, onBack = { onBack() }, onSave = { save() }), W.lp())
+        root.addView(footer.view, W.lp())
         dirty = false
+        text.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) { footer.setChanged(dirty) }
+        })
     }
 
     fun openHistory(): ClassicDialog? =

@@ -242,7 +242,7 @@ class Ux0418Test {
         assertEquals(5, hist(id).size)
         val t0 = mtime(id)
         val ms = openMemo(id)
-        assertEquals("- 差分", ms.historyLink.text.toString())
+        assertEquals("- 履歴", ms.historyLink.text.toString())
         ms.historyLink.performClick(); idle()
         var v = dv.current!!
         val t1 = findTag<View>(v.frame, "change-text-1") as android.widget.TextView

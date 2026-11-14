@@ -210,6 +210,11 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
 
     private fun entry(): Entry? = entryId?.let { id -> Session.db?.let { Tree.findEntry(it, id)?.second } }
 
+    /** 0.4.30: on a change of the page's or the edited field's size, [showEditing] once that layout is done. */
+    private val keepEditVisible = View.OnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
+        if (bottom - top != oldBottom - oldTop) scroll.post { showEditing() }
+    }
+
     init {
         val e = entry()
         if (e != null) {
@@ -226,6 +231,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         content.addView(bar.bar, W.lp())
         val sv = ScrollView(ctx).apply { isFillViewport = true; W.classicScrollbars(this) }
         scroll = sv
+        sv.addOnLayoutChangeListener(keepEditVisible)   // the keyboard opening makes the page shorter
         sv.addView(body)
         content.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
@@ -233,6 +239,36 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         // Outside-tap / IME Done only ends inline edit into the local draft (TextWatchers).
         // Database write happens solely via explicit footer 保存 (0.4.3).
         io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = null
+    }
+
+    /**
+     * 0.4.30: the field being edited is kept wholly in view above the keyboard (Android only brings the cursor
+     * line into view, so the rest of a field near the bottom stayed under the keyboard). A field taller than
+     * the space keeps as much of itself in view as fits, always with the cursor line.
+     */
+    fun showEditing() {
+        val box = io.github.zmlworks.kpexplorer.ui.FieldEditSession.active ?: return
+        if (!box.editing || boxes.values.none { it === box } || !box.isAttachedToWindow) return
+        val sv = scroll
+        val h = sv.height - sv.paddingTop - sv.paddingBottom
+        if (h <= 0) return
+        val r = android.graphics.Rect(0, 0, box.width, box.height)
+        sv.offsetDescendantRectToMyCoords(box, r)
+        var y = sv.scrollY
+        if (r.height() <= h) y = y.coerceIn(r.bottom - h, r.top)
+        else {
+            y = y.coerceIn(r.top, r.bottom - h)
+            val f = box.field
+            val l = f.layout
+            if (l != null) {
+                val line = l.getLineForOffset(maxOf(0, f.selectionEnd))
+                val c = android.graphics.Rect(0, l.getLineTop(line) + f.totalPaddingTop - f.scrollY, f.width,
+                    l.getLineBottom(line) + f.totalPaddingTop - f.scrollY)
+                sv.offsetDescendantRectToMyCoords(f, c)
+                y = y.coerceIn(minOf(c.bottom - h, c.top), c.top)
+            }
+        }
+        if (y != sv.scrollY) sv.smoothScrollTo(0, y)
     }
 
     /** Outside-tap / IME Done: end edit into draft only — never Session.update / save. */
@@ -470,13 +506,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
             box.onSwipeLeft = { confirmOpenUrl(f.text.toString()) }
             box.setLeftSwipeGlyph(Glyph(Glyph.Kind.OPEN, W.HILITE))
         }
-        if (!multi) {
+        val fold = if (multi) null else {
             // 0.4.26: " …" when it does not fit; tap = whole value / one line (password: ****** → one line → whole)
-            val fold = io.github.zmlworks.kpexplorer.ui.ValueFold(f, k == Order.F_PASS, foldStates[k]) { foldStates[k] = it }
-            folds[k] = fold
-            box.onEditing = { fold.setEditing(it) }
-            box.onTap = { fold.tap() }   // (tags too: a tap only folds / unfolds; editing stays on the long press)
+            io.github.zmlworks.kpexplorer.ui.ValueFold(f, k == Order.F_PASS, foldStates[k]) { foldStates[k] = it }.also { fd ->
+                folds[k] = fd
+                box.onTap = { fd.tap() }   // (tags too: a tap only folds / unfolds; editing stays on the long press)
+            }
         }
+        box.onEditing = { fold?.setEditing(it); if (it) scroll.post { showEditing() } }
+        box.addOnLayoutChangeListener(keepEditVisible)   // (a field that grows while typing)
         if (k == Order.F_PASS) {
             box.onLongPress = { folds[k]?.reveal() }
         }

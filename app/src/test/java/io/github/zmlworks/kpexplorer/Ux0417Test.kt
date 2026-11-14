@@ -189,7 +189,7 @@ class Ux0417Test {
         assertFalse(ms.title is android.widget.EditText)
         assertEquals("買い物メモ", ms.title.text.toString())
         assertTrue(ms.title.typeface?.isBold == true)
-        assertEquals("- 差分", ms.historyLink.text.toString())
+        assertEquals("- 履歴", ms.historyLink.text.toString())
         assertSame(bar, ms.historyLink.parent)
         assertEquals("at the right end", bar.childCount - 1, bar.indexOfChild(ms.historyLink))
         val tl = IntArray(2); ms.title.getLocationInWindow(tl); val ll = IntArray(2); ms.historyLink.getLocationInWindow(ll)
