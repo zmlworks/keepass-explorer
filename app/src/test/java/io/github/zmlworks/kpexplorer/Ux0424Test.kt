@@ -268,9 +268,10 @@ class Ux0424Test {
         val ex = a.explorer!!; layoutHost()
         val root = Tree.root(Session.db!!).uuid
         val g = ids["G"]!!
-        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|",
+        // 0.4.36: no create items
+        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|",
             "名前の変更", "切り取り", "ここに貼り付け", "フォルダーを指定して移動", "一つ上の階層へ移動", "|", "削除"), labels(ex.treeMenu(g)))
-        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "新しいフォルダ", "新しい鍵", "新しいメモ", "|", "ここに貼り付け"), labels(ex.treeMenu(root)))
+        assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ここに貼り付け"), labels(ex.treeMenu(root)))
         assertEquals(listOf("開く", "下部ファイルをすべて表示", "|", "ごみ箱を空にする", "ごみ箱の設定"), labels(ex.treeMenu(bin())))
         assertFalse("paste: nothing cut", ex.treeMenu(g).first { it.label == "ここに貼り付け" }.enabled)
         val row = treeRow(g)
@@ -278,11 +279,7 @@ class Ux0424Test {
         assertTrue(ex.folderTree!!.longPress(g)); idle()
         shot("v0424/02-tree-menu.png", menuAt = (l[0] + W.dp(90)) to (l[1] + row.height / 2))
         Menus.dismiss()
-        // new memo here: opens that folder and asks the name
-        item(ex.treeMenu(ids["メール"]!!), "新しいメモ").action(); idle()
-        assertEquals(ids["メール"]!!, ex.current)
-        latestDialog().buttonViews.first().performClick(); idle()
-        assertEquals(3, Tree.findGroup(Session.db!!, ids["メール"]!!)!!.entries.size)
+        // (0.4.36: the create items are gone from this menu)
         // cut 銀行 in the tree, paste into 仕事 from the tree
         val bank = Tree.root(Session.db!!).groups.first { it.name == "銀行" }.uuid
         item(ex.treeMenu(bank), "切り取り").action(); idle()
@@ -351,7 +348,7 @@ class Ux0424Test {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup(); idle()
         val act = ctl.get(); if (act.explorer == null) act.showExplorer(); idle()
         val ex = act.explorer!!
-        assertEquals(listOf("Open", "Show all files below", "|", "New folder", "New key", "New memo", "|", "Rename", "Cut", "Paste here", "Move to a chosen folder", "Move up one level", "|", "Delete"),
+        assertEquals(listOf("Open", "Show all files below", "|", "Rename", "Cut", "Paste here", "Move to a chosen folder", "Move up one level", "|", "Delete"),
             labels(ex.treeMenu(ids["G"]!!)))
         ex.select(ids["Gmail"]!!); idle()
         assertEquals("Show", shown(findTag<View>(ex.view, "pass") as android.widget.TextView))

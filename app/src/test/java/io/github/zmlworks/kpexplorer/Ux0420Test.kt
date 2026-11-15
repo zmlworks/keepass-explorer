@@ -356,7 +356,7 @@ class Ux0420Test {
         val today = java.time.LocalDate.now()
         assertTrue(t.any { it == "%02d/%02d/%d".format(today.monthValue, today.dayOfMonth, today.year) })
         val menu = labels(ex.mainMenu())
-        assertTrue(menu.toString(), menu.contains("Language: English") && menu.any { it.startsWith("Date: ") })
+        assertTrue(menu.toString(), menu.contains("Language and date format"))   // 0.4.36: one item for both
         shot("v0420/03-english-mdy-details.png")
         val ks = openKey(id)
         assertEquals("- History", ks.historyLink!!.text.toString())
@@ -394,16 +394,17 @@ class Ux0420Test {
         val bt = texts(a.host)
         assertTrue(bt.toString(), bt.any { it.startsWith("$dmy ") && Regex("""\d\d/\d\d/\d{4} \d\d:\d\d""").matches(it) })
         assertTrue("Japanese still", bt.contains("今すぐ作成"))
-        // menu (0.4.23: one row showing the current format)
-        val m = labels(a.explorer!!.mainMenu()).filter { it.startsWith("日付: ") }
-        assertEquals(listOf("日付: DD/MM/YYYY"), m)
+        // menu (0.4.36: 「Languageと日付の形式」; the window marks the current format)
+        val d = a.explorer!!.pickLanguageAndDate(); idle()
+        assertTrue((findTag<View>(d.frame, "date-2") as android.widget.RadioButton).isChecked)
+        d.dismiss(); idle()
     }
 
     @Test fun languageSetting_persists_andSystemDefault() {
         assertEquals(L.Lang.SYSTEM, L.lang)
         assertFalse("this test device is Japanese", L.en)
         val m = labels(a.explorer!!.mainMenu())
-        assertTrue(m.toString(), m.contains("Language: 端末に合わせる") && m.count { it.startsWith("Language: ") } == 1)
+        assertTrue(m.toString(), m.count { it.startsWith("Language") } == 1 && m.contains("Languageと日付の形式"))
         L.setLang(app(), L.Lang.EN)
         L.load(app()); assertEquals(L.Lang.EN, L.lang)
         assertEquals("en", App.prefs(app()).getString(L.PREF_LANG, null))

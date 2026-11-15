@@ -41,6 +41,11 @@ object W {
     const val BAND_SOFT = 0xFF4A6FA5.toInt()
     /** Darker gray for plain-row field labels (stronger contrast than SHADOW). */
     const val LABEL_DARK = 0xFF3A3A3A.toInt()
+    /**
+     * 0.4.36: field names and their glyphs on the key page — the launch screen's teal hue ([DotLogo.TEAL] #00797A),
+     * deepened so the small names stay readable on the page's grey (#C0C0C0): 4.7 : 1 (the launch teal itself 2.9 : 1).
+     */
+    const val KEY_LABEL = 0xFF005657.toInt()
     const val TITLE2 = 0xFF1084D0.toInt()
     /** Temporary read-only browse: sepia title / band (not shocking blue). */
     const val SEPIA1 = 0xFF5C4033.toInt()

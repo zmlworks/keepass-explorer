@@ -59,8 +59,18 @@ class FolderTree(
      * Open the folders above [current] so it shows. 0.4.32: false when the main tree is rebuilt for the same folder
      * (with the old tree's states in [expandedOverride]), so a root / parent the user closed stays closed.
      */
-    revealCurrent: Boolean = true
+    revealCurrent: Boolean = true,
+    /** 0.4.36: a virtual folder above the root (main tree: 最近の鍵); not one of [rows], has no +/−, takes no drop. */
+    private val top: Top? = null
 ) : LinearLayout(ctx) {
+
+    /** The virtual folder row: [label] and [count] beside [icon] (16 px art), [selected] = it is the list shown. */
+    class Top(val label: String, val icon: android.graphics.Bitmap, val count: Int, val selected: Boolean,
+              val onTap: () -> Unit, val onLongPress: (Int, Int) -> Boolean)
+
+    /** The view of [top] (tests), or null. */
+    var topRow: View? = null
+        private set
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
 
@@ -110,7 +120,14 @@ class FolderTree(
     }
 
     fun rebuild() {
-        removeAllViews(); rows.clear()
+        removeAllViews(); rows.clear(); topRow = null
+        top?.let { t ->
+            val v = TopRow(context, t).apply { tag = TOP_TAG; setBackgroundColor(W.WINDOW) }
+            topRow = v
+            addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
+            // a dotted rule between the virtual folder and the real ones
+            addView(View(context).apply { background = DottedRule() }, LayoutParams(W.MATCH, W.dp(5)))
+        }
         for ((i, n) in flatten().withIndex()) {
             val v = Row(context, n).apply { tag = n.g.uuid; if (striped) setBackgroundColor(stripe(i)) }
             rows.add(v)
@@ -138,6 +155,72 @@ class FolderTree(
 
     /** Centre x of [n]'s +/− box: on its branch line, the root's (0.4.32) left of the computer icon. */
     private fun boxX(n: Node): Int = if (n.depth == 0) W.dp(6) else n.depth * W.dp(22)
+
+    /** Thin dotted line across the middle (between the virtual folder and the tree). */
+    private class DottedRule : android.graphics.drawable.Drawable() {
+        private val q = Paint().apply { color = W.SHADOW }
+        override fun draw(c: Canvas) {
+            val b = bounds; val y = (b.top + b.bottom) / 2
+            var x = b.left + W.dp(4)
+            while (x < b.right - W.dp(4)) { c.drawRect(x.toFloat(), y.toFloat(), (x + W.px).toFloat(), (y + W.px).toFloat(), q); x += 2 * W.px }
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
+    /** The virtual folder ([top]) at the root's indent, drawn like a folder row (navy band when it is shown). */
+    @SuppressLint("ViewConstructor")
+    private inner class TopRow(ctx: Context, val t: Top) : View(ctx) {
+        private val p = Paint().apply { isAntiAlias = true; textSize = W.dp(15).toFloat(); color = W.TEXT }
+        init { contentDescription = t.label }
+        override fun onDraw(c: Canvas) {
+            val cy = height / 2
+            val sc = W.iconScale()
+            val ix = W.dp(22) / 2 + W.dp(4)
+            val iy = cy - t.icon.height * sc / 2
+            c.drawBitmap(if (t.selected) Px.selected(t.icon) else t.icon, null, Rect(ix, iy, ix + t.icon.width * sc, iy + t.icon.height * sc), Paint())
+            val tx = ix + t.icon.width * sc + W.dp(5)
+            p.isFakeBoldText = t.selected
+            val tw = p.measureText(t.label)
+            if (t.selected) c.drawRect(tx - W.dp(2).toFloat(), cy - W.dp(11).toFloat(), tx + tw + W.dp(3), cy + W.dp(11).toFloat(), Paint().apply { color = W.NAVY })
+            p.color = if (t.selected) W.HILITE else W.TEXT
+            c.drawText(t.label, tx.toFloat(), cy + W.dp(5).toFloat(), p)
+            val cp = Paint(p).apply { color = W.SHADOW; isFakeBoldText = false; textSize = W.dp(13).toFloat() }
+            c.drawText(" (${t.count})", tx + tw + W.dp(4), cy + W.dp(5).toFloat(), cp)
+        }
+        private var downX = 0f; private var downY = 0f; private var longDone = false
+        private val longRun = Runnable { fireLong() }
+        fun fireLong(): Boolean {
+            val loc = IntArray(2); getLocationOnScreen(loc)
+            val shown = t.onLongPress(loc[0] + downX.toInt(), loc[1] + downY.toInt())
+            if (shown) longDone = true
+            return shown
+        }
+        @SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y; longDone = false; postDelayed(longRun, W.longPressMs()) }
+                MotionEvent.ACTION_MOVE -> {
+                    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                    if (kotlin.math.abs(e.x - downX) > slop || kotlin.math.abs(e.y - downY) > slop) removeCallbacks(longRun)
+                }
+                MotionEvent.ACTION_CANCEL -> removeCallbacks(longRun)
+                MotionEvent.ACTION_UP -> {
+                    removeCallbacks(longRun)
+                    if (longDone) { longDone = false; return true }
+                    if (cushion?.invoke() == true) return true
+                    t.onTap()
+                }
+            }
+            return true
+        }
+    }
+
+    /** Tap / long press the virtual folder (tests). */
+    fun tapTop() { topRow?.let { v -> val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, v.width / 2f, v.height / 2f, 0); v.onTouchEvent(e); e.recycle() } }
+    fun longPressTop(): Boolean = (topRow as? TopRow)?.fireLong() ?: false
 
     @SuppressLint("ViewConstructor")
     private inner class Row(ctx: Context, val n: Node) : View(ctx) {
@@ -288,6 +371,8 @@ class FolderTree(
 
 /** 0.4.24: the pale blue of every other tree row (well apart from the navy selection and the current band). */
 const val STRIPE = 0xFFE8F1FB.toInt()
+/** Tag of [FolderTree.topRow] (the virtual folder is no group: it has no uuid). */
+const val TOP_TAG = "tree-top"
 
 /** 0.4.14: tree label — the root is always "/", whatever its group name in the file; unnamed folders "(名前なし)". */
 fun folderLabel(depth: Int, name: String): String = if (depth == 0) "/" else name.ifEmpty { L.t("(名前なし)", "(no name)") }

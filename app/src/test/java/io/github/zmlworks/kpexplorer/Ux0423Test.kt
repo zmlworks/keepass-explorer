@@ -190,22 +190,23 @@ class Ux0423Test {
     @Test fun menu_oneRowPerSetting_tapOpensPicker() {
         val ex = a.explorer!!
         val m = labels(ex.mainMenu())
-        assertEquals(m.toString(), listOf("自動ロック: 5 分後", "Language: 端末に合わせる", "日付: YYYY/MM/DD"),
+        // 0.4.36: Language and the date format share one row (「Languageと日付の形式」) and one window
+        assertEquals(m.toString(), listOf("Languageと日付の形式", "自動ロック: 5 分後"),
             m.filter { it.startsWith("自動ロック") || it.startsWith("Language") || it.startsWith("日付") })
         assertTrue(m.containsAll(listOf("ごみ箱を開く", "ごみ箱の設定")))
         assertTrue("no checked radio-like rows left", ex.mainMenu().none { it.checked && (it.label.startsWith("Language") || it.label.startsWith("日付") || it.label.startsWith("自動ロック")) })
         showMainMenu(); shot("v0423/01-main-menu.png", menuAt = (W_ - W.dp(240)) to W.dp(60)); Menus.dismiss()
         // date picker: options with today's example, current one checked; tap applies and closes
-        item(ex.mainMenu(), "日付: YYYY/MM/DD").action(); idle()
+        item(ex.mainMenu(), "Languageと日付の形式").action(); idle()
         val today = java.time.LocalDate.now()
-        assertEquals("YYYY/MM/DD  (%d/%02d/%02d)".format(today.year, today.monthValue, today.dayOfMonth), radio(0).text.toString())
-        assertTrue(radio(0).isChecked); assertFalse(radio(1).isChecked)
+        fun dr(i: Int) = findTag<View>(Dlg.last!!.frame, "date-$i") as android.widget.RadioButton
+        assertEquals("YYYY/MM/DD  (%d/%02d/%02d)".format(today.year, today.monthValue, today.dayOfMonth), dr(0).text.toString())
+        assertTrue(dr(0).isChecked); assertFalse(dr(1).isChecked)
         shot("v0423/02-date-picker.png", dialog = true)
         val d = Dlg.last!!
-        radio(1).performClick(); idle()
+        dr(1).performClick(); clickButton(d, "OK")
         assertFalse(d.isShowing)
         assertEquals(L.DateOrder.MDY, L.dateOrder)
-        assertTrue(labels(ex.mainMenu()).contains("日付: MM/DD/YYYY"))
         // auto-lock picker
         item(ex.mainMenu(), "自動ロック: 5 分後").action(); idle()
         assertTrue(radio(1).isChecked)
@@ -214,10 +215,11 @@ class Ux0423Test {
         assertEquals(-1, a.autoLockMinutes())
         assertTrue(labels(ex.mainMenu()).contains("自動ロック: しない"))
         // language picker (system / 日本語 / English); choosing the current one changes nothing
-        item(ex.mainMenu(), "Language: 端末に合わせる").action(); idle()
-        assertEquals(listOf("端末に合わせる", "日本語", "English"), (0..2).map { radio(it).text.toString() })
-        assertTrue(radio(0).isChecked)
-        radio(0).performClick(); idle()
+        item(ex.mainMenu(), "Languageと日付の形式").action(); idle()
+        fun lr(i: Int) = findTag<View>(Dlg.last!!.frame, "lang-$i") as android.widget.RadioButton
+        assertEquals(listOf("端末に合わせる", "日本語", "English"), (0..2).map { lr(it).text.toString() })
+        assertTrue(lr(0).isChecked)
+        clickButton(Dlg.last!!, "OK")
         assertEquals(L.Lang.SYSTEM, L.lang)
     }
 
@@ -226,8 +228,9 @@ class Ux0423Test {
         App.prefs(app()).edit().putInt("autolock", 0).commit()
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup(); idle()
         val act = ctl.get(); if (act.explorer == null) act.showExplorer(); idle()
-        act.explorer!!.pickLanguage(); idle()
-        radio(2).performClick(); idle()
+        val d = act.explorer!!.pickLanguageAndDate(); idle()
+        (findTag<View>(d.frame, "lang-2") as android.widget.RadioButton).performClick()
+        clickButton(d, "OK")
         assertEquals(L.Lang.EN, L.lang)
         assertTrue(Session.isOpen)
         // re-opening the database (English UI) does not rename the bin either

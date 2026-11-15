@@ -181,11 +181,12 @@ object Security {
         lateinit var d: ClassicDialog
         val name = a.store.nextBackupName()
         fun choice(label: String, tag: String, note: String, f: () -> Unit) {
-            col.addView(W.button(a, label) { d.dismiss(); f() }.apply { this.tag = tag }, W.lp(W.MATCH, W.WRAP, t = if (col.childCount == 0) 0 else 12))
+            // 0.4.36: both buttons one fixed width (up to 0.4.35 the window's full width)
+            col.addView(W.button(a, label) { d.dismiss(); f() }.apply { this.tag = tag }, W.lp(W.dp(SAVE_BUTTON_DP), W.WRAP, t = if (col.childCount == 0) 0 else 12))
             col.addView(W.text(a, note, 14f).apply { setLineSpacing(0f, 1.1f); setPadding(W.dp(10), 0, 0, 0) }, W.lp(W.MATCH, W.WRAP, t = 4))
         }
         choice(L.t("アプリ内に保存", "Save in app"), "save-internal",
-            L.t("$name として内部にバックアップします", "Backs up inside the app as $name")) { internalBackup(a, onInternal) }
+            L.t("$name として内部にバックアップします", "Backs up inside the app as $name")) { confirmBackup(a, onInternal) }   // 0.4.36: asks first
         choice(L.t("外部に書き出す", "Export"), "save-export",
             L.t("保存先を選び、パスワード付きKDBXファイルを書き出します", "Choose a location and write a password-protected KDBX file")) {
             askExportPassword(a, "keepass-explorer-${LocalDate.now()}.kdbx") { Session.db }
@@ -195,7 +196,13 @@ object Security {
         return d
     }
 
-    /** 0.4.33: menu 「現在のバックアップを作成」 and the backup list's 「今すぐ作成」 ask first, naming the file. */
+    /** Width of the two buttons of the Save window. */
+    const val SAVE_BUTTON_DP = 168
+
+    /**
+     * 0.4.33: menu 「現在のバックアップを作成」 and the backup list's 「今すぐ作成」 ask first, naming the file;
+     * 0.4.36: so does アプリ内に保存 in the Save window.
+     */
     fun confirmBackup(a: MainActivity, done: (File) -> Unit = {}): ClassicDialog {
         val name = a.store.nextBackupName()
         return Dlg.confirm(a, L.t("現在のバックアップを作成", "Back up the current database"),

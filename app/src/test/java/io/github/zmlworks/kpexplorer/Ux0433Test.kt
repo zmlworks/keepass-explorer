@@ -440,12 +440,14 @@ class Ux0433Test {
         assertEquals(listOf("キャンセル"), d.buttonViews.map { it.text.toString() })
         Dlg.last = d; shot("v0433/04-save-dialog.png", dialog = true)
         findTag<View>(d.frame, "save-internal")!!.performClick(); idle()
+        clickButton(latestDialog(), "作成")   // 0.4.36: asks first
         waitFor("backup") { a.store.backups().any { it.name == name } }
         assertFalse(d.isShowing)
         // the next one of the same day: -2, then -3
         val d2 = Security.saveDialog(a); idle()
         assertTrue(texts(d2.frame).contains("${today()}-2.kdbx として内部にバックアップします"))
         findTag<View>(d2.frame, "save-internal")!!.performClick(); idle()
+        clickButton(latestDialog(), "作成")
         waitFor("backup -2") { a.store.backups().any { it.name == "${today()}-2.kdbx" } }
         assertEquals("${today()}-3.kdbx", a.store.nextBackupName())
         // 外部に書き出す opens the export box

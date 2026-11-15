@@ -380,10 +380,10 @@ class Ux0432Test {
         val l = labels(ex.mainMenu())
         assertTrue(l.contains("ランダム文字列生成"))
         assertFalse(l.any { it.contains("パスワード生成") })
-        val i = l.indexOf("Language: 日本語")
+        // 0.4.36: 「Languageと日付の形式」 right below ロック ("Language" in English in every language)
+        val i = l.indexOf("Languageと日付の形式")
         assertTrue("Language row: $l", i > 0)
-        assertEquals("a line right above it", "|", l[i - 1])
-        assertEquals("日付 follows", true, l[i + 1].startsWith("日付: "))
+        assertEquals(s(R.string.menu_lock), l[i - 1])
         showMainMenu()
         shot("v0432/03-menu.png", menuAt = W_ - W.dp(240) to W.dp(60))
         Menus.dismiss(); idle()
@@ -397,8 +397,7 @@ class Ux0432Test {
         assertEquals("Random string generator", en.getString(R.string.passgen_menu))
         assertEquals("Random string generator", en.getString(R.string.passgen_title))
         assertEquals("Generated string", en.getString(R.string.passgen_result))
-        assertTrue(le.contains("Language: English"))
-        assertEquals("|", le[le.indexOf("Language: English") - 1])
+        assertTrue(le.contains("Language and date format"))
     }
 
     @Test fun tree_rootOpensAndCloses_staysClosedUntilAFolderIsOpened() {

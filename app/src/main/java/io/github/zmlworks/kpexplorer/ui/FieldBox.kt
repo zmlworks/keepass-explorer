@@ -92,7 +92,7 @@ class FieldBox(
     var editing = false
         private set
     private val labelColor = when {
-        plain -> W.LABEL_DARK
+        plain -> W.KEY_LABEL   // key page (0.4.36; was LABEL_DARK)
         table -> W.TEXT
         else -> W.NAVY
     }

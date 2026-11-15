@@ -75,6 +75,12 @@ object FugueIcons {
         override fun getIntrinsicHeight() = b.height * 4
     }
 
+    /** 0.4.36: the 最近の鍵 folder (Fugue `clock-history`, untouched 16 px; not an entry icon). */
+    fun recent(ctx: Context): Bitmap = src.getOrPut("#recent") {
+        val o = android.graphics.BitmapFactory.Options().apply { inScaled = false }
+        android.graphics.BitmapFactory.decodeResource(ctx.resources, R.drawable.fugue_clock_history, o)
+    }
+
     fun drawable(ctx: Context, id: String?): Drawable = Crisp(source(ctx, id))
 
     fun drawable(ctx: Context, def: EntryIcon.Def?): Drawable = drawable(ctx, def?.id)

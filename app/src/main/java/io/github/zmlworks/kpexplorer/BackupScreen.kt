@@ -115,7 +115,8 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
             override fun getView(p: Int, c: View?, parent: ViewGroup?): View {
                 val f = files[p]
                 val sel = f.name == selected?.name
-                val row = W.hbox(ctx).apply { setPadding(W.dp(4), 0, 0, 0); minimumHeight = W.dp(40) }
+                // 0.4.36: white / pale blue rows, as in the folder tree
+                val row = W.hbox(ctx).apply { setPadding(W.dp(4), 0, 0, 0); minimumHeight = W.dp(40); setBackgroundColor(stripe(p)) }
                 row.addView(ImageView(ctx).apply {
                     setImageDrawable(Px.drawable(ctx, if (sel) Px.selected(Px.floppy16) else Px.floppy16, W.iconScale()))
                 }, W.lp(W.WRAP, W.WRAP, r = 4))
@@ -158,6 +159,9 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
         listHolder.addView(col)
         updateStatus()
     }
+
+    /** Row background of list row [p]: white, pale blue, white … */
+    fun stripe(p: Int): Int = if (p % 2 == 0) W.WINDOW else io.github.zmlworks.kpexplorer.ui.STRIPE
 
     /** 0.4.33: 名前の変更 first. */
     fun menuFor(f: File) = listOf(

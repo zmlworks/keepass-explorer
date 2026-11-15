@@ -62,6 +62,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     /** 0.4.23: 「下部ファイルをすべて表示」 — every key / memo below [current] is listed (tree long-press menu). */
     var flat = false
         private set
+    /**
+     * 0.4.36: 「最近の鍵」 — the virtual folder at the top of the path tree: the [io.github.zmlworks.kpexplorer.db.Recent]
+     * keys, newest first, as a details list (場所, 追加 / 更新 and when). Read-only as a folder: nothing is created,
+     * dropped, renamed or dragged there; a long press offers 開く and この項目のフォルダーを開く.
+     */
+    var recent = false
+        private set
+    private var recentInfo: Map<UUID, io.github.zmlworks.kpexplorer.db.Recent.Item> = emptyMap()
 
     private val frame = FrameLayout(ctx)
     private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
@@ -73,7 +81,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private val flatBand = W.text(ctx, "", 14f, true, W.NAVY).apply {
         tag = "flat-band"; setPadding(W.dp(8), W.dp(5), W.dp(8), W.dp(5)); setBackgroundColor(W.FACE); visibility = View.GONE
         contentDescription = L.t("フォルダーの表示に戻す", "Back to the folder view"); isClickable = true
-        setOnClickListener { exitFlat() }
+        setOnClickListener { if (recent) exitRecent() else exitFlat() }
     }
     private val tempBanner = W.hbox(ctx).apply {
         setPadding(W.dp(8), W.dp(6), W.dp(8), W.dp(6))
@@ -113,6 +121,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         const val PREF_COL_NAME = "detailColNameDp"; const val PREF_COL_USER = "detailColUserDp"
         const val MIN_NAME_DP = 64; const val MIN_USER_DP = 40; const val MIN_DATE_DP = 28
         const val DRAG_START_MM = 8f
+        /** 0.4.36: width of 最近の鍵's 追加・更新 column. */
+        const val RECENT_DATE_DP = 150
         /** 0.4.20: a drop goes into a folder only between these fractions of the cell (width in icons, height in details). */
         const val INTO_FROM = 0.30f
         const val INTO_TO = 0.70f
@@ -125,7 +135,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     var rows: List<Order.Node> = emptyList()
         private set
-    val iconMode get() = App.prefs(ctx).getString("view", "icons") == "icons" && search == null
+    val iconMode get() = App.prefs(ctx).getString("view", "icons") == "icons" && search == null && !recent
 
     private fun db(): KeePassDatabase = Session.db ?: throw IllegalStateException("locked")
 
@@ -241,7 +251,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         // 0.4.27: up to 0.4.26 every refresh built a new grid / list (and path tree), which starts at the top, so a
         // reorder or a drop scrolled back to the top. Now the same folder / search / view keeps its list view and
         // only reloads the rows (the adapters read [rows]); the rebuilt path tree gets its old scroll offset back.
-        val key = listOf<Any?>(g.uuid, q, flat, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"))
+        val key = listOf<Any?>(g.uuid, q, flat, recent, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"))
         val same = key == shownKey
         val keepTreeY = if (same) (pathBox.getChildAt(0) as? ScrollView)?.scrollY else null
         // 0.4.31: the path tree's offset before this refresh (null = no tree shown, e.g. search results)
@@ -262,16 +272,23 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         } else {
             val hidden = Tree.hiddenGroups(d, g.uuid)
             val bin = Tree.recycleBinId(d)
-            rows = if (flat) Order.subtreeEntries(g, if (bin != null && g.uuid != bin) setOf(bin) else emptySet())
+            val recents = io.github.zmlworks.kpexplorer.db.Recent.list(d)
+            recentInfo = if (recent) recents.associateBy { it.entry.uuid } else emptyMap()
+            rows = if (recent) recents.map { Order.Node.E(it.entry) }
+                else if (flat) Order.subtreeEntries(g, if (bin != null && g.uuid != bin) setOf(bin) else emptySet())
                 else Order.children(g).filter { it.uuid !in hidden }
-            caption.title.text = if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
+            caption.title.text = if (recent) L.t("最近の鍵 - KeePass Explorer", "Recent keys - KeePass Explorer")
+                else if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
                 else "${groupLabel(g)} - KeePass Explorer"
-            val tree = FolderTree(ctx, Tree.root(d), g.uuid, Tree.recycleBinId(d), hidden = hidden,
+            val top = FolderTree.Top(L.t("最近の鍵", "Recent keys"), io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(ctx), recents.size, recent,
+                onTap = { openRecent() }, onLongPress = { x, y -> recentTreeMenu(x, y) })
+            val shownFolder = if (recent) null else g.uuid
+            val tree = FolderTree(ctx, Tree.root(d), shownFolder, Tree.recycleBinId(d), hidden = hidden, top = top,
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } else tempExpanded[gid] = exp },
-                onSelect = { }, showCounts = true, current = g.uuid, onJump = { navigate(it) }, rowDp = 32,
+                onSelect = { }, showCounts = true, current = shownFolder, onJump = { navigate(it) }, rowDp = 32,
                 onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat,
                 expandedOverride = (if (Session.readOnlyTemp) tempExpanded else emptyMap()) + (if (same) folderTree?.expandedState().orEmpty() else emptyMap()),
-                revealCurrent = !same)
+                revealCurrent = !same && !recent)
             folderTree = tree
             pathLines.addAll(tree.rows)
             tree.setOnHierarchyChangeListener(object : android.view.ViewGroup.OnHierarchyChangeListener {
@@ -288,8 +305,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     placeTree(treeBox, tree, g.uuid, keepTreeY ?: treeY, keep = keepTreeY != null)
                 }
             })
-            flatBand.visibility = if (flat) View.VISIBLE else View.GONE
-            if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
+            flatBand.visibility = if (flat || recent) View.VISIBLE else View.GONE
+            if (recent) flatBand.text = L.t("最近追加・更新した鍵 (新しい順に ${rows.size} 件)  ×", "Keys added or changed recently (newest first, ${rows.size})  ×")
+            else if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
         searchPanel.visibility = if (q != null) View.VISIBLE else View.GONE
@@ -336,9 +354,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         }
         val ro = Session.readOnlyTemp
         val isRoot = current == Tree.root(d).uuid && search == null
-        en("back", history.isNotEmpty() || search != null || flat)
-        en("up", !isRoot || flat)
-        en("newFolder", search == null && !flat && !ro); en("newKey", search == null && !ro); en("newMemo", search == null && !ro)
+        en("back", history.isNotEmpty() || search != null || flat || recent)
+        en("up", !isRoot || flat || recent)
+        val here = search == null && !recent && !ro
+        en("newFolder", here && !flat); en("newKey", here); en("newMemo", here)
         en("save", !ro)
         // Temp banner
         if (ro) {
@@ -416,7 +435,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /**
      * 0.4.24: the path tree's folder menu, like the list's folder menu plus the commands that act "in" a folder.
-     * Root: open / show all / new / paste. Recycle bin: open / show all / empty / settings.
+     * Root: open / show all / paste. Recycle bin: open / show all / empty / settings. (0.4.36: the create items removed.)
      */
     fun treeMenu(gid: UUID): List<Menus.Item> {
         val d = db()
@@ -439,10 +458,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             out.add(Menus.Item(ctx.getString(R.string.delete_permanently), w) { askDelete(gid) })
             return out
         }
-        out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.tool_new_folder), w) { navigate(gid); askNewFolder() })
-        out.add(Menus.Item(ctx.getString(R.string.tool_new_key), w) { navigate(gid); newKey() })
-        out.add(Menus.Item(ctx.getString(R.string.tool_new_memo), w) { navigate(gid); askNewMemo() })
+        // 0.4.36: no 新しいフォルダ／鍵／メモ here (the toolbar makes them in the open folder)
         out.add(Menus.sep())
         if (!isRoot) out.add(Menus.Item(ctx.getString(R.string.rename), w) { rename(Order.Node.F(g)) })
         if (!isRoot) out.add(Menus.Item(ctx.getString(R.string.cut), w) { cut(gid) })
@@ -719,7 +735,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                     if (longFired) {
                         // menu is up: jitter is ignored; a real move turns it into a drag of the pressed item
                         val r = downR
-                        if (r != null && !Session.readOnlyTemp &&
+                        if (r != null && !Session.readOnlyTemp && !(recent && search == null) &&
                             (abs(e.x - x0) > dragStartPx() || abs(e.y - y0) > dragStartPx())) {
                             beginDrag(r, rx0, ry0)   // before dismissing, so the menu's dismiss keeps the preview held
                             Menus.dismiss()
@@ -910,7 +926,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun empty(v: View): View {
         val f = FrameLayout(ctx)
         f.addView(v)
-        f.addView(W.text(ctx, if (search != null) (if (search!!.isEmpty()) "" else L.t("見つかりませんでした。", "Nothing found.")) else L.t("このフォルダーは空です。", "This folder is empty."), 14f, color = W.SHADOW).apply {
+        f.addView(W.text(ctx, if (search != null) (if (search!!.isEmpty()) "" else L.t("見つかりませんでした。", "Nothing found."))
+            else if (recent) L.t("鍵はまだありません。", "There are no keys yet.") else L.t("このフォルダーは空です。", "This folder is empty."), 14f, color = W.SHADOW).apply {
             gravity = Gravity.CENTER_HORIZONTAL
         }, FrameLayout.LayoutParams(W.MATCH, W.WRAP).apply { topMargin = W.dp(40) })
         return f
@@ -942,8 +959,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     private fun loadCols() {
         val avail = detailAvail()
         val p = App.prefs(ctx)
-        val nd = p.getInt(PREF_COL_NAME, -1); val ud = p.getInt(PREF_COL_USER, -1)
-        val rest = avail - W.dp(92)
+        // 0.4.36: 最近の鍵 has its own fixed widths (room for 「更新 2026/11/15 15:56」); its header does not resize
+        val inRecent = recent && search == null
+        val nd = if (inRecent) -1 else p.getInt(PREF_COL_NAME, -1); val ud = if (inRecent) -1 else p.getInt(PREF_COL_USER, -1)
+        val rest = avail - W.dp(if (inRecent) RECENT_DATE_DP else 92)
         val n = if (nd > 0) W.dp(nd) else (rest * 1.4f / 2.4f).toInt()
         val u = if (ud > 0) W.dp(ud) else rest - (rest * 1.4f / 2.4f).toInt()
         val (cn, cu) = clampCols(n, u, avail)
@@ -1032,11 +1051,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (grip) foreground = Grip()
         }, W.lp(w, W.WRAP, weight))
         val inSearch = search != null
-        h(L.t("名前", "Name"), colName, 0f, true)
-        h(if (inSearch) L.t("場所", "Location") else L.t("ユーザー名", "User name"), colUser, 0f, true)
-        h(L.t("更新日時", "Modified"), 0, 1f, false)
+        val inRecent = recent && !inSearch
+        h(L.t("名前", "Name"), colName, 0f, !inRecent)
+        h(if (inSearch || inRecent) L.t("場所", "Location") else L.t("ユーザー名", "User name"), colUser, 0f, !inRecent)
+        h(if (inRecent) L.t("追加・更新", "Added / changed") else L.t("更新日時", "Modified"), 0, 1f, false)
         header.contentDescription = L.t("列の見出し (境目をドラッグで幅を変更)", "Column headers (drag a border to resize)")
-        attachHeaderResize(header)
+        if (!inRecent) attachHeaderResize(header)
         col.addView(header, W.lp())
         val list = ListView(ctx)
         list.setPadding(0, 0, 0, 0)
@@ -1062,16 +1082,20 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
                 nameCol.addView(nameBox, W.lp(0, W.WRAP, 1f))
                 row.addView(nameCol, W.lp(colName, W.WRAP))
+                val info = if (inRecent) recentInfo[r.uuid] else null
                 val second = when (r) {
-                    is Order.Node.E -> if (inSearch) Tree.parentOf(Tree.root(db()), r.uuid)?.name.orEmpty()
+                    is Order.Node.E -> if (info != null) groupLabel(info.folder)
+                        else if (inSearch) Tree.parentOf(Tree.root(db()), r.uuid)?.name.orEmpty()
                         else if (r.kind == Order.Kind.MEMO) L.t("メモ", "Memo") else Tree.userName(r.e)
                     is Order.Node.F -> L.t("フォルダー", "Folder")
                 }
-                row.addView(W.text(ctx, second, 14f, color = if (inSearch) W.SHADOW else W.TEXT).apply {
+                row.addView(W.text(ctx, second, 14f, color = if (inSearch || info != null) W.SHADOW else W.TEXT).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, W.dp(2), 0)
                 }, W.lp(colUser, W.WRAP))
                 val t = when (r) { is Order.Node.E -> r.e.times?.lastModificationTime; is Order.Node.F -> r.g.times?.lastModificationTime }
-                row.addView(W.text(ctx, t?.let { dateFmt.format(it) } ?: "", 13f).apply {
+                val stamp = if (info != null) (if (info.kind == io.github.zmlworks.kpexplorer.db.Recent.Kind.ADDED) L.t("追加 ", "Added ") else L.t("更新 ", "Changed ")) +
+                    L.dateTime(false).format(info.time) else t?.let { dateFmt.format(it) } ?: ""
+                row.addView(W.text(ctx, stamp, 13f).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, 0, 0) },
                     W.lp(0, W.WRAP, 1f))
                 drop?.takeIf { it.target == r.uuid && !it.pathFolder }?.let { row.foreground = Marker(it.mode, true) }
@@ -1187,7 +1211,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             }
         }
         // 0.4.23: the flat list (items of many folders) has no order of its own: drop only on the path tree
-        if (flat && search == null) return null
+        if ((flat || recent) && search == null) return null
         val r = rowAt(v, pos) ?: return if (search == null) Drop(Drop.Mode.END, null) else null
         if (search != null) return if (!binDrag && r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
         if (r.uuid == dragged) return null
@@ -1223,9 +1247,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     // ------------------------------------------------------------------ navigation
 
     fun navigate(id: UUID, push: Boolean = true) {
-        if (search == null && id == current && !flat) return
+        if (search == null && id == current && !flat && !recent) return
         if (push && id != current) { history.add(current); if (history.size > 50) history.removeAt(0) }
-        search = null; flat = false
+        search = null; flat = false; recent = false
         current = id
         selection = null
         refresh()
@@ -1235,14 +1259,37 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun showAllBelow(id: UUID) {
         if (Tree.findGroup(db(), id) == null) return
         if (id != current) { history.add(current); if (history.size > 50) history.removeAt(0) }
-        search = null; current = id; selection = null; flat = true
+        search = null; current = id; selection = null; flat = true; recent = false
         refresh()
     }
+
+    /** 0.4.36: show 最近の鍵 (tap on its row at the top of the path tree). Back / 上へ / × return to the folder. */
+    fun openRecent() {
+        if (recent && search == null) return
+        if (search != null) { liveHandler.removeCallbacks(liveRun); search = null }
+        flat = false; recent = true; selection = null
+        refresh()
+    }
+
+    fun exitRecent() { if (!recent) return; recent = false; selection = null; refresh() }
+
+    /** Long press on 最近の鍵 in the path tree: 開く only (nothing else applies to a virtual folder). */
+    private fun recentTreeMenu(x: Int, y: Int): Boolean {
+        Menus.at(pathBox, x, y, listOf(Menus.Item(ctx.getString(R.string.open)) { openRecent() }))
+        return true
+    }
+
+    /** 0.4.36: long press on a key in 最近の鍵. */
+    fun recentMenu(r: Order.Node.E): List<Menus.Item> = listOf(
+        Menus.Item(ctx.getString(R.string.open)) { open(r) },
+        Menus.Item(ctx.getString(R.string.open_item_folder)) {
+            Tree.parentOf(Tree.root(db()), r.uuid)?.let { navigate(it.uuid); select(r.uuid) } })
 
     fun exitFlat() { if (!flat) return; flat = false; selection = null; refresh() }
 
     fun goUp() {
         if (search != null) { search = null; refresh(); return }
+        if (recent) { exitRecent(); return }
         if (flat) { exitFlat(); return }
         val p = Tree.parentOf(Tree.root(db()), current) ?: return
         val from = current
@@ -1252,6 +1299,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun goBack() {
         if (search != null) { search = null; refresh(); return }
+        if (recent) { exitRecent(); return }
         if (flat) { exitFlat(); return }
         val prev = history.removeLastOrNull() ?: return
         if (Tree.findGroup(db(), prev) != null) navigate(prev, push = false) else goBack()
@@ -1259,6 +1307,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     override fun onBack(): Boolean {
         if (search != null) { search = null; refresh(); return true }
+        if (recent) { exitRecent(); return true }
         if (flat) { exitFlat(); return true }
         if (current != Tree.root(db()).uuid) { goUp(); return true }
         if (Session.readOnlyTemp) { TempImport.exitTemp(a); return true }
@@ -1356,6 +1405,9 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             out.add(Menus.sep())
         }
         out.add(Menus.Item(ctx.getString(R.string.menu_lock)) { a.lock() })
+        // 0.4.36: one item and one window for both (up to 0.4.35 "Language: …" and 「日付: …」 near the end); "Language"
+        // stays English in every language so it can be found in a language one cannot read
+        out.add(Menus.Item(L.t("Languageと日付の形式", "Language and date format")) { pickLanguageAndDate() })
         // 0.4.16: 履歴 moved to the key page (「- 履歴」 next to Last Modified)
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.browse_external), !ro) { TempImport.browseExternal(a) })
@@ -1372,10 +1424,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         })
         // 0.4.23: one row per setting; tap → choose
         out.add(Menus.Item(ctx.getString(when { lockMin == 0 -> R.string.menu_autolock_now; lockMin < 0 -> R.string.menu_autolock_never; else -> R.string.menu_autolock_5 })) { pickAutoLock() })
-        // 0.4.32: "Language" in English in every language (findable by anyone), on its own group below a line
-        out.add(Menus.sep())
-        out.add(Menus.Item("Language: " + langName(L.lang)) { pickLanguage() })
-        out.add(Menus.Item(L.t("日付: ", "Date: ") + dateName(L.dateOrder)) { pickDateOrder() })
         out.add(Menus.sep())
         val bin = Tree.recycleBinId(db())?.takeIf { Tree.findGroup(db(), it) != null }
         out.add(Menus.Item(L.t("ごみ箱を開く", "Open Recycle Bin"), bin != null) { bin?.let { navigate(it) } })
@@ -1390,17 +1438,37 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     fun langName(l: L.Lang) = when (l) { L.Lang.SYSTEM -> L.t("端末に合わせる", "System"); L.Lang.JA -> "日本語"; L.Lang.EN -> "English" }
     fun dateName(d: L.DateOrder) = when (d) { L.DateOrder.YMD -> "YYYY/MM/DD"; L.DateOrder.MDY -> "MM/DD/YYYY"; L.DateOrder.DMY -> "DD/MM/YYYY" }
 
-    fun pickLanguage(): ClassicDialog {
-        val all = L.Lang.entries
-        return Dlg.choose(ctx, L.t("言語", "Language"), all.map { langName(it) }, all.indexOf(L.lang)) { a.setLanguage(all[it]) }
-    }
-
-    fun pickDateOrder(): ClassicDialog {
-        val all = L.DateOrder.entries
+    /**
+     * 0.4.36: 「Languageと日付の形式」 — the display language and the date format in one window (radio buttons, OK applies
+     * both; a new language rebuilds the screens). Up to 0.4.35 two menu items, each with its own list.
+     */
+    fun pickLanguageAndDate(): ClassicDialog {
+        val langs = L.Lang.entries
+        val dates = L.DateOrder.entries
         val today = java.time.Instant.now()
-        return Dlg.choose(ctx, L.t("日付の表示", "Date format"),
-            all.map { dateName(it) + "  (" + java.time.format.DateTimeFormatter.ofPattern(it.pattern).withZone(java.time.ZoneId.systemDefault()).format(today) + ")" },
-            all.indexOf(L.dateOrder)) { L.setDateOrder(ctx, all[it]); refresh() }
+        val col = W.vbox(ctx)
+        fun group(title: String, labels: List<String>, sel: Int, tagPrefix: String): android.widget.RadioGroup {
+            col.addView(W.text(ctx, title, 14f, true), W.lp(W.MATCH, W.WRAP, t = if (col.childCount == 0) 0 else 12))
+            val rg = android.widget.RadioGroup(ctx)
+            labels.forEachIndexed { i, s -> rg.addView(W.radio(ctx, s, i == sel).apply { id = View.generateViewId(); tag = "$tagPrefix-$i" }, W.lp(W.MATCH, W.WRAP)) }
+            col.addView(rg, W.lp(W.MATCH, W.WRAP, l = 8))
+            return rg
+        }
+        val lg = group("Language", langs.map { langName(it) }, langs.indexOf(L.lang), "lang")
+        val dg = group(L.t("日付の形式", "Date format"), dates.map { dateName(it) + "  (" +
+            java.time.format.DateTimeFormatter.ofPattern(it.pattern).withZone(java.time.ZoneId.systemDefault()).format(today) + ")" },
+            dates.indexOf(L.dateOrder), "date")
+        fun picked(rg: android.widget.RadioGroup) = (0 until rg.childCount).indexOfFirst { (rg.getChildAt(it) as android.widget.RadioButton).isChecked }
+        val d = ClassicDialog(ctx, L.t("Languageと日付の形式", "Language and date format"), col, listOf(
+            ClassicDialog.Btn("OK", true) {
+                val di = picked(dg); val li = picked(lg)
+                if (di >= 0 && dates[di] != L.dateOrder) { L.setDateOrder(ctx, dates[di]); refresh() }
+                if (li >= 0) a.setLanguage(langs[li])
+                true
+            },
+            ClassicDialog.Btn(L.t("キャンセル", "Cancel"))), scroll = true)
+        d.show(); Dlg.last = d
+        return d
     }
 
     fun pickAutoLock(): ClassicDialog {
@@ -1417,6 +1485,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val binFolder = isRecycleBinFolder(r)
         val inBin = Tree.isInRecycleBin(db(), r.uuid) && !binFolder
         val ro = Session.readOnlyTemp
+        if (recent && !inSearch && r is Order.Node.E) return recentMenu(r)
         if (r is Order.Node.E && !inBin) return fileMenu(r)
         val out = ArrayList<Menus.Item>(viewHead())
         if (inBin || binFolder) {
@@ -1478,14 +1547,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * 0.4.15: top of every list context menu — 表示: 詳細 (icon view) or 表示: アイコン + 列の幅を元に戻す (detail
      * view), then a separator.
      */
-    fun viewHead(): List<Menus.Item> = listOf(
-        Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) +
+    fun viewHead(): List<Menus.Item> = if (recent && search == null) emptyList() else   // 0.4.36: 最近の鍵: always details, fixed columns
+        listOf(Menus.Item(if (iconMode) ctx.getString(R.string.view_details) else ctx.getString(R.string.view_icons)) { toggleView() }) +
         (if (!iconMode) listOf(Menus.Item(ctx.getString(R.string.reset_columns),
             App.prefs(ctx).contains(PREF_COL_NAME) || App.prefs(ctx).contains(PREF_COL_USER)) { resetColumnWidths() }) else emptyList()) +
         listOf(Menus.sep())
 
     fun backgroundMenu(): List<Menus.Item> {
-        val ns = search == null
+        val ns = search == null && !recent
         val ro = Session.readOnlyTemp
         return viewHead() + listOf(
             Menus.Item(ctx.getString(R.string.paste), cut != null && ns && !ro) { paste(current) }) +
@@ -1501,14 +1570,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /** 0.4.15: ask for the name first (default name pre-selected); キャンセル creates nothing; blank = default. */
     fun askNewFolder(): ClassicDialog? {
-        if (Session.readOnlyTemp || search != null || flat) return null
+        if (Session.readOnlyTemp || search != null || flat || recent) return null
         val def = Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_folder_default))
         return Dlg.prompt(ctx, ctx.getString(R.string.tool_new_folder), ctx.getString(R.string.new_name_label), def) { n ->
             newFolder(n.trim().ifEmpty { def }); true }
     }
 
     fun askNewMemo(): ClassicDialog? {
-        if (Session.readOnlyTemp || search != null) return null
+        if (Session.readOnlyTemp || search != null || recent) return null
         val def = Order.uniqueChildName(currentGroup(), ctx.getString(R.string.new_memo_default))
         return Dlg.prompt(ctx, ctx.getString(R.string.tool_new_memo), ctx.getString(R.string.new_name_label), def) { n ->
             newMemo(n.trim().ifEmpty { def }); true }
@@ -1530,7 +1599,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return e.uuid
     }
 
-    fun newKey() = a.show(NewKeyScreen(a, current))
+    fun newKey() { if (search == null && !recent) a.show(NewKeyScreen(a, current)) }
 
     fun rename(r: Order.Node) {
         Dlg.prompt(ctx, L.t("名前の変更", "Rename"), L.t("新しい名前:", "New name:"), r.name) { n ->

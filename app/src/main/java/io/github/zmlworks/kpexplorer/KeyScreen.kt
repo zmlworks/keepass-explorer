@@ -421,11 +421,15 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     var editButton: View? = null
         private set
 
-    private fun glyphFor(k: String): android.graphics.drawable.Drawable = Glyph(when (k) {
-        Order.F_TITLE -> Glyph.Kind.TITLE; Order.F_USER -> Glyph.Kind.USER; Order.F_PASS -> Glyph.Kind.PASS
-        Order.F_URL -> Glyph.Kind.URL; Order.F_TAGS -> Glyph.Kind.TAG; Order.F_OTP -> Glyph.Kind.OTP
-        Order.F_NOTES -> Glyph.Kind.MEMO; else -> Glyph.Kind.CUSTOM
-    })
+    /** 0.4.36: in the names' teal ([W.KEY_LABEL]), all of the glyph; the Tag glyph keeps its blue. */
+    private fun glyphFor(k: String): android.graphics.drawable.Drawable {
+        val kind = when (k) {
+            Order.F_TITLE -> Glyph.Kind.TITLE; Order.F_USER -> Glyph.Kind.USER; Order.F_PASS -> Glyph.Kind.PASS
+            Order.F_URL -> Glyph.Kind.URL; Order.F_TAGS -> Glyph.Kind.TAG; Order.F_OTP -> Glyph.Kind.OTP
+            Order.F_NOTES -> Glyph.Kind.MEMO; else -> Glyph.Kind.CUSTOM
+        }
+        return if (kind == Glyph.Kind.TAG) Glyph(kind) else Glyph(kind, W.KEY_LABEL, W.KEY_LABEL)
+    }
 
     /** Moves field [k] one visible step up (-1) or down (+1) in the per-key layout. */
     fun moveField(k: String, dir: Int) {

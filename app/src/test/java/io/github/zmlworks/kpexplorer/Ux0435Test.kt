@@ -338,13 +338,11 @@ class Ux0435Test {
         for (r in rs) {
             assertEquals("70 % of the width", W_ * 0.7, r.width().toDouble(), W_ * 0.02)
             assertEquals("centred", W_ / 2.0, r.exactCenterX().toDouble(), W.dp(2).toDouble())
-            assertEquals(W.dp(52), r.height())
+            assertEquals(W.dp(UnlockScreen.BUTTON_DP), r.height())   // 0.4.36: taller
             assertTrue(un.browse.background is io.github.zmlworks.kpexplorer.ui.SoftButton)
         }
         for (k in 1 until rs.size) assertTrue(rs[k - 1].bottom < rs[k].top)
-        // the two file buttons are a group of their own: a wider gap above and below
-        assertTrue(rs[2].top - rs[1].bottom > rs[3].top - rs[2].bottom)
-        assertTrue(rs[4].top - rs[3].bottom > rs[3].top - rs[2].bottom)
+        // (0.4.35 set the two file buttons apart; 0.4.36 spaces all five evenly — Ux0436Test)
         assertEquals("stack in the middle", H_ / 2.0, ((rs[0].top + rs[4].bottom) / 2).toDouble(), H_ * 0.08)
         shot("v0435/01-launch.png")
         L.setLang(app(), L.Lang.EN)

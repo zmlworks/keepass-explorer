@@ -518,14 +518,15 @@ object Tree {
 
     private fun modifyEntryParentLink(db: KeePassDatabase, id: UUID, prev: UUID?, now: Instant): KeePassDatabase {
         val (parent, e) = findEntry(db, id) ?: return db
-        val updated = e.copy(previousParentGroup = prev, times = touch(e.times, now))
+        // 0.4.36: a restore is a move (its LocationChanged is set by [move]); Last Modified stays (最近の鍵)
+        val updated = e.copy(previousParentGroup = prev)
         return db.withRoot { r ->
             mapGroup(r, parent.uuid) { g -> g.copy(entries = g.entries.map { if (it.uuid == id) updated else it }) }
         }
     }
 
     private fun modifyGroupParentLink(db: KeePassDatabase, id: UUID, prev: UUID?, now: Instant): KeePassDatabase =
-        modifyGroup(db, id) { it.copy(previousParentGroup = prev, times = touch(it.times, now)) }
+        modifyGroup(db, id) { it.copy(previousParentGroup = prev) }
 
     /** Permanently delete every direct child of the recycle bin (and their descendants). */
     fun emptyRecycleBin(db: KeePassDatabase, now: Instant = Instant.now()): KeePassDatabase {
