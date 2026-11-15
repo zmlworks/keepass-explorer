@@ -241,6 +241,37 @@ object Security {
             ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).also { it.show() }
     }
 
+    /**
+     * 0.4.35 (unlock screen, nothing unlocked): copy the app's database file as it is — encrypted, opened with the
+     * current master password in KeePass / KeePassXC etc. — to a place chosen in the system's "save" screen.
+     * Pending saves are finished first; the copy is only written when it starts with the KDBX signature.
+     */
+    fun exportEncrypted(a: MainActivity): ClassicDialog {
+        val title = L.t("外部に書き出す", "Export")
+        val name = "keepass-explorer-${LocalDate.now()}.kdbx"
+        return Dlg.confirm(a, title, L.t("アプリのデータベースを、暗号化したまま $name として書き出します。今のマスターパスワードで、KeePass や KeePassXC などで開けます。",
+            "Exports the app's database as $name, still encrypted. It opens with the current master password in KeePass, KeePassXC etc."), 'i',
+            yes = L.t("保存先を選ぶ", "Choose location"), no = L.t("キャンセル", "Cancel")) {
+            val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"; putExtra(Intent.EXTRA_TITLE, name)
+            }
+            a.startForResult(i) { rc, data ->
+                val uri: Uri = data?.data ?: return@startForResult
+                if (rc != Activity.RESULT_OK) return@startForResult
+                val busy = Dlg.busy(a, title, L.t("書き出しています", "Exporting"))
+                Session.afterSave({
+                    val bytes = a.store.read()
+                    check(Kdbx.isKdbx(bytes)) { L.t("データベースのファイルが壊れています", "The database file is damaged") }
+                    a.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
+                }) { r ->
+                    busy.dismiss()
+                    r.onSuccess { Toast.makeText(a, L.t("書き出しました", "Exported"), Toast.LENGTH_SHORT).show() }
+                     .onFailure { Dlg.message(a, title, L.t("書き出せませんでした。\n${it.message ?: it}", "Could not export.\n${it.message ?: it}"), 'x') }
+                }
+            }
+        }
+    }
+
     /** [password] null = keep the database's own credentials (same master password). */
     private fun pickAndWrite(a: MainActivity, fileName: String, password: String?, source: () -> KeePassDatabase?) {
         Session.flush()

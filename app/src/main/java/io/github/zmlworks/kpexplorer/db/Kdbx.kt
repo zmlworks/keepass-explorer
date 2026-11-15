@@ -58,6 +58,10 @@ object Kdbx {
         fun clear() = synchronized(this) { map.values.forEach { it.fill(0) }; map.clear() }
     }
 
+    /** Starts with the KeePass 2 file signature (03 D9 A2 9A 67 FB 4B B5). */
+    fun isKdbx(bytes: ByteArray): Boolean = bytes.size >= 12 &&
+        byteArrayOf(0x03, 0xD9.toByte(), 0xA2.toByte(), 0x9A.toByte(), 0x67, 0xFB.toByte(), 0x4B, 0xB5.toByte()).withIndex().all { (i, b) -> bytes[i] == b }
+
     class WrongPasswordException(cause: Throwable?) : Exception("wrong password or damaged file", cause)
 
     /** KeePass composite key for a password-only database: SHA-256(SHA-256(UTF-8(NFC(password)))). */

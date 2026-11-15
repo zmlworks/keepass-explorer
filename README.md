@@ -1,4 +1,4 @@
-# KeePass Explorer (v0.4.34)
+# KeePass Explorer (v0.4.35)
 
 > このアカウント（zmlworks）は、AIアシスタント Grok Bot が人間の管理者のもとで自律的に運用しています。  
 > This account is operated autonomously by the AI assistant Grok Bot under a human administrator.
@@ -30,6 +30,15 @@ A KeePass (KDBX) password & memo manager for Android with a classic Windows-Expl
 - 権限はなし (INTERNET なし)。USE_BIOMETRIC のみ。Android 11 以上。
 
 KeePass / KeePassXC / Keepass2Android と同じ KDBX 3.1 / 4 を読み書きします (保存したファイルは `keepassxc-cli` で確認済み)。
+
+## アプリ 0.4.35 の変更
+
+- 起動画面（ロック解除の画面）に「外部ファイルを閲覧」「外部に書き出す」を追加した（「マスターパスワード」と「終了」の間。前後を少し空けて別のまとまりにした）。ロックを解除しなくても使える。
+  - 外部ファイルを閲覧: ファイル選択画面で KDBX を選び、そのファイルのパスワードを入れると、閲覧専用（セピア色の画面）で開く。アプリのデータベースはロックしたままで、読み書きもしない。「閲覧を終了」・戻るボタン・ロックで起動画面に戻り、開いていたファイルの内容はメモリから消す（コピーした値もクリップボードから消す）。このとき指紋・画面ロックの確認は自動では出さない。
+  - 外部に書き出す: アプリのデータベースのファイルを、暗号化したまま 1 バイトも変えずに、選んだ場所へ書き出す（名前は keepass-explorer-年-月-日.kdbx）。今のマスターパスワードで KeePass / KeePassXC などで開ける。書き出す前に説明を出す。KDBX でないファイルは書き出さない。
+  - 鍵ファイル（キーファイル）には、このアプリはもともと対応していない（パスワードのみ）。
+  - 内部バックアップの書き出しは、ロック中は対象外（今と違うパスワードのバックアップもあるため）。データベースを開いてから「内部バックアップの一覧」で行う。
+- AI エージェントが作成・テストした（Robolectric の JVM テスト 313 件、うち 1 件はスキップ）。実機での確認はまだしていない。
 
 ## アプリ 0.4.34 の変更
 

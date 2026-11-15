@@ -47,6 +47,12 @@ object Session {
     private var stashedVersion = 0L
     private var stashedSavedVersion = 0L
     private var stashedGeneration = 0L
+    /**
+     * 0.4.35: the read-only view was opened from the unlock screen, with the app's own database locked (nothing
+     * stashed). Ending it locks again: see [exitTempView].
+     */
+    @Volatile var tempOverLocked = false
+        private set
 
     /** Result of the last save task on [io] (null = ok). Written and read on the io thread. */
     @Volatile private var lastIoError: Throwable? = null
@@ -142,10 +148,12 @@ object Session {
      * Park the primary DB in memory and open [temp] read-only.
      * Does not write the primary file. [update]/exitTempView] restores primary intact.
      * Cancels any pending autosave so the primary file is never touched while browsing temp.
+     * 0.4.35: also while locked (from the unlock screen): nothing is parked, and the primary stays locked.
      */
     fun beginTempView(temp: KeePassDatabase, sourceLabel: String) {
         if (readOnlyTemp) throw IllegalStateException("already in temp view")
-        val cur = db ?: throw IllegalStateException("no primary open")
+        val cur = db
+        tempOverLocked = cur == null
         main.removeCallbacks(saveRunnable)
         stashedPrimary = cur
         stashedVersion = version
@@ -164,6 +172,7 @@ object Session {
 
     fun exitTempView() {
         if (!readOnlyTemp) return
+        if (tempOverLocked) { lock(); return }   // 0.4.35: back to locked, the external file's data dropped
         val p = stashedPrimary ?: throw IllegalStateException("no stashed primary")
         main.removeCallbacks(saveRunnable)
         stashedPrimary = null
@@ -180,6 +189,7 @@ object Session {
 
     fun lock() {
         // Leave temp view first so flush (if any) targets the primary file, never the temp bytes.
+        tempOverLocked = false
         if (readOnlyTemp) {
             val p = stashedPrimary
             stashedPrimary = null

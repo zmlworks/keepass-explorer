@@ -334,8 +334,9 @@ class Ux0432Test {
         }
         assertTrue("dots ($light) and teal between them ($teal)", light > 300 && teal > light)
         // the dots go up to the right: the top-right part of the logo box has dots, so has the bottom-left
+        val stackBox = screenRect(un.stack)   // 0.4.35: the taller stack (5 buttons) reaches into the logo's corners
         fun anyDot(x0: Int, y0: Int, x1: Int, y1: Int): Boolean {
-            for (yy in y0 until y1) for (xx in x0 until x1) { val c = b.getPixel(xx, yy); if (android.graphics.Color.red(c) > 0xA0 && android.graphics.Color.green(c) > 0xD0) return true }
+            for (yy in y0 until y1) for (xx in x0 until x1) { if (stackBox.contains(xx, yy)) continue; val c = b.getPixel(xx, yy); if (android.graphics.Color.red(c) > 0xA0 && android.graphics.Color.green(c) > 0xD0) return true }
             return false
         }
         val d = lg.dotBounds

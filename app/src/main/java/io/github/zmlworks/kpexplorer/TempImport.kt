@@ -25,6 +25,7 @@ object TempImport {
 
     // ------------------------------------------------------------------ temp browse
 
+    /** Also from the unlock screen (0.4.35): the app's own database stays locked; closing the view locks again. */
     fun browseExternal(a: MainActivity) {
         if (Session.readOnlyTemp) {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_no_edit), 'i')
@@ -62,16 +63,15 @@ object TempImport {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_invalid_file), 'x')
             return
         }
+        // 0.4.35: locked (opened from the unlock screen) — no current password to try, ask for this file's
+        val composite = Session.compositeCopy() ?: run { promptPasswordForTemp(a, bytes, label, back); return }
         val busy = Dlg.busy(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_trying_same))
         Session.io.execute {
-            val composite = Session.compositeCopy()
-            val tried = if (composite != null) {
-                try {
-                    runCatching { Kdbx.open(bytes, composite) }
-                } finally {
-                    composite.fill(0)
-                }
-            } else Result.failure(IllegalStateException("no composite"))
+            val tried = try {
+                runCatching { Kdbx.open(bytes, composite) }
+            } finally {
+                composite.fill(0)
+            }
             a.runOnUiThread {
                 busy.dismiss()
                 tried.onSuccess { db -> enterTemp(a, db, label, back) }
@@ -91,9 +91,12 @@ object TempImport {
 
     private fun promptPasswordForTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)?) {
         val col = W.vbox(a)
-        col.addView(W.text(a, a.getString(R.string.temp_need_password), 14f).apply { setLineSpacing(0f, 1.1f) })
+        val ask = if (Session.isOpen) a.getString(R.string.temp_need_password)
+            else L.t("「$label」のパスワードを入力してください。アプリのデータベースはロックしたまま、閲覧専用で開きます。",
+                "Enter the password of \"$label\". It opens read-only; the app's own database stays locked.")
+        col.addView(W.text(a, ask, 14f).apply { setLineSpacing(0f, 1.1f) })
         col.addView(W.text(a, a.getString(R.string.password_label), 14f), W.lp(W.MATCH, W.WRAP, t = 8))
-        val field = W.field(a, password = true)
+        val field = W.field(a, password = true).apply { tag = "temp-password" }
         col.addView(field, W.lp(W.MATCH, W.WRAP, t = 3))
         val show = W.check(a, a.getString(R.string.show_password), false)
         show.setOnCheckedChangeListener { _, on ->
@@ -160,7 +163,11 @@ object TempImport {
         Session.exitTempView()
         a.explorer = null
         val back = afterExit; afterExit = null
-        if (back != null) back(a) else a.showExplorer()
+        when {
+            back != null -> back(a)
+            Session.isOpen -> a.showExplorer()
+            else -> a.show(UnlockScreen(a, prompt = false))   // 0.4.35: opened from the unlock screen → back to it, still locked
+        }
     }
 
     // ------------------------------------------------------------------ import (replace primary)

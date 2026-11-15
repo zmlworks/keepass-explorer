@@ -13,16 +13,19 @@ import io.github.zmlworks.kpexplorer.ui.W
  * Unlock screen. 0.4.32: the user's design — the teal backdrop with the dotted "KeePass" / "Explorer" ([DotLogo]) and a
  * centred stack of light grey buttons, 70 % of the width: OS認証で解除 (fingerprint / screen lock, the wrapped key),
  * マスターパスワード (opens the password box under it), 終了. Errors appear in a panel under the buttons.
+ * 0.4.35: 外部ファイルを閲覧 (another KDBX, read-only, with its own password; this database stays locked) and
+ * 外部に書き出す (this database's file copied as it is, still encrypted) before 終了, as in the user's sample.
  * (Up to 0.4.31 a Windows 2000-style logon window on the teal desktop.)
  */
-class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
+/** [prompt] = ask for the fingerprint / screen lock as soon as it is shown (not when coming back from a read-only view). */
+class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainActivity.Screen {
     override val desktop = true
     override val backdrop: Int get() = DotLogo.TEAL
     private val ctx = a
     private val root: View
     override val view: View get() = root
     val error: TextView = W.text(ctx, "", 14f, color = 0xFFC00000.toInt())
-    private var autoPrompted = false
+    private var autoPrompted = !prompt
     val pw = W.field(ctx, password = true).apply { isSingleLine = true }
     val pwBox = W.vbox(ctx)
     /** The backdrop (tests). */
@@ -31,6 +34,8 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
     val stack = W.vbox(ctx)
     val bio = bigButton(L.t("OS認証で解除", "Unlock with device lock")) { unlock() }
     val pwButton = bigButton(L.t("マスターパスワード", "Master password")) { showPassword(null) }
+    val browse = bigButton(L.t("外部ファイルを閲覧", "Browse external file")) { error.text = ""; TempImport.browseExternal(a) }
+    val export = bigButton(L.t("外部に書き出す", "Export")) { error.text = ""; Security.exportEncrypted(a) }
     val exit = bigButton(L.t("終了", "Exit")) { a.finish() }
     private val errorPanel = panel()
 
@@ -51,7 +56,9 @@ class UnlockScreen(private val a: MainActivity) : MainActivity.Screen {
         stack.addView(bio, W.lp(W.MATCH, W.dp(52)))
         stack.addView(pwButton, W.lp(W.MATCH, W.dp(52), t = gap))
         stack.addView(pwBox, W.lp(W.MATCH, W.WRAP, t = gap))
-        stack.addView(exit, W.lp(W.MATCH, W.dp(52), t = gap))
+        stack.addView(browse, W.lp(W.MATCH, W.dp(52), t = gap * 2))
+        stack.addView(export, W.lp(W.MATCH, W.dp(52), t = gap))
+        stack.addView(exit, W.lp(W.MATCH, W.dp(52), t = gap * 2))
         stack.addView(errorPanel, W.lp(W.MATCH, W.WRAP, t = gap))
         // 70 % of the width, in the middle of the screen (scrolls when the keyboard leaves too little room)
         val across = W.hbox(ctx).apply { gravity = Gravity.CENTER; weightSum = 1f; setPadding(0, W.dp(24), 0, W.dp(24)) }
