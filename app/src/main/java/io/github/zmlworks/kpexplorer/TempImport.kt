@@ -8,6 +8,8 @@ import android.widget.Toast
 import app.keemobile.kotpass.database.KeePassDatabase
 import io.github.zmlworks.kpexplorer.db.Kdbx
 import io.github.zmlworks.kpexplorer.sec.Vault
+import io.github.zmlworks.kpexplorer.sec.PasswordStrength
+import io.github.zmlworks.kpexplorer.db.FileInfo
 import io.github.zmlworks.kpexplorer.ui.ClassicDialog
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.W
@@ -49,7 +51,7 @@ object TempImport {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_no_edit), 'i')
             return
         }
-        openBytesAsTemp(a, f.readBytes(), f.name, back)
+        openBytesAsTemp(a, f.readBytes(), f.name, back, f)
     }
 
     /** Where [exitTemp] goes back to (set when the read-only view starts; null = the main folder). */
@@ -58,13 +60,14 @@ object TempImport {
     private fun readUri(a: MainActivity, uri: Uri): ByteArray =
         a.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
 
-    private fun openBytesAsTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)? = null) {
+    /** [backup] (0.4.37): the internal backup being opened, whose password verdict is recorded when it opens. */
+    private fun openBytesAsTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)? = null, backup: File? = null) {
         if (bytes.isEmpty()) {
             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_invalid_file), 'x')
             return
         }
         // 0.4.35: locked (opened from the unlock screen) — no current password to try, ask for this file's
-        val composite = Session.compositeCopy() ?: run { promptPasswordForTemp(a, bytes, label, back); return }
+        val composite = Session.compositeCopy() ?: run { promptPasswordForTemp(a, bytes, label, back, backup); return }
         val busy = Dlg.busy(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_trying_same))
         Session.io.execute {
             val tried = try {
@@ -74,10 +77,14 @@ object TempImport {
             }
             a.runOnUiThread {
                 busy.dismiss()
-                tried.onSuccess { db -> enterTemp(a, db, label, back) }
+                tried.onSuccess { db ->
+                    // same key as the database: same password, so the database's record applies
+                    if (backup != null && a.store.info(backup) == FileInfo.LEGACY) a.store.setInfo(backup, a.store.info())
+                    enterTemp(a, db, label, back)
+                }
                     .onFailure { err ->
                         if (err is Kdbx.WrongPasswordException || compositeFailedAsWrong(err)) {
-                            promptPasswordForTemp(a, bytes, label, back)
+                            promptPasswordForTemp(a, bytes, label, back, backup)
                         } else {
                             Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_invalid_file), 'x')
                         }
@@ -89,7 +96,7 @@ object TempImport {
     private fun compositeFailedAsWrong(t: Throwable): Boolean =
         t is Kdbx.WrongPasswordException || t.message?.contains("password", true) == true
 
-    private fun promptPasswordForTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)?) {
+    private fun promptPasswordForTemp(a: MainActivity, bytes: ByteArray, label: String, back: ((MainActivity) -> Unit)?, backup: File? = null) {
         val col = W.vbox(a)
         val ask = if (Session.isOpen) a.getString(R.string.temp_need_password)
             else L.t("「$label」のパスワードを入力してください。アプリのデータベースはロックしたまま、閲覧専用で開きます。",
@@ -111,7 +118,7 @@ object TempImport {
                     Dlg.message(a, a.getString(R.string.temp_open_title), a.getString(R.string.temp_need_password), '!')
                     return@Btn false
                 }
-                tryOpenWithPassword(a, bytes, label, pw, back)
+                tryOpenWithPassword(a, bytes, label, pw, back, backup)
                 field.setText("")
                 true
             },
@@ -119,7 +126,7 @@ object TempImport {
         )).show()
     }
 
-    private fun tryOpenWithPassword(a: MainActivity, bytes: ByteArray, label: String, password: String, back: ((MainActivity) -> Unit)?) {
+    private fun tryOpenWithPassword(a: MainActivity, bytes: ByteArray, label: String, password: String, back: ((MainActivity) -> Unit)?, backup: File? = null) {
         val busy = Dlg.busy(a, a.getString(R.string.temp_open_title), a.getString(R.string.opening_db))
         Session.io.execute {
             val key = Kdbx.compositeKey(password)
@@ -127,7 +134,11 @@ object TempImport {
             key.fill(0)
             a.runOnUiThread {
                 busy.dismiss()
-                r.onSuccess { enterTemp(a, it, label, back) }
+                r.onSuccess {
+                    // 0.4.37: an internal backup opened with a typed password gets that password's verdict
+                    if (backup != null) a.store.setInfo(backup, FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(password)))
+                    enterTemp(a, it, label, back)
+                }
                     .onFailure { t ->
                         val msg = if (t is Kdbx.WrongPasswordException)
                             a.getString(R.string.temp_wrong_password)
@@ -276,7 +287,7 @@ object TempImport {
                     a.runOnUiThread {
                         busy.dismiss()
                         r.onSuccess { db ->
-                            performReplace(a, bytes, db, keyForWrap = key)
+                            performReplace(a, bytes, db, keyForWrap = key, info = FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(pw)))
                         }.onFailure { t ->
                             key.fill(0)
                             val msg = if (t is Kdbx.WrongPasswordException)
@@ -305,7 +316,8 @@ object TempImport {
         a: MainActivity,
         bytes: ByteArray,
         candidate: KeePassDatabase,
-        keyForWrap: ByteArray? = null
+        keyForWrap: ByteArray? = null,
+        info: FileInfo? = null
     ) {
         val busy = Dlg.busy(a, a.getString(R.string.import_title), a.getString(R.string.import_backing_up))
         Session.afterSave({
@@ -317,6 +329,9 @@ object TempImport {
             }
             // 2) Atomic replace
             a.store.replacePrimary(bytes)
+            // 0.4.37: a file opened with a typed password is a master-password database with that verdict;
+            // one that opened with the current key keeps the current record (same key, same protection)
+            if (info != null) a.store.setInfo(info)
             backup
         }) { res ->
             busy.dismiss()
@@ -329,14 +344,12 @@ object TempImport {
                 }
                 Dlg.message(a, a.getString(R.string.import_title), msg, 'x')
             }.onSuccess { backup ->
-                // Open candidate as primary; rewrap vault with its composite
-                val wrapKey = keyForWrap ?: run {
-                    // Same-password path: composite of candidate equals what Session had;
-                    // take from candidate credentials.
-                    candidate.credentials.passphrase?.getBinary()?.copyOf()
-                }
+                // Open candidate as primary; rewrap vault with its composite when it differs. 0.4.37: the
+                // same-key path keeps the stored wrapped key as it is (still valid; for an OS-keystore database
+                // replacing it would risk its only key on a cancelled prompt).
+                val wrapKey = keyForWrap
                 Security.opened(a, candidate)
-                if (wrapKey != null && a.vault.isAvailable() && Vault.forceAvailableForTest == null) {
+                if (wrapKey != null && a.vault.canWrap()) {
                     a.vault.wrap(a, wrapKey) { err ->
                         wrapKey.fill(0)
                         if (!err.isNullOrEmpty()) {

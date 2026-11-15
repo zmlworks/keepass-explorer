@@ -2,6 +2,7 @@ package io.github.zmlworks.kpexplorer
 
 import android.graphics.Typeface
 import io.github.zmlworks.kpexplorer.db.Kdbx
+import io.github.zmlworks.kpexplorer.db.FileInfo
 import io.github.zmlworks.kpexplorer.db.Tree
 import io.github.zmlworks.kpexplorer.ui.ClassicDialog
 import io.github.zmlworks.kpexplorer.ui.Dlg
@@ -9,7 +10,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.4.36"
+    const val VERSION = "0.4.37"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)
@@ -35,6 +36,17 @@ object Help {
         ClassicDialog(a, L.t("ライセンス", "Licenses"), tv, listOf(ClassicDialog.Btn(L.t("閉じる", "Close"), true)), scroll = true).show()
     }
 
+    /** 0.4.37: how the database is protected, said plainly (a "not encrypted" database is a KDBX with an empty key). */
+    fun protectionLines(i: FileInfo): String = when (i.protection) {
+        FileInfo.Protection.NONE -> L.t("保護: 暗号化なし (空のパスワード。誰でも開けます)\n", "Protection: not encrypted (empty password; anyone can open it)\n")
+        FileInfo.Protection.KEYSTORE -> L.t("保護: OSのkeystoreの鍵 (この端末の画面ロックでのみ開けます)\n", "Protection: OS keystore key (opens only with this device's screen lock)\n")
+        FileInfo.Protection.PASSWORD -> L.t("保護: マスターパスワード\n", "Protection: master password\n") + L.t("パスワードの強度: ", "Password strength: ") + when (i.strength) {
+            FileInfo.Strength.STRONG -> L.t("強い\n", "strong\n")
+            FileInfo.Strength.WEAK -> L.t("弱い\n", "weak\n")
+            FileInfo.Strength.UNKNOWN -> L.t("未判定 (マスターパスワードを入力して開くと判定します)\n", "not judged yet (judged when you open it by typing the master password)\n")
+        }
+    }
+
     fun dbInfo(a: MainActivity) {
         val d = Session.db ?: return
         val size = a.store.dbFile.length()
@@ -43,6 +55,7 @@ object Help {
             L.t("形式: ${Kdbx.describe(d)}\n", "Format: ${Kdbx.describe(d)}\n") +
             L.t("エントリ: ${Tree.countEntries(d.content.group)} 個\n", "Entries: ${Tree.countEntries(d.content.group)}\n") +
             L.t("ファイル: ${a.store.dbFile.name} (${size / 1024} KB)\n", "File: ${a.store.dbFile.name} (${size / 1024} KB)\n") +
+            protectionLines(a.store.info()) +
             L.t("作成元: ${d.content.meta.generator}\n", "Generator: ${d.content.meta.generator}\n") +
             L.t("削除: ごみ箱へ / ごみ箱内は完全削除", "Delete: to the Recycle Bin / permanently inside the Recycle Bin"), 'i')
     }

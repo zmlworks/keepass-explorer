@@ -572,11 +572,12 @@ class Ux0433Test {
         val d = latestDialog()
         val tx = texts(d.frame).filter { it.isNotEmpty() }
         assertEquals(listOf("マスターパスワードの変更", "現在のパスワードで開けられる内部バックアップも新しいパスワードに書き換えます",
-            "新しいパスワード", "新しいパスワードの確認", "パスワードを表示する", "内部バックアップのパスワードを書き換えない", "変更", "キャンセル"), tx)
+            "新しいパスワード", "新しいパスワードの確認", "パスワードを表示する", "強度: (未入力)", "内部バックアップのパスワードを書き換えない", "変更", "キャンセル"), tx)   // 0.4.37: + strength
         val fields = allViews(d.frame).filterIsInstance<android.widget.EditText>()
         fields[0].setText("新しいpw"); fields[1].setText("新しいpw")
         Dlg.last = d; shot("v0433/06-master-password.png", dialog = true)
         clickButton(d, "変更")
+        clickButton(latestDialog(), "続ける")   // 0.4.37: a weak password is confirmed first
         waitFor("report") { Dlg.last?.let { texts(it.frame).any { t -> t.startsWith("マスターパスワードを変更しました。") } } == true }
         val msg = texts(Dlg.last!!.frame).first { it.startsWith("マスターパスワードを変更しました。") }
         assertEquals("マスターパスワードを変更しました。\n内部バックアップ: 4 件を新しいパスワードに書き換えました。\n1 件は現在のパスワードで開けないため、そのままです。", msg)
@@ -613,6 +614,7 @@ class Ux0433Test {
         val fields = allViews(d.frame).filterIsInstance<android.widget.EditText>()
         fields[0].setText("pw2"); fields[1].setText("pw2")
         clickButton(d, "変更")
+        clickButton(latestDialog(), "続ける")   // 0.4.37: a weak password is confirmed first
         waitFor("report") { Dlg.last?.let { texts(it.frame).any { t -> t.startsWith("マスターパスワードを変更しました。") } } == true }
         assertTrue(texts(Dlg.last!!.frame).any { it.contains("内部バックアップはそのままです") })
         assertTrue("backup still with the old password", opens(f, "sample"))

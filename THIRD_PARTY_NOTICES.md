@@ -16,6 +16,13 @@ License: [`kotpass/LICENSE-kotpass.txt`](kotpass/LICENSE-kotpass.txt).
 `cryptography/padding/PKCS7Padding.kt` are ports of Bouncy Castle code, © 2000-2021 The Legion of the Bouncy Castle
 Inc.; the license text is kept in each file header.
 
+## zxcvbn4j (password strength) — MIT
+
+Since app 0.4.37: [zxcvbn4j](https://github.com/nulab/zxcvbn4j) 1.9.0 (`com.nulab-inc:zxcvbn`, MIT, © 2014 Nulab Inc), a
+Java port of [zxcvbn](https://github.com/dropbox/zxcvbn) (MIT, © 2012-2016 Dan Wheeler and Dropbox, Inc.) including its
+dictionaries and keyboard maps; used unmodified as a library dependency (no further dependencies) to judge master
+password strength. Text: [`LICENSES/zxcvbn4j-MIT.txt`](LICENSES/zxcvbn4j-MIT.txt).
+
 ## Apache-2.0 components
 
 Full text: [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt).

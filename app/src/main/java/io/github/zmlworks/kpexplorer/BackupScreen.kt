@@ -232,7 +232,7 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
 
     private fun delete(f: File) {
         Dlg.confirm(ctx, L.t("ファイルの削除の確認", "Confirm File Delete"), L.t("「${f.name}」を削除しますか?", "Delete \"${f.name}\"?"), '!') {
-            f.delete(); selected = null; reload()
+            a.store.deleteBackup(f); selected = null; reload()
         }
     }
 

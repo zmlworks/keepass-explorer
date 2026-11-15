@@ -1417,11 +1417,15 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(ctx.getString(R.string.menu_internal_save), !ro) { Security.confirmBackup(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_export), !ro) { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } })
         out.add(Menus.Item(ctx.getString(R.string.menu_backup_list), !ro) { a.show(BackupScreen(a)) })
-        out.add(Menus.Item(ctx.getString(R.string.menu_change_master), !ro) { Security.changeMasterPassword(a) })
+        // 0.4.37: 「…の設定」 while the database has no master password (not encrypted / OS keystore)
+        out.add(Menus.Item(if (Security.protection(a) == io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD) ctx.getString(R.string.menu_change_master)
+            else L.t("マスターパスワードの設定", "Set master password"), !ro) { Security.changeMasterPassword(a) })
         out.add(Menus.sep())
         out.add(Menus.Item(ctx.getString(R.string.menu_secure_screen), checked = p.getBoolean("secure", true)) {
             p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
         })
+        // 0.4.37: whether the launch screen offers 外部に書き出す (off by default)
+        out.add(Menus.Item(L.t("起動画面からの書き出し", "Export from the launch screen"), checked = Security.launchExportEnabled(a)) { Security.toggleLaunchExport(a) })
         // 0.4.23: one row per setting; tap → choose
         out.add(Menus.Item(ctx.getString(when { lockMin == 0 -> R.string.menu_autolock_now; lockMin < 0 -> R.string.menu_autolock_never; else -> R.string.menu_autolock_5 })) { pickAutoLock() })
         out.add(Menus.sep())

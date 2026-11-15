@@ -290,6 +290,9 @@ class Ux0435Test {
     private fun lockWithStoredKey(): UnlockScreen {
         // a wrapped key on file (Robolectric has no Keystore; the screen only looks at whether one exists)
         File(app().filesDir, "wrapped.bin").writeBytes(ByteArray(40) { it.toByte() })
+        // 0.4.37: the launch screen's 外部に書き出す needs the menu setting, and the file a strong master password
+        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        a.store.setInfo(io.github.zmlworks.kpexplorer.db.FileInfo(io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD, io.github.zmlworks.kpexplorer.db.FileInfo.Strength.STRONG))
         a.lock(); idle(); layoutHost()
         assertTrue(a.screen is UnlockScreen)
         return a.screen as UnlockScreen
@@ -358,7 +361,7 @@ class Ux0435Test {
         val d = latestDialog()
         val name = "keepass-explorer-${java.time.LocalDate.now()}.kdbx"
         val msg = texts(d.frame).joinToString("\n")
-        assertTrue(msg, msg.contains("暗号化したまま") && msg.contains(name) && msg.contains("今のマスターパスワード"))
+        assertTrue(msg, msg.contains("暗号化したまま") && msg.contains("マスターパスワード"))   // 0.4.37: a list (Ux0437Test); the name is the save screen's
         assertFalse("no ellipsis", msg.contains("…") || msg.contains("..."))
         Dlg.last = d; shot("v0435/02-export-explanation.png", dialog = true)
         val sink = java.io.ByteArrayOutputStream()

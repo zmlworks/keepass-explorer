@@ -3,6 +3,7 @@ package io.github.zmlworks.kpexplorer.db
 import io.github.zmlworks.kpexplorer.L
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Properties
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -19,6 +20,48 @@ class Store(dataDir: File, val backupDir: File) {
 
     fun read(): ByteArray = dbFile.readBytes()
 
+    // ---------------------------------------------------------------- 0.4.37: per-file protection / strength
+
+    /** db/files.properties: "database" and "backup:<name>" → [FileInfo.encode]. No secrets, only verdicts. */
+    private val infoFile = File(dbFile.parentFile, "files.properties")
+
+    private fun loadInfo(): Properties = Properties().also { p -> if (infoFile.isFile) runCatching { infoFile.inputStream().use { p.load(it) } } }
+
+    private fun saveInfo(p: Properties) {
+        // drop records of backups that are gone (deleted in the list, etc.)
+        val names = backups().map { it.name }.toSet()
+        p.stringPropertyNames().filter { it.startsWith(BACKUP_KEY) && it.removePrefix(BACKUP_KEY) !in names }.forEach { p.remove(it) }
+        val out = java.io.ByteArrayOutputStream()
+        p.store(out, "KeePass Explorer: protection and password strength per file (no secrets)")
+        writeAtomic(infoFile, out.toByteArray())
+    }
+
+    /** The app database's record ([FileInfo.LEGACY] when none: a database made before 0.4.37). */
+    @Synchronized
+    fun info(): FileInfo = FileInfo.decode(loadInfo().getProperty(MAIN_KEY)) ?: FileInfo.LEGACY
+
+    /** An internal backup's record ([FileInfo.LEGACY] = master password, unknown strength, when none). */
+    @Synchronized
+    fun info(backup: File): FileInfo = FileInfo.decode(loadInfo().getProperty(BACKUP_KEY + backup.name)) ?: FileInfo.LEGACY
+
+    @Synchronized
+    fun setInfo(i: FileInfo) { val p = loadInfo(); p.setProperty(MAIN_KEY, i.encode()); saveInfo(p) }
+
+    @Synchronized
+    fun setInfo(backup: File, i: FileInfo) { val p = loadInfo(); p.setProperty(BACKUP_KEY + backup.name, i.encode()); saveInfo(p) }
+
+    /** A new backup is a copy of the database: it inherits the database's record. */
+    private fun inherit(backup: File) = setInfo(backup, info())
+
+    /** Remove an internal backup (and its record). */
+    @Synchronized
+    fun deleteBackup(f: File): Boolean {
+        if (f.parentFile?.canonicalFile != backupDir.canonicalFile) return false
+        val ok = f.delete()
+        saveInfo(loadInfo())
+        return ok
+    }
+
     /** Write to a temp file, fsync, then rename over the database (never leaves a half-written file). */
     @Synchronized
     fun write(bytes: ByteArray) = writeAtomic(dbFile, bytes)
@@ -26,6 +69,7 @@ class Store(dataDir: File, val backupDir: File) {
     @Synchronized
     fun delete() {
         dbFile.delete()
+        infoFile.delete()   // 0.4.37: the records go with the database
     }
 
     /**
@@ -49,6 +93,7 @@ class Store(dataDir: File, val backupDir: File) {
         backupDir.mkdirs()
         val f = File(backupDir, nextBackupName(today))
         writeAtomic(f, read())
+        inherit(f)
         return f
     }
 
@@ -60,9 +105,10 @@ class Store(dataDir: File, val backupDir: File) {
      * (fresh salt, verified by decoding before anything is written, then written to a temporary file and renamed
      * over it; its modification time is kept, so the list order stays). Backups that do not open with [old] (another
      * password, a key file, damaged) are not touched. Neither key is changed or wiped here.
+     * 0.4.37: the rewritten ones get [info] (the new password's verdict); the others keep their record.
      */
     @Synchronized
-    fun rekeyBackups(old: ByteArray, new: ByteArray): Rekey {
+    fun rekeyBackups(old: ByteArray, new: ByteArray, info: FileInfo? = null): Rekey {
         val done = ArrayList<String>(); val skipped = ArrayList<String>(); val failed = ArrayList<String>()
         for (f in backups()) {
             val db = try { Kdbx.open(f.readBytes(), old) } catch (_: Throwable) { skipped.add(f.name); continue }
@@ -72,6 +118,7 @@ class Store(dataDir: File, val backupDir: File) {
                 writeAtomic(f, bytes)
                 if (mtime > 0) f.setLastModified(mtime)
                 done.add(f.name)
+                if (info != null) setInfo(f, info)
             } catch (_: Throwable) { failed.add(f.name) }
         }
         return Rekey(done, skipped, failed)
@@ -94,6 +141,7 @@ class Store(dataDir: File, val backupDir: File) {
         check(bytes.isNotEmpty()) { "empty database" }
         writeAtomic(f, bytes)
         check(f.isFile && f.length() == bytes.size.toLong()) { "backup not durable" }
+        inherit(f)
         return f
     }
 
@@ -137,11 +185,18 @@ class Store(dataDir: File, val backupDir: File) {
             if (!f.renameTo(tmp) || !tmp.renameTo(target)) throw RenameException(L.t("名前を変更できませんでした。", "Could not rename it."))
         } else if (!f.renameTo(target)) throw RenameException(L.t("名前を変更できませんでした。", "Could not rename it."))
         if (mtime > 0) target.setLastModified(mtime)
+        val p = loadInfo()
+        val rec = p.getProperty(BACKUP_KEY + f.name)
+        p.remove(BACKUP_KEY + f.name)
+        if (rec != null) p.setProperty(BACKUP_KEY + target.name, rec) else p.remove(BACKUP_KEY + target.name)
+        saveInfo(p)
         return target
     }
 
     companion object {
         const val MAX_BACKUP_NAME = 100
+        private const val MAIN_KEY = "database"
+        private const val BACKUP_KEY = "backup:"
 
         /** Validated base name (without ".kdbx") for [renameBackup]; throws [RenameException]. */
         fun backupBaseName(input: String): String {

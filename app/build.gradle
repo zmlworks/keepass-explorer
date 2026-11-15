@@ -20,8 +20,8 @@ android {
         // 30 (Android 11): framework BiometricPrompt with BIOMETRIC_STRONG + per-use Keystore keys, no AndroidX
         minSdk 30
         targetSdk 35
-        versionCode 55
-        versionName '0.4.36'
+        versionCode 56
+        versionName '0.4.37'
         resourceConfigurations += ['en', 'ja']
     }
     signingConfigs {
@@ -68,6 +68,8 @@ android {
 
 dependencies {
     implementation project(':kotpass')
+    // 0.4.37: password strength (zxcvbn port by Nulab, MIT; no dependencies) — see THIRD_PARTY_NOTICES
+    implementation 'com.nulab-inc:zxcvbn:1.9.0'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.14.1'
 }

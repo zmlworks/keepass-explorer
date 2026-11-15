@@ -290,6 +290,9 @@ class Ux0436Test {
     private fun lockWithStoredKey(): UnlockScreen {
         // a wrapped key on file (Robolectric has no Keystore; the screen only looks at whether one exists)
         File(app().filesDir, "wrapped.bin").writeBytes(ByteArray(40) { it.toByte() })
+        // 0.4.37: the launch screen's 外部に書き出す needs the menu setting, and the file a strong master password
+        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        a.store.setInfo(io.github.zmlworks.kpexplorer.db.FileInfo(io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD, io.github.zmlworks.kpexplorer.db.FileInfo.Strength.STRONG))
         a.lock(); idle(); layoutHost()
         assertTrue(a.screen is UnlockScreen)
         return a.screen as UnlockScreen
@@ -450,8 +453,8 @@ class Ux0436Test {
             val tv = tvs.first { it.text.toString() == n }
             assertEquals(n, W.KEY_LABEL, tv.currentTextColor)
         }
-        assertTrue("readable on the page grey", contrast(W.KEY_LABEL, io.github.zmlworks.kpexplorer.ui.FieldBox.PLAIN_FILL) >= 4.5)
-        // same hue as the launch screen's teal (green ≈ blue, no red), only deeper
+        // 0.4.37: exactly the launch screen's teal (the user's choice; 0.4.36 deepened it for 4.5 : 1 contrast)
+        assertTrue("still legible on the page grey", contrast(W.KEY_LABEL, io.github.zmlworks.kpexplorer.ui.FieldBox.PLAIN_FILL) >= 2.5)
         val t = io.github.zmlworks.kpexplorer.ui.DotLogo.TEAL
         assertEquals(0, android.graphics.Color.red(W.KEY_LABEL))
         assertEquals(android.graphics.Color.green(t).toDouble() / android.graphics.Color.blue(t), android.graphics.Color.green(W.KEY_LABEL).toDouble() / android.graphics.Color.blue(W.KEY_LABEL), 0.02)

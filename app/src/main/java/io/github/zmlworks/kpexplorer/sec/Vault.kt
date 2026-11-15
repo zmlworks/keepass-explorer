@@ -32,9 +32,19 @@ class Vault(ctx: Context) {
         const val AUTH = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
         /** Tests force the UI state (Robolectric has no Keystore / BiometricPrompt). */
         var forceAvailableForTest: Boolean? = null
+        /** Tests (0.4.37): stands in for the Keystore key + OS prompt, so wrap / unlock run (Robolectric has neither). */
+        var testBackend: TestBackend? = null
+    }
+
+    /** What a test's stand-in does: [answer] null = OS prompt succeeds, "" = the user cancels, else an error. */
+    class TestBackend(var answer: String? = null) {
+        var key: ByteArray? = null
     }
 
     fun hasStoredKey(): Boolean = file.length() > 12
+
+    /** A key can be wrapped now: a screen lock is set (and, in tests that only force the UI state, a stand-in is present). */
+    fun canWrap(): Boolean = isAvailable() && (forceAvailableForTest == null || testBackend != null)
 
     /** A secure OS screen lock is set, so a wrapped key can be used. */
     fun isAvailable(): Boolean {
@@ -48,6 +58,7 @@ class Vault(ctx: Context) {
     private fun ks() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun clear() {
+        testBackend?.key = null
         file.delete()
         try { ks().deleteEntry(ALIAS) } catch (_: Throwable) {}
     }
@@ -89,6 +100,11 @@ class Vault(ctx: Context) {
 
     /** Store [composite] (copied) wrapped by a new Keystore key, after one OS authentication. done(error or null; "" = cancelled). */
     fun wrap(activity: Activity, composite: ByteArray, done: (String?) -> Unit) {
+        testBackend?.let { t ->
+            val err = t.answer
+            if (err == null) { t.key = composite.copyOf(); file.writeBytes(ByteArray(13)); done(null) } else { clear(); done(err) }
+            return
+        }
         val key = composite.copyOf()
         val cipher: Cipher
         try {
@@ -117,17 +133,28 @@ class Vault(ctx: Context) {
                 })
     }
 
-    /** OS authentication → decrypted composite key. */
-    fun unlock(activity: Activity, r: Result) {
+    /**
+     * OS authentication → decrypted composite key. [discardLost] = forget the wrapped key once it is known to be unusable
+     * (false for 0.4.37's OS-keystore databases, whose only key it is: the file is left where it is).
+     */
+    fun unlock(activity: Activity, r: Result, discardLost: Boolean = true) {
         val all = try { file.readBytes() } catch (_: Throwable) { null }
         if (all == null || all.size <= 12) { r.lost(L.t("指紋・画面ロック用の鍵がありません。", "There is no fingerprint / screen lock key.")); return }
+        val forget = { if (discardLost) clear() }
+        testBackend?.let { t ->
+            val k = t.key
+            when { k == null -> { forget(); r.lost(L.t("キーストアの鍵が見つかりません (画面ロックの解除など)。", "The keystore key was not found (screen lock removed, etc.).")) }
+                t.answer == null -> r.ok(k.copyOf())
+                else -> r.fail(t.answer!!) }
+            return
+        }
         val iv = all.copyOfRange(0, 12); val ct = all.copyOfRange(12, all.size)
         val cipher: Cipher
         try {
-            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { clear(); r.lost(L.t("キーストアの鍵が見つかりません (画面ロックの解除など)。", "The keystore key was not found (screen lock removed, etc.).")); return }
+            val key = ks().getKey(ALIAS, null) as? SecretKey ?: run { forget(); r.lost(L.t("キーストアの鍵が見つかりません (画面ロックの解除など)。", "The keystore key was not found (screen lock removed, etc.).")); return }
             cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv)) }
         } catch (e: KeyPermanentlyInvalidatedException) {
-            clear(); r.lost(L.t("画面ロックが解除・変更されたため、指紋・画面ロック用の鍵は無効になりました。", "The screen lock was removed or changed, so the fingerprint / screen lock key is no longer valid.")); return
+            forget(); r.lost(L.t("画面ロックが解除・変更されたため、指紋・画面ロック用の鍵は無効になりました。", "The screen lock was removed or changed, so the fingerprint / screen lock key is no longer valid.")); return
         } catch (t: Throwable) {
             r.fail(L.t("キーストアエラー: ${t.javaClass.simpleName}", "Keystore error: ${t.javaClass.simpleName}")); return
         }

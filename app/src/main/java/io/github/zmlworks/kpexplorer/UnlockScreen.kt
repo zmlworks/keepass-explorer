@@ -4,6 +4,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.TextView
 import io.github.zmlworks.kpexplorer.sec.Vault
+import io.github.zmlworks.kpexplorer.db.FileInfo
 import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.DotLogo
 import io.github.zmlworks.kpexplorer.ui.SoftButton
@@ -16,6 +17,9 @@ import io.github.zmlworks.kpexplorer.ui.W
  * 0.4.35: 外部ファイルを閲覧 (another KDBX, read-only, with its own password; this database stays locked) and
  * 外部に書き出す (this database's file copied as it is, still encrypted) before 終了, as in the user's sample.
  * 0.4.36: the five buttons evenly spaced (no group gaps), taller ([BUTTON_DP]), their labels in a light weight.
+ * 0.4.37: by the database's protection — master password: as before; not encrypted: one 開く button (nothing to
+ * check); OS keystore: OS認証で解除 only (there is no password). 外部に書き出す only when the menu setting
+ * 「起動画面からの書き出し」 is on (off by default); it lists the database and internal backups (strong ones only).
  * (Up to 0.4.31 a Windows 2000-style logon window on the teal desktop.)
  */
 /** [prompt] = ask for the fingerprint / screen lock as soon as it is shown (not when coming back from a read-only view). */
@@ -33,10 +37,14 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
     val logo = DotLogo(ctx)
     /** The stack of buttons and panels (tests). */
     val stack = W.vbox(ctx)
+    /** The database's protection when the screen was made. */
+    val protection = Security.protection(a)
+    /** 0.4.37: 開く for a database that is not encrypted. */
+    val plain = bigButton(L.t("開く (暗号化なし)", "Open (not encrypted)")) { error.text = ""; Security.openUnencrypted(a, onError = { error.text = it }) { a.showExplorer() } }
     val bio = bigButton(L.t("OS認証で解除", "Unlock with device lock")) { unlock() }
     val pwButton = bigButton(L.t("マスターパスワード", "Master password")) { showPassword(null) }
     val browse = bigButton(L.t("外部ファイルを閲覧", "Browse external file")) { error.text = ""; TempImport.browseExternal(a) }
-    val export = bigButton(L.t("外部に書き出す", "Export")) { error.text = ""; Security.exportEncrypted(a) }
+    val export = bigButton(L.t("外部に書き出す", "Export")) { error.text = ""; Security.exportFromLaunch(a) }
     val exit = bigButton(L.t("終了", "Exit")) { a.finish() }
     private val errorPanel = panel()
 
@@ -54,7 +62,8 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
             override fun afterTextChanged(s: android.text.Editable?) { errorPanel.visibility = if (s.isNullOrEmpty()) View.GONE else View.VISIBLE }
         })
         val gap = W.dp(GAP_DP)
-        stack.addView(bio, W.lp(W.MATCH, W.dp(BUTTON_DP)))
+        stack.addView(plain, W.lp(W.MATCH, W.dp(BUTTON_DP)))
+        stack.addView(bio, W.lp(W.MATCH, W.dp(BUTTON_DP), t = gap))
         stack.addView(pwButton, W.lp(W.MATCH, W.dp(BUTTON_DP), t = gap))
         stack.addView(pwBox, W.lp(W.MATCH, W.WRAP, t = gap))
         stack.addView(browse, W.lp(W.MATCH, W.dp(BUTTON_DP), t = gap))
@@ -69,9 +78,26 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
             addView(logo, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH))
             addView(sv, android.widget.FrameLayout.LayoutParams(W.MATCH, W.MATCH))
         }
-        if (!a.vault.hasStoredKey()) showPassword(L.t("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。", "There is no fingerprint / screen lock key, so open with the master password."))
-        else pwBox.visibility = View.GONE
+        export.visibility = if (Security.launchExportEnabled(a)) View.VISIBLE else View.GONE
+        when (protection) {
+            FileInfo.Protection.NONE -> { bio.visibility = View.GONE; pwButton.visibility = View.GONE; pwBox.visibility = View.GONE }
+            FileInfo.Protection.KEYSTORE -> {
+                plain.visibility = View.GONE; pwButton.visibility = View.GONE; pwBox.visibility = View.GONE
+                if (!a.vault.hasStoredKey()) error.text = KEY_GONE()
+            }
+            FileInfo.Protection.PASSWORD -> {
+                plain.visibility = View.GONE
+                if (!a.vault.hasStoredKey()) showPassword(L.t("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。", "There is no fingerprint / screen lock key, so open with the master password."))
+                else pwBox.visibility = View.GONE
+            }
+        }
+        // the first visible button has no gap above it
+        (0 until stack.childCount).map { stack.getChildAt(it) }.firstOrNull { it.visibility == View.VISIBLE }?.let { (it.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin = 0 }
     }
+
+    @Suppress("FunctionName")
+    private fun KEY_GONE() = L.t("OSのkeystoreの鍵がなくなっています (画面ロックの解除・変更、端末の初期化など)。この方式のデータベースは、もう開けません。",
+        "The OS keystore key is gone (screen lock removed or changed, device reset, etc.). A database protected this way can no longer be opened.")
 
     private fun bigButton(label: String, onClick: () -> Unit): TextView = W.text(ctx, label, 17f, false, W.TEXT).apply {
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, LABEL_WEIGHT, false)
@@ -93,7 +119,7 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
         Session.takeLockSaveError()?.let {
             Dlg.message(ctx, L.t("保存エラー", "Save Error"), L.t("ロックする直前の変更を保存できませんでした。最後の変更は失われた可能性があります。\n$it", "The changes made just before locking could not be saved. The last change may have been lost.\n$it"), 'x')
         }
-        if (!autoPrompted && Vault.forceAvailableForTest == null && a.vault.hasStoredKey()) {
+        if (!autoPrompted && Vault.forceAvailableForTest == null && a.vault.hasStoredKey() && protection != FileInfo.Protection.NONE) {
             autoPrompted = true
             root.post { unlock() }
         }
@@ -116,6 +142,11 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
 
     fun unlock() {
         error.text = ""
+        if (protection == FileInfo.Protection.KEYSTORE) {
+            if (!a.vault.hasStoredKey()) { error.text = KEY_GONE(); return }
+            Security.unlock(a, onError = { error.text = it }, onLost = { error.text = "$it\n" + KEY_GONE() }) { a.showExplorer() }
+            return
+        }
         if (!a.vault.hasStoredKey()) { showPassword(L.t("指紋・画面ロック用の鍵がないため、マスターパスワードで開いてください。", "There is no fingerprint / screen lock key, so open with the master password.")); return }
         Security.unlock(a, onError = { error.text = it }, onLost = { showPassword(L.t("$it\nマスターパスワードで開くと、もう一度登録します。", "$it\nOpening with the master password sets it up again.")) }) { a.showExplorer() }
     }
