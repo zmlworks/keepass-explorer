@@ -404,7 +404,7 @@ class Ux0420Test {
         assertEquals(L.Lang.SYSTEM, L.lang)
         assertFalse("this test device is Japanese", L.en)
         val m = labels(a.explorer!!.mainMenu())
-        assertTrue(m.toString(), m.count { it.startsWith("Language") } == 1 && m.contains("Languageと日付の形式"))
+        assertTrue(m.toString(), m.count { it.startsWith("Language") } == 1 && m.contains("Languageと日付形式"))
         L.setLang(app(), L.Lang.EN)
         L.load(app()); assertEquals(L.Lang.EN, L.lang)
         assertEquals("en", App.prefs(app()).getString(L.PREF_LANG, null))

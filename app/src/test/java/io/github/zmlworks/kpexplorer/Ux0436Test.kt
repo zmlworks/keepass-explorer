@@ -290,8 +290,8 @@ class Ux0436Test {
     private fun lockWithStoredKey(): UnlockScreen {
         // a wrapped key on file (Robolectric has no Keystore; the screen only looks at whether one exists)
         File(app().filesDir, "wrapped.bin").writeBytes(ByteArray(40) { it.toByte() })
-        // 0.4.37: the launch screen's 外部に書き出す needs the menu setting, and the file a strong master password
-        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        // 0.4.37: the launch screen's 外部に書き出す needs the setting (0.4.38: セキュリティの設定 強い), and the file a strong master password
+        Security.setExportMinLog10(app(), 12)
         a.store.setInfo(io.github.zmlworks.kpexplorer.db.FileInfo(io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD, io.github.zmlworks.kpexplorer.db.FileInfo.Strength.STRONG))
         a.lock(); idle(); layoutHost()
         assertTrue(a.screen is UnlockScreen)
@@ -378,9 +378,9 @@ class Ux0436Test {
 
     @Test fun languageAndDate_oneItemBelowLock_oneWindowForBoth() {
         val l = labels(a.explorer!!.mainMenu())
-        assertEquals("Languageと日付の形式", l[l.indexOf(s(R.string.menu_lock)) + 1])
+        assertEquals("Languageと日付形式", l[l.indexOf(s(R.string.menu_lock)) + 2])   // 0.4.38: after a line
         assertTrue(l.toString(), l.none { it.startsWith("Language: ") || it.startsWith("日付: ") })
-        item(a.explorer!!.mainMenu(), "Languageと日付の形式").action(); idle()
+        item(a.explorer!!.mainMenu(), "Languageと日付形式").action(); idle()
         val d = latestDialog()
         val t = texts(d.frame)
         assertTrue(t.toString(), t.contains("Language") && t.contains("日付の形式") && t.contains("端末に合わせる") && t.contains("English"))
@@ -392,12 +392,12 @@ class Ux0436Test {
         clickButton(d, "OK")
         assertEquals(L.DateOrder.DMY, L.dateOrder); assertEquals(L.Lang.SYSTEM, L.lang)
         // cancel changes nothing
-        item(a.explorer!!.mainMenu(), "Languageと日付の形式").action(); idle()
+        item(a.explorer!!.mainMenu(), "Languageと日付形式").action(); idle()
         (findTag<View>(latestDialog().frame, "date-1") as android.widget.RadioButton).performClick()
         clickButton(latestDialog(), "キャンセル")
         assertEquals(L.DateOrder.DMY, L.dateOrder)
         // both at once
-        item(a.explorer!!.mainMenu(), "Languageと日付の形式").action(); idle()
+        item(a.explorer!!.mainMenu(), "Languageと日付形式").action(); idle()
         (findTag<View>(latestDialog().frame, "date-1") as android.widget.RadioButton).performClick()
         (findTag<View>(latestDialog().frame, "lang-2") as android.widget.RadioButton).performClick()
         clickButton(latestDialog(), "OK")
@@ -487,8 +487,8 @@ class Ux0436Test {
         val ex = a.explorer!!
         ex.refresh(); idle(); layoutHost()
         val top = tree().topRow!!
-        assertEquals("最近の鍵", top.contentDescription)
-        assertEquals("above the root", 0, tree().indexOfChild(top))
+        assertEquals("最近更新した鍵", top.contentDescription)   // 0.4.38: renamed, and right under the root
+        assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertFalse(ex.recent)
         tree().tapTop(); idle(); layoutHost()
         assertTrue(ex.recent); assertFalse(ex.iconMode)

@@ -59,7 +59,6 @@ class SetupScreen(private val a: MainActivity) : MainActivity.Screen {
         f.addView(win, android.widget.FrameLayout.LayoutParams(W.MATCH, W.WRAP, Gravity.CENTER))
         root = android.widget.ScrollView(ctx).apply { isFillViewport = true; setBackgroundColor(DotLogo.TEAL); addView(f) }
         choose(FileInfo.Protection.PASSWORD)
-        PasswordStrength.warmUp()
     }
 
     /** Pick a choice: radio buttons and the panel under them. */

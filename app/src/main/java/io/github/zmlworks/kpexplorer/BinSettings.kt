@@ -8,7 +8,7 @@ import io.github.zmlworks.kpexplorer.ui.Dlg
 import io.github.zmlworks.kpexplorer.ui.W
 
 /**
- * 0.4.23: ごみ箱の設定 (main menu). Every setting is kept in the database file (KeePass "use recycle bin" flag,
+ * 0.4.23: ごみ箱の設定 (main menu); 0.4.38: also 「ごみ箱を見る」. Every setting is kept in the database file (KeePass "use recycle bin" flag,
  * KP Explorer keys in Meta CustomData), so it is the same on every device. Changes apply at once.
  */
 object BinSettings {
@@ -18,10 +18,24 @@ object BinSettings {
 
     fun show(a: MainActivity): ClassicDialog {
         val body = W.vbox(a)
-        val d = ClassicDialog(a, L.t("ごみ箱の設定", "Recycle Bin Settings"), body, listOf(ClassicDialog.Btn(L.t("閉じる", "Close"), true) { true }), scroll = false)
+        lateinit var d: ClassicDialog
+        d = ClassicDialog(a, L.t("ごみ箱の設定", "Recycle Bin Settings"), body, listOf(
+            // 0.4.38: 「ごみ箱を見る」 here (the menu's ごみ箱を開く is gone)
+            ClassicDialog.Btn(L.t("ごみ箱を見る", "View Recycle Bin")) { open(a) },
+            ClassicDialog.Btn(L.t("閉じる", "Close"), true) { true }), scroll = false)
         fill(a, body)
+        d.buttonViews.first().isEnabled = binId(a) != null
         d.show(); Dlg.last = d
         return d
+    }
+
+    private fun binId(a: MainActivity) = Session.db?.let { db -> Tree.recycleBinId(db)?.takeIf { Tree.findGroup(db, it) != null } }
+
+    /** Show the recycle bin's contents (closes the window). */
+    private fun open(a: MainActivity): Boolean {
+        val id = binId(a) ?: return false
+        a.explorer?.navigate(id)
+        return true
     }
 
     private fun changed(a: MainActivity, body: LinearLayout) { a.explorer?.refresh(); fill(a, body) }
@@ -60,7 +74,7 @@ object BinSettings {
             }
         }
         body.addView(once, W.lp(W.MATCH, W.WRAP, t = 10))
-        val hide = W.check(a, L.t("ごみ箱を表示しない (メニューの「ごみ箱を開く」で開けます)", "Hide the recycle bin (open it with \"Open Recycle Bin\" in the menu)"), Tree.binHidden(db)).apply {
+        val hide = W.check(a, L.t("ごみ箱を表示しない (この画面の「ごみ箱を見る」で開けます)", "Hide the recycle bin (open it with \"View Recycle Bin\" here)"), Tree.binHidden(db)).apply {
             tag = "bin-hide"; isEnabled = !ro
             setOnClickListener { Session.update { Tree.setBinHidden(it, isChecked) }; changed(a, body) }
         }

@@ -63,7 +63,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     var flat = false
         private set
     /**
-     * 0.4.36: 「最近の鍵」 — the virtual folder at the top of the path tree: the [io.github.zmlworks.kpexplorer.db.Recent]
+     * 0.4.36: 「最近の鍵」 (0.4.38: 「最近更新した鍵」, directly under "/") — the virtual folder in the path tree: the [io.github.zmlworks.kpexplorer.db.Recent]
      * keys, newest first, as a details list (場所, 追加 / 更新 and when). Read-only as a folder: nothing is created,
      * dropped, renamed or dragged there; a long press offers 開く and この項目のフォルダーを開く.
      */
@@ -251,7 +251,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         // 0.4.27: up to 0.4.26 every refresh built a new grid / list (and path tree), which starts at the top, so a
         // reorder or a drop scrolled back to the top. Now the same folder / search / view keeps its list view and
         // only reloads the rows (the adapters read [rows]); the rebuilt path tree gets its old scroll offset back.
-        val key = listOf<Any?>(g.uuid, q, flat, recent, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"))
+        val key = listOf<Any?>(g.uuid, q, flat, recent, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en"), RecentSettings.shown(ctx), RecentSettings.count(ctx))
         val same = key == shownKey
         val keepTreeY = if (same) (pathBox.getChildAt(0) as? ScrollView)?.scrollY else null
         // 0.4.31: the path tree's offset before this refresh (null = no tree shown, e.g. search results)
@@ -272,15 +272,17 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         } else {
             val hidden = Tree.hiddenGroups(d, g.uuid)
             val bin = Tree.recycleBinId(d)
-            val recents = io.github.zmlworks.kpexplorer.db.Recent.list(d)
+            val recents = io.github.zmlworks.kpexplorer.db.Recent.list(d, RecentSettings.count(ctx))
             recentInfo = if (recent) recents.associateBy { it.entry.uuid } else emptyMap()
             rows = if (recent) recents.map { Order.Node.E(it.entry) }
                 else if (flat) Order.subtreeEntries(g, if (bin != null && g.uuid != bin) setOf(bin) else emptySet())
                 else Order.children(g).filter { it.uuid !in hidden }
-            caption.title.text = if (recent) L.t("最近の鍵 - KeePass Explorer", "Recent keys - KeePass Explorer")
+            caption.title.text = if (recent) L.t("${RecentSettings.NAME_JA} - KeePass Explorer", "${RecentSettings.NAME_EN} - KeePass Explorer")
                 else if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
                 else "${groupLabel(g)} - KeePass Explorer"
-            val top = FolderTree.Top(L.t("最近の鍵", "Recent keys"), io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(ctx), recents.size, recent,
+            // 0.4.38: 最近更新した鍵, a pseudo folder directly under "/" (hidden from its settings window)
+            val top = if (!RecentSettings.shown(ctx) && !recent) null else FolderTree.Top(   // 0.4.38: hidden: only while it is open (as the bin)
+                L.t(RecentSettings.NAME_JA, RecentSettings.NAME_EN), io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(ctx), recents.size, recent,
                 onTap = { openRecent() }, onLongPress = { x, y -> recentTreeMenu(x, y) })
             val shownFolder = if (recent) null else g.uuid
             val tree = FolderTree(ctx, Tree.root(d), shownFolder, Tree.recycleBinId(d), hidden = hidden, top = top,
@@ -306,7 +308,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                 }
             })
             flatBand.visibility = if (flat || recent) View.VISIBLE else View.GONE
-            if (recent) flatBand.text = L.t("最近追加・更新した鍵 (新しい順に ${rows.size} 件)  ×", "Keys added or changed recently (newest first, ${rows.size})  ×")
+            if (recent) flatBand.text = L.t("${RecentSettings.NAME_JA} (新しい順に ${rows.size} 件)  ×", "${RecentSettings.NAME_EN} (newest first, ${rows.size})  ×")
             else if (flat) flatBand.text = L.t("「${groupLabel(g)}」以下の鍵・メモをすべて表示中 (${rows.size} 件)  ×", "All keys and memos under \"${groupLabel(g)}\" (${rows.size})  ×")
             App.prefs(ctx).edit().putString("lastGroup", g.uuid.toString()).apply()
         }
@@ -1263,7 +1265,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         refresh()
     }
 
-    /** 0.4.36: show 最近の鍵 (tap on its row at the top of the path tree). Back / 上へ / × return to the folder. */
+    /** 0.4.36: show 最近の鍵 (0.4.38: 最近更新した鍵, under "/" in the path tree; when hidden, from its settings window). Back / 上へ / × return to the folder. */
     fun openRecent() {
         if (recent && search == null) return
         if (search != null) { liveHandler.removeCallbacks(liveRun); search = null }
@@ -1395,9 +1397,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     // ------------------------------------------------------------------ menus
 
+    /**
+     * 0.4.38: the user's menu, exactly — ロック | Languageと日付形式, セキュリティの設定, マスターパスワードの設定,
+     * 外部データベースからインポートする | ごみ箱の設定, 最近更新された鍵の設定 | 乱数生成器, データベースのプロパティ, About.
+     * What used to be here lives in those windows (screen protection, auto-lock, internal backups → セキュリティの設定;
+     * ごみ箱を開く → ごみ箱の設定; 外部ファイルを閲覧 → the import window), or in the toolbar's 保存 (save in the app,
+     * export). While a read-only file is shown, its 閲覧を終了 comes first.
+     */
     fun mainMenu(): List<Menus.Item> {
-        val p = App.prefs(ctx)
-        val lockMin = a.autoLockMinutes()
         val ro = Session.readOnlyTemp
         val out = ArrayList<Menus.Item>()
         if (ro) {
@@ -1405,35 +1412,17 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             out.add(Menus.sep())
         }
         out.add(Menus.Item(ctx.getString(R.string.menu_lock)) { a.lock() })
-        // 0.4.36: one item and one window for both (up to 0.4.35 "Language: …" and 「日付: …」 near the end); "Language"
-        // stays English in every language so it can be found in a language one cannot read
-        out.add(Menus.Item(L.t("Languageと日付の形式", "Language and date format")) { pickLanguageAndDate() })
-        // 0.4.16: 履歴 moved to the key page (「- 履歴」 next to Last Modified)
         out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.browse_external), !ro) { TempImport.browseExternal(a) })
-        out.add(Menus.Item(ctx.getString(R.string.import_menu), !ro) { TempImport.showImportMenu(a) })
-        out.add(Menus.Item(ctx.getString(R.string.passgen_menu)) { PassGen.show(a) })
+        // "Language" stays English in every language so it can be found in a language one cannot read
+        out.add(Menus.Item(L.t("Languageと日付形式", "Language and date format")) { pickLanguageAndDate() })
+        out.add(Menus.Item(L.t(SecuritySettings.TITLE_JA, "Security settings")) { SecuritySettings.show(a) })
+        out.add(Menus.Item(L.t("マスターパスワードの設定", "Master password"), !ro) { Security.changeMasterPassword(a) })
+        out.add(Menus.Item(L.t("外部データベースからインポートする", "Import from an external database"), !ro) { TempImport.showImportMenu(a) })
         out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.menu_internal_save), !ro) { Security.confirmBackup(a) })
-        out.add(Menus.Item(ctx.getString(R.string.menu_export), !ro) { Security.askExportPassword(a, "keepass-explorer-${java.time.LocalDate.now()}.kdbx") { Session.db } })
-        out.add(Menus.Item(ctx.getString(R.string.menu_backup_list), !ro) { a.show(BackupScreen(a)) })
-        // 0.4.37: 「…の設定」 while the database has no master password (not encrypted / OS keystore)
-        out.add(Menus.Item(if (Security.protection(a) == io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD) ctx.getString(R.string.menu_change_master)
-            else L.t("マスターパスワードの設定", "Set master password"), !ro) { Security.changeMasterPassword(a) })
+        out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings")) { BinSettings.show(a) })
+        out.add(Menus.Item(L.t("最近更新された鍵の設定", "Recently changed keys settings")) { RecentSettings.show(a) })
         out.add(Menus.sep())
-        out.add(Menus.Item(ctx.getString(R.string.menu_secure_screen), checked = p.getBoolean("secure", true)) {
-            p.edit().putBoolean("secure", !p.getBoolean("secure", true)).apply(); a.applySecure()
-        })
-        // 0.4.37: whether the launch screen offers 外部に書き出す (off by default)
-        out.add(Menus.Item(L.t("起動画面からの書き出し", "Export from the launch screen"), checked = Security.launchExportEnabled(a)) { Security.toggleLaunchExport(a) })
-        // 0.4.23: one row per setting; tap → choose
-        out.add(Menus.Item(ctx.getString(when { lockMin == 0 -> R.string.menu_autolock_now; lockMin < 0 -> R.string.menu_autolock_never; else -> R.string.menu_autolock_5 })) { pickAutoLock() })
-        out.add(Menus.sep())
-        val bin = Tree.recycleBinId(db())?.takeIf { Tree.findGroup(db(), it) != null }
-        out.add(Menus.Item(L.t("ごみ箱を開く", "Open Recycle Bin"), bin != null) { bin?.let { navigate(it) } })
-        out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings"), !ro) { BinSettings.show(a) })
-        out.add(Menus.sep())
-        // 0.4.33: 使い方 removed (the README has the full description)
+        out.add(Menus.Item(L.t("乱数生成器", "Random generator")) { PassGen.show(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_about)) { Help.about(a) })
         return out
@@ -1463,7 +1452,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             java.time.format.DateTimeFormatter.ofPattern(it.pattern).withZone(java.time.ZoneId.systemDefault()).format(today) + ")" },
             dates.indexOf(L.dateOrder), "date")
         fun picked(rg: android.widget.RadioGroup) = (0 until rg.childCount).indexOfFirst { (rg.getChildAt(it) as android.widget.RadioButton).isChecked }
-        val d = ClassicDialog(ctx, L.t("Languageと日付の形式", "Language and date format"), col, listOf(
+        val d = ClassicDialog(ctx, L.t("Languageと日付形式", "Language and date format"), col, listOf(
             ClassicDialog.Btn("OK", true) {
                 val di = picked(dg); val li = picked(lg)
                 if (di >= 0 && dates[di] != L.dateOrder) { L.setDateOrder(ctx, dates[di]); refresh() }
@@ -1475,12 +1464,12 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         return d
     }
 
-    fun pickAutoLock(): ClassicDialog {
+    fun pickAutoLock(done: () -> Unit = {}): ClassicDialog {
         val vals = listOf(0, 5, -1)
         val cur = a.autoLockMinutes().let { if (it < 0) -1 else if (it == 0) 0 else 5 }
         return Dlg.choose(ctx, L.t("自動ロック", "Auto-lock"),
             listOf(L.t("すぐ (アプリを離れたとき)", "Immediately (when leaving the app)"), L.t("5 分後", "After 5 minutes"), L.t("しない", "Never")),
-            vals.indexOf(cur)) { App.prefs(ctx).edit().putInt("autolock", vals[it]).apply() }
+            vals.indexOf(cur)) { App.prefs(ctx).edit().putInt("autolock", vals[it]).apply(); done() }
     }
 
     fun itemMenu(r: Order.Node): List<Menus.Item> {

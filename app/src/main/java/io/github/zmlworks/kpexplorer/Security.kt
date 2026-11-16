@@ -63,9 +63,9 @@ object Security {
      */
     fun unlockWithPassword(a: MainActivity, password: String, onError: (String) -> Unit, onOk: () -> Unit) {
         val k = Kdbx.compositeKey(password)
-        val verdict = PasswordStrength.verdict(password)
+        val info = PasswordStrength.info(password)
         openStored(a, k, { k.fill(0); onError(it) }, {
-            a.store.setInfo(FileInfo(FileInfo.Protection.PASSWORD, verdict))
+            a.store.setInfo(info)
             if (!a.vault.hasStoredKey() && a.vault.canWrap())
                 a.vault.wrap(a, k) { err -> k.fill(0); if (!err.isNullOrEmpty()) toast(a, L.t("指紋・画面ロックの登録に失敗: $err", "Could not set up fingerprint / screen lock: $err")) }
             else k.fill(0)
@@ -100,7 +100,7 @@ object Security {
     /** First run, master password: create the database with [password]; then offer fingerprint / screen-lock unlock (wrap). */
     fun firstRun(a: MainActivity, password: String, onError: (String) -> Unit, onOk: () -> Unit) {
         val composite = Kdbx.compositeKey(password)
-        val info = FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(password))
+        val info = PasswordStrength.info(password)
         create(a, composite, false, info, { composite.fill(0); onError(it) }) {
             if (a.vault.canWrap())
                 a.vault.wrap(a, composite) { err -> composite.fill(0); if (!err.isNullOrEmpty()) toast(a, L.t("指紋・画面ロックの登録に失敗: $err", "Could not set up fingerprint / screen lock: $err")); onOk() }
@@ -163,20 +163,22 @@ object Security {
             "Internal backups that open with the current password are rewritten for the new password too"), 14f).apply { setLineSpacing(0f, 1.1f) },
             W.lp(W.MATCH, W.WRAP, b = 8))
         val (p1, p2) = passwordPair(a, col, L.t("新しいパスワード", "New password"), L.t("新しいパスワードの確認", "Confirm new password"), meter = true)
-        val keep = W.check(a, L.t("内部バックアップのパスワードを書き換えない", "Do not change the password of internal backups"), false)
-        keep.tag = "keep-backups"
+        // 0.4.38: 「内部バックアップのパスワードを書き換える」, ticked by default (up to 0.4.37 the opposite 「…書き換えない」);
+        // unticking it asks first
+        val rewrite = W.check(a, L.t("内部バックアップのパスワードを書き換える", "Change the password of internal backups too"), true)
+        rewrite.tag = "rewrite-backups"
         var sure = false
-        keep.setOnCheckedChangeListener { box, on ->
-            if (!on || sure) { sure = false; return@setOnCheckedChangeListener }
-            box.isChecked = false   // ticked only after the warning is accepted
+        rewrite.setOnCheckedChangeListener { box, on ->
+            if (on || sure) { sure = false; return@setOnCheckedChangeListener }
+            box.isChecked = true   // unticked only after the warning is accepted
             Dlg.confirm(a, title, L.t("バックアップを開くのに古いパスワードの入力が必要になります", "Opening the backups will need the old password"), '!',
-                yes = "OK", no = L.t("キャンセル", "Cancel")) { sure = true; box.isChecked = true }
+                yes = "OK", no = L.t("キャンセル", "Cancel")) { sure = true; box.isChecked = false }
         }
-        if (!setting) col.addView(keep, W.lp(W.MATCH, W.WRAP, t = 2))   // (backups of a key nobody can type: always rewritten)
+        if (!setting) col.addView(rewrite, W.lp(W.MATCH, W.WRAP, t = 2))   // (backups of a key nobody can type: always rewritten)
         return ClassicDialog(a, title, col, listOf(
             ClassicDialog.Btn(if (setting) L.t("設定", "Set") else L.t("変更", "Change"), true) {
                 val pw = checkPair(a, title, p1, p2) ?: return@Btn false
-                confirmWeak(a, title, pw) { applyNewPassword(a, title, pw, rekey = !keep.isChecked) }
+                confirmWeak(a, title, pw) { applyNewPassword(a, title, pw, rekey = setting || rewrite.isChecked) }
                 true
             },
             ClassicDialog.Btn(L.t("キャンセル", "Cancel")))).also { it.show() }
@@ -185,7 +187,7 @@ object Security {
     /** A weak new password is allowed, after saying what it means (0.4.37). [starting] = the first-run wording. */
     fun confirmWeak(a: MainActivity, title: String, pw: String, starting: Boolean = false, go: () -> Unit) {
         if (PasswordStrength.judge(pw).strong) { go(); return }
-        Dlg.confirm(a, title, L.t("このパスワードは弱いと判定されました。推測されやすく、ファイルを盗まれると総当たりで開かれるおそれがあります。また、起動画面からの書き出しはできません。\n\n", "This password was judged weak: it is easy to guess, and a stolen file could be opened by brute force. Export from the launch screen will not be possible either.\n\n") +
+        Dlg.confirm(a, title, L.t("このパスワードは弱いと判定されました。推測されやすく、ファイルを盗まれると総当たりで開かれるおそれがあります。また、認証なしの書き出し (起動画面の「外部に書き出す」) はできません。\n\n", "This password was judged weak: it is easy to guess, and a stolen file could be opened by brute force. Export without unlocking (launch screen) will not be possible either.\n\n") +
             if (starting) L.t("このパスワードで始めますか?", "Start with this password?") else L.t("このパスワードで続けますか?", "Continue with this password?"), '!',
             yes = if (starting) L.t("はじめる", "Start") else L.t("続ける", "Continue"), no = L.t("戻る", "Back")) { go() }
     }
@@ -194,7 +196,7 @@ object Security {
         val old = Session.compositeCopy() ?: return
         val k = Kdbx.compositeKey(pw)
         val before = a.store.info()
-        val info = FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(pw))
+        val info = PasswordStrength.info(pw)
         Session.update { Kdbx.withHeader(Kdbx.withCredentials(it, k), light = false) }
         // recorded before the save: if the app dies in between, the unlock screen still offers both ways in
         a.store.setInfo(info)
@@ -215,7 +217,12 @@ object Security {
     fun changedMessage(r: io.github.zmlworks.kpexplorer.db.Store.Rekey?): String {
         val head = L.t("マスターパスワードを変更しました。", "The master password was changed.")
         if (r == null) return head + "\n" + L.t("内部バックアップはそのままです (開くには古いパスワードが必要です)。", "Internal backups were left as they were (they need the old password).")
-        val sb = StringBuilder(head).append("\n")
+        return head + "\n" + rewrittenMessage(r)
+    }
+
+    /** How many internal backups [Store.rekeyBackups] rewrote / left alone (0.4.38: also after an import). */
+    fun rewrittenMessage(r: io.github.zmlworks.kpexplorer.db.Store.Rekey): String {
+        val sb = StringBuilder()
         sb.append(L.t("内部バックアップ: ${r.rewritten.size} 件を新しいパスワードに書き換えました。", "Internal backups: ${r.rewritten.size} rewritten for the new password."))
         if (r.skipped.isNotEmpty()) sb.append("\n").append(L.t("${r.skipped.size} 件は現在のパスワードで開けないため、そのままです。", "${r.skipped.size} do not open with the current password and were left as they were."))
         if (r.failed.isNotEmpty()) sb.append("\n").append(L.t("${r.failed.size} 件は書き換えられませんでした (元のまま): ", "${r.failed.size} could not be rewritten (unchanged): ") + r.failed.joinToString(", "))
@@ -260,9 +267,10 @@ object Security {
         lateinit var d: ClassicDialog
         val name = a.store.nextBackupName()
         fun choice(label: String, tag: String, note: String, f: () -> Unit) {
-            // 0.4.36: both buttons one fixed width (up to 0.4.35 the window's full width)
-            col.addView(W.button(a, label) { d.dismiss(); f() }.apply { this.tag = tag }, W.lp(W.dp(SAVE_BUTTON_DP), W.WRAP, t = if (col.childCount == 0) 0 else 12))
-            col.addView(W.text(a, note, 14f).apply { setLineSpacing(0f, 1.1f); setPadding(W.dp(10), 0, 0, 0) }, W.lp(W.MATCH, W.WRAP, t = 4))
+            // 0.4.36: both buttons one fixed width (up to 0.4.35 the window's full width); 0.4.38: centred, notes too
+            col.addView(W.button(a, label) { d.dismiss(); f() }.apply { this.tag = tag },
+                W.lp(W.dp(SAVE_BUTTON_DP), W.WRAP, t = if (col.childCount == 0) 0 else 12).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL })
+            col.addView(W.text(a, note, 14f).apply { setLineSpacing(0f, 1.1f); gravity = android.view.Gravity.CENTER_HORIZONTAL }, W.lp(W.MATCH, W.WRAP, t = 4))
         }
         choice(L.t("アプリ内に保存", "Save in app"), "save-internal",
             L.t("$name として内部にバックアップします", "Backs up inside the app as $name")) { confirmBackup(a, onInternal) }   // 0.4.36: asks first
@@ -336,14 +344,40 @@ object Security {
 
     // ---------------------------------------------------------------- 0.4.37: export from the launch screen
 
-    /** Setting (menu 「起動画面からの書き出し」): the launch screen's 外部に書き出す is shown. Off by default. */
-    const val PREF_LAUNCH_EXPORT = "launch_export"
+    /**
+     * セキュリティの設定 「認証なしで外部に書き出す際の強度」 (0.4.38): the estimated guesses (power of ten) a file's
+     * master password needs before the launch screen may write it out; 0 = 無効 (default). Replaces 0.4.37's on / off
+     * 「起動画面からの書き出し」 (on → 強い, off → 無効), migrated on first read.
+     */
+    const val PREF_EXPORT_MIN = "export_min_log10"
+    /** 0.4.37's on / off setting (read once for the migration, then removed). */
+    const val PREF_LAUNCH_EXPORT_OLD = "launch_export"
+    val EXPORT_LEVELS = listOf(0, PasswordStrength.STRONG_LOG10.toInt(), PasswordStrength.VERY_STRONG_LOG10.toInt())
 
-    fun launchExportEnabled(a: MainActivity) = App.prefs(a).getBoolean(PREF_LAUNCH_EXPORT, false)
+    fun exportLevelLabel(n: Int) = when (n) {
+        0 -> L.t("無効", "Off")
+        PasswordStrength.STRONG_LOG10.toInt() -> L.t("強い (10^12以上)", "Strong (10^12 or more)")
+        PasswordStrength.VERY_STRONG_LOG10.toInt() -> L.t("とても強い (10^14以上)", "Very strong (10^14 or more)")
+        else -> "10^$n"
+    }
+
+    fun exportMinLog10(a: android.content.Context): Int {
+        val p = App.prefs(a)
+        if (!p.contains(PREF_EXPORT_MIN) && p.contains(PREF_LAUNCH_EXPORT_OLD)) {
+            val v = if (p.getBoolean(PREF_LAUNCH_EXPORT_OLD, false)) PasswordStrength.STRONG_LOG10.toInt() else 0
+            p.edit().putInt(PREF_EXPORT_MIN, v).remove(PREF_LAUNCH_EXPORT_OLD).apply()
+            return v
+        }
+        return p.getInt(PREF_EXPORT_MIN, 0)
+    }
+
+    fun setExportMinLog10(a: android.content.Context, n: Int) { App.prefs(a).edit().putInt(PREF_EXPORT_MIN, n).remove(PREF_LAUNCH_EXPORT_OLD).apply() }
+
+    fun launchExportEnabled(a: MainActivity) = exportMinLog10(a) > 0
 
     /** A file the launch screen can offer: the app database or an internal backup, with its record. */
-    class ExportItem(val file: File, val label: String, val info: FileInfo, val main: Boolean) {
-        val exportable get() = info.launchExportable
+    class ExportItem(val file: File, val label: String, val info: FileInfo, val main: Boolean, val minLog10: Int) {
+        val exportable get() = info.exportableAt(minLog10)
         /** File name offered in the system's save screen. */
         val outName get() = if (main) "keepass-explorer-${LocalDate.now()}.kdbx" else "keepass-explorer-${file.nameWithoutExtension}.kdbx"
     }
@@ -351,17 +385,19 @@ object Security {
     /** The database first, then the internal backups (newest first). */
     fun launchExportItems(a: MainActivity): List<ExportItem> {
         val out = ArrayList<ExportItem>()
-        if (a.store.exists()) out.add(ExportItem(a.store.dbFile, L.t("現在のデータベース", "Current database"), a.store.info(), true))
-        for (f in a.store.backups()) out.add(ExportItem(f, f.name, a.store.info(f), false))
+        val min = exportMinLog10(a)
+        if (a.store.exists()) out.add(ExportItem(a.store.dbFile, L.t("現在のデータベース", "Current database"), a.store.info(), true, min))
+        for (f in a.store.backups()) out.add(ExportItem(f, f.name, a.store.info(f), false, min))
         return out
     }
 
     /** Why a file cannot be written out from the launch screen (null = it can). */
-    fun notExportableReason(i: FileInfo): String? = when {
+    fun notExportableReason(i: FileInfo, minLog10: Int): String? = when {
+        minLog10 <= 0 -> L.t("認証なしの書き出しは無効です (セキュリティの設定)", "Export without unlocking is off (Security settings)")
         i.protection == FileInfo.Protection.NONE -> L.t("暗号化されていないため書き出せません", "Not encrypted, so it cannot be exported")
         i.protection == FileInfo.Protection.KEYSTORE -> L.t("OSのkeystoreの鍵で保護されているため書き出せません (他の端末では開けません)", "Protected by the OS keystore key, so it cannot be exported (it would not open anywhere else)")
-        i.strength == FileInfo.Strength.WEAK -> L.t("マスターパスワードが弱いため書き出せません", "The master password is weak, so it cannot be exported")
         i.strength == FileInfo.Strength.UNKNOWN -> L.t("パスワードの強度が未判定のため書き出せません (一度マスターパスワードを入力して開くと判定されます)", "The password strength is not known yet, so it cannot be exported (it is judged when you open it by typing the master password)")
+        !i.exportableAt(minLog10) -> L.t("マスターパスワードの強度が設定 (${exportLevelLabel(minLog10)}) に届かないため書き出せません", "The master password is weaker than the setting (${exportLevelLabel(minLog10)}), so it cannot be exported")
         else -> null
     }
 
@@ -375,8 +411,8 @@ object Security {
         val title = L.t("外部に書き出す", "Export")
         val items = launchExportItems(a)
         val col = W.vbox(a)
-        col.addView(W.text(a, L.t("書き出すファイルを選んでください。暗号化したまま書き出し、そのファイルのマスターパスワードで KeePass や KeePassXC などで開けます。強いマスターパスワードのファイルだけ選べます。",
-            "Choose the file to export. It is written still encrypted and opens with its own master password in KeePass, KeePassXC etc. Only files with a strong master password can be chosen."), 14f)
+        col.addView(W.text(a, L.t("書き出すファイルを選んでください。暗号化したまま書き出し、そのファイルのマスターパスワードで KeePass や KeePassXC などで開けます。マスターパスワードの強度が「${exportLevelLabel(exportMinLog10(a))}」のファイルだけ選べます (セキュリティの設定)。",
+            "Choose the file to export. It is written still encrypted and opens with its own master password in KeePass, KeePassXC etc. Only files whose master password reaches \"${exportLevelLabel(exportMinLog10(a))}\" can be chosen (Security settings)."), 14f)
             .apply { setLineSpacing(0f, 1.1f) }, W.lp(W.MATCH, W.WRAP, b = 6))
         val radios = ArrayList<android.widget.RadioButton>()
         var picked: ExportItem? = null
@@ -390,12 +426,12 @@ object Security {
             r.setOnClickListener { _ -> if (!r.isEnabled) { r.isChecked = false; return@setOnClickListener }; radios.forEach { o -> o.isChecked = o === r }; picked = it }
             col.addView(r, W.lp(W.MATCH, W.WRAP, t = if (n == 0) 0 else 2))
             val time = fmt.format(java.time.Instant.ofEpochMilli(it.file.lastModified()))
-            val note = notExportableReason(it.info)?.let { why -> "$time — $why" } ?: time
+            val note = notExportableReason(it.info, it.minLog10)?.let { why -> "$time — $why" } ?: time
             col.addView(W.text(a, note, 12f, color = if (it.exportable) W.TEXT else GREYED_NOTE).apply { tag = "export-note-$n"; setPadding(W.dp(34), 0, 0, 0) }, W.lp(W.MATCH, W.WRAP))
         }
         items.indexOfFirst { it.exportable }.takeIf { it >= 0 }?.let { radios[it].isChecked = true; picked = items[it] }
-        if (picked == null) col.addView(W.text(a, L.t("書き出せるファイルがありません。アプリを開いてマスターパスワードを強いものに変更すると、書き出せるようになります。",
-            "There is no file that can be exported. Open the app and change the master password to a strong one to make it exportable."), 14f, color = 0xFFB00000.toInt())
+        if (picked == null) col.addView(W.text(a, L.t("書き出せるファイルがありません。アプリを開いてマスターパスワードをより強いものに変更すると、書き出せるようになります。",
+            "There is no file that can be exported. Open the app and change the master password to a stronger one to make it exportable."), 14f, color = 0xFFB00000.toInt())
             .apply { tag = "export-none"; setLineSpacing(0f, 1.1f) }, W.lp(W.MATCH, W.WRAP, t = 8))
         val d = ClassicDialog(a, title, col, listOf(
             ClassicDialog.Btn(L.t("保存先を選ぶ", "Choose location"), true) { picked?.let { writeAsIs(a, title, it) }; picked != null },
@@ -420,7 +456,7 @@ object Security {
             val busy = Dlg.busy(a, title, L.t("書き出しています", "Exporting"))
             Session.afterSave({
                 // checked again: the record could have changed since the list was shown
-                check((if (item.main) a.store.info() else a.store.info(item.file)).launchExportable) { L.t("このファイルは書き出せません", "This file cannot be exported") }
+                check((if (item.main) a.store.info() else a.store.info(item.file)).exportableAt(exportMinLog10(a))) { L.t("このファイルは書き出せません", "This file cannot be exported") }
                 val bytes = item.file.readBytes()
                 check(Kdbx.isKdbx(bytes)) { L.t("データベースのファイルが壊れています", "The database file is damaged") }
                 a.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(bytes) }
@@ -430,16 +466,6 @@ object Security {
                  .onFailure { Dlg.message(a, title, L.t("書き出せませんでした。\n${it.message ?: it}", "Could not export.\n${it.message ?: it}"), 'x') }
             }
         }
-    }
-
-    /** Menu toggle: turning it on explains what it allows first. */
-    fun toggleLaunchExport(a: MainActivity) {
-        val p = App.prefs(a)
-        if (launchExportEnabled(a)) { p.edit().putBoolean(PREF_LAUNCH_EXPORT, false).apply(); return }
-        Dlg.confirm(a, L.t("起動画面からの書き出し", "Export from the launch screen"),
-            L.t("ロックを解除しなくても、起動画面の「外部に書き出す」から、データベースと内部バックアップを暗号化したまま書き出せるようにします。\n\n書き出せるのは、マスターパスワードが「強い」と判定されたファイルだけです (暗号化なし・OSのkeystore・弱い・未判定のファイルは書き出せません)。端末を手にした人なら誰でも暗号化されたファイルを持ち出せるようになる点に注意してください。\n\n有効にしますか?",
-                "Lets the launch screen's Export write the database and internal backups, still encrypted, without unlocking.\n\nOnly files whose master password was judged Strong can be exported (not-encrypted, OS keystore, weak and not-yet-judged files cannot). Note that anyone holding the device could then take the encrypted file away.\n\nTurn it on?"), '?',
-            yes = L.t("有効にする", "Turn on"), no = L.t("キャンセル", "Cancel")) { p.edit().putBoolean(PREF_LAUNCH_EXPORT, true).apply() }
     }
 
     /** [password] null = keep the database's own credentials (same master password). */

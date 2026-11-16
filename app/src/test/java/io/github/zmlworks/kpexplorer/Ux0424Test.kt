@@ -254,8 +254,10 @@ class Ux0424Test {
         val ex = a.explorer!!
         ex.navigate(ids["G"]!!); idle(); layoutHost()
         val rows = ex.folderTree!!.rows
-        rows.forEachIndexed { i, v -> assertEquals("row $i", if (i % 2 == 0) W.WINDOW else io.github.zmlworks.kpexplorer.ui.STRIPE, (v.background as android.graphics.drawable.ColorDrawable).color) }
-        assertNotEquals(rowBg(rows[0].tag as UUID), rowBg(rows[1].tag as UUID))
+        // (0.4.38: counted down the tree as shown, the virtual 最近更新した鍵 row under the root included)
+        val shown = ex.folderTree!!.let { t -> (0 until t.childCount).map { t.getChildAt(it) } }
+        shown.forEachIndexed { i, v -> assertEquals("row $i", if (i % 2 == 0) W.WINDOW else io.github.zmlworks.kpexplorer.ui.STRIPE, (v.background as android.graphics.drawable.ColorDrawable).color) }
+        assertNotEquals(rowBg(rows[1].tag as UUID), rowBg(rows[2].tag as UUID))
         shot("v0424/01-striped-tree.png")
         // the move dialog's tree too
         ex.moveToDialog(ids["Gmail"]!!); idle()

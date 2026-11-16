@@ -290,8 +290,8 @@ class Ux0435Test {
     private fun lockWithStoredKey(): UnlockScreen {
         // a wrapped key on file (Robolectric has no Keystore; the screen only looks at whether one exists)
         File(app().filesDir, "wrapped.bin").writeBytes(ByteArray(40) { it.toByte() })
-        // 0.4.37: the launch screen's 外部に書き出す needs the menu setting, and the file a strong master password
-        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        // 0.4.37: the launch screen's 外部に書き出す needs the setting (0.4.38: セキュリティの設定 強い), and the file a strong master password
+        Security.setExportMinLog10(app(), 12)
         a.store.setInfo(io.github.zmlworks.kpexplorer.db.FileInfo(io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD, io.github.zmlworks.kpexplorer.db.FileInfo.Strength.STRONG))
         a.lock(); idle(); layoutHost()
         assertTrue(a.screen is UnlockScreen)

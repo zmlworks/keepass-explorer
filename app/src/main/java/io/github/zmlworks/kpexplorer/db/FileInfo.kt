@@ -4,9 +4,11 @@ package io.github.zmlworks.kpexplorer.db
  * 0.4.37: what the app knows about one database file (the app database or an internal backup) — never a secret.
  * [protection]: how its key is made (master password / none / random key in the OS keystore); [strength]: the
  * verdict on its master password, judged when the password was set, changed or typed ([UNKNOWN] when it was never
- * typed in this version, or for files that have no password). Kept in db/files.properties by [Store].
+ * typed in this version, or for files that have no password). [log10] (0.4.38): the estimate's whole power of ten
+ * (null in 0.4.37 records: a "strong" one then counts as 10^12, the threshold of that version). Kept in
+ * db/files.properties by [Store].
  */
-data class FileInfo(val protection: Protection, val strength: Strength) {
+data class FileInfo(val protection: Protection, val strength: Strength, val log10: Int? = null) {
     enum class Protection(val key: String) {
         /** Standard KDBX protected by the user's master password (and the optional fingerprint / PIN unlock). */
         PASSWORD("password"),
@@ -22,10 +24,21 @@ data class FileInfo(val protection: Protection, val strength: Strength) {
         companion object { fun of(s: String?) = entries.firstOrNull { it.key == s } ?: UNKNOWN }
     }
 
-    /** Can be written out from the launch screen (nothing unlocked): only strong master passwords. */
-    val launchExportable: Boolean get() = protection == Protection.PASSWORD && strength == Strength.STRONG
+    /** Estimated guesses, as a power of ten (null = not known). */
+    val guessesLog10: Int? get() = when {
+        protection != Protection.PASSWORD || strength == Strength.UNKNOWN -> null
+        log10 != null -> log10
+        strength == Strength.STRONG -> 12
+        else -> null
+    }
 
-    fun encode() = "${protection.key},${strength.key}"
+    /**
+     * Can be written out without unlocking when the setting asks for 10^[minLog10] guesses (0 = never): only master
+     * passwords whose recorded estimate reaches it.
+     */
+    fun exportableAt(minLog10: Int): Boolean = minLog10 > 0 && (guessesLog10 ?: -1) >= minLog10
+
+    fun encode() = "${protection.key},${strength.key}" + (log10?.let { ",$it" } ?: "")
 
     companion object {
         /** Files written before 0.4.37 (and anything without a record): master password, not judged yet. */
@@ -33,7 +46,7 @@ data class FileInfo(val protection: Protection, val strength: Strength) {
         fun decode(s: String?): FileInfo? {
             val p = s?.split(',') ?: return null
             val prot = Protection.of(p.getOrNull(0)) ?: return null
-            return FileInfo(prot, Strength.of(p.getOrNull(1)))
+            return FileInfo(prot, Strength.of(p.getOrNull(1)), p.getOrNull(2)?.toIntOrNull())
         }
     }
 }

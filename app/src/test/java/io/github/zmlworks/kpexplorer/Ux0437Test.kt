@@ -291,8 +291,8 @@ class Ux0437Test {
     private fun lockWithStoredKey(): UnlockScreen {
         // a wrapped key on file (Robolectric has no Keystore; the screen only looks at whether one exists)
         File(app().filesDir, "wrapped.bin").writeBytes(ByteArray(40) { it.toByte() })
-        // 0.4.37: the launch screen's 外部に書き出す needs the menu setting, and the file a strong master password
-        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        // 0.4.37: the launch screen's 外部に書き出す needs the setting (0.4.38: セキュリティの設定 強い), and the file a strong master password
+        Security.setExportMinLog10(app(), 12)
         a.store.setInfo(io.github.zmlworks.kpexplorer.db.FileInfo(io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD, io.github.zmlworks.kpexplorer.db.FileInfo.Strength.STRONG))
         a.lock(); idle(); layoutHost()
         assertTrue(a.screen is UnlockScreen)
@@ -394,13 +394,13 @@ class Ux0437Test {
         for (x in listOf("マスターパスワード:", "もう一度入力:", "パスワードを表示する", "強度: (未入力)", "はじめる(S)")) assertTrue("$x in $t", t.contains(x))
         assertTrue("teal backdrop", s.backdrop == io.github.zmlworks.kpexplorer.ui.DotLogo.TEAL)
         // live meter: weak, then strong
-        typePw(s, "password1")
+        typePw(s, "aaaa1234")   // 0.4.38: the app's own estimate (runs count as one character)
         assertEquals(FileInfo.Strength.WEAK, s.meter!!.result!!.verdict)
         assertTrue(s.meter!!.label.text.toString(), s.meter!!.label.text.startsWith("強度: とても弱い"))
         shot("v0437/01-welcome-password-weak.png")
         typePw(s, STRONG_PW)
         assertEquals(FileInfo.Strength.STRONG, s.meter!!.result!!.verdict)
-        assertEquals("強度: 強い", s.meter!!.label.text.toString())
+        assertEquals("強度: とても強い", s.meter!!.label.text.toString())   // 0.4.38: 95^19
         shot("v0437/02-welcome-password-strong.png")
         // the show-password box shows both fields
         val show = allViews(s.panel).filterIsInstance<android.widget.CheckBox>().first { it.text.toString() == "パスワードを表示する" }
@@ -441,20 +441,20 @@ class Ux0437Test {
         typePw(s, STRONG_PW)
         s.start.performClick()
         until("explorer") { a.screen is ExplorerScreen }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info())
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info().copy(log10 = null))
         assertTrue(runCatching { Kdbx.open(a.store.read(), Kdbx.compositeKey(STRONG_PW)) }.isSuccess)
         val text = File(a.store.dbFile.parentFile, "files.properties").readText()
         assertFalse("never the password", text.contains(STRONG_PW) || text.contains("Kq2p"))
         // weak: a warning first; Back keeps the screen
         s = welcome()
-        typePw(s, "sakura2026")
+        typePw(s, "sakura")
         s.start.performClick(); idle()
         val warn = latestDialog()
         assertTrue(texts(warn.frame).joinToString().contains("弱いと判定されました"))
         clickButton(warn, "戻る"); assertFalse("nothing made", a.store.exists()); assertTrue("still ${a.screen}", a.screen === s)
         s.start.performClick(); idle(); clickButton(latestDialog(), "はじめる")
         until("explorer") { a.screen is ExplorerScreen }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK), a.store.info())
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK), a.store.info().copy(log10 = null))
     }
 
     @Test fun setup_unencrypted_emptyKeyKdbx_saidPlainly_opensWithOneButton() {
@@ -471,10 +471,11 @@ class Ux0437Test {
         latestDialog().dismiss()
         assertTrue(labels(a.explorer!!.mainMenu()).contains("マスターパスワードの設定"))
         val un = lockNow()
-        assertTrue(vis(un.plain)); assertEquals("開く (暗号化なし)", un.plain.text.toString())
-        assertFalse(vis(un.bio)); assertFalse(vis(un.pwButton)); assertFalse(vis(un.pwBox))
-        assertFalse("launch export off by default", vis(un.export))
-        un.plain.performClick()
+        // 0.4.38: the same buttons in every mode, the unusable ones grey
+        assertTrue(vis(un.bio)); assertEquals("開く (暗号化なし)", un.bio.text.toString()); assertTrue(un.usable(un.bio))
+        assertTrue(vis(un.pwButton)); assertFalse(un.usable(un.pwButton)); assertFalse(vis(un.pwBox))
+        assertTrue(vis(un.export)); assertFalse("launch export off by default", un.usable(un.export))
+        un.bio.performClick()
         until("opened") { a.screen is ExplorerScreen }
     }
 
@@ -492,7 +493,7 @@ class Ux0437Test {
         assertEquals(32, k.size); assertFalse(k.contentEquals(Kdbx.compositeKey("")))
         assertTrue(runCatching { Kdbx.open(a.store.read(), k) }.isSuccess)
         val un = lockNow()
-        assertTrue(vis(un.bio)); assertFalse(vis(un.pwButton)); assertFalse(vis(un.pwBox)); assertFalse(vis(un.plain))
+        assertTrue(vis(un.bio)); assertTrue(un.usable(un.bio)); assertFalse(un.usable(un.pwButton)); assertFalse(vis(un.pwBox))
         un.bio.performClick()
         until("opened") { a.screen is ExplorerScreen }
         // the screen lock went away: the key is gone, said plainly; wrapped.bin is left alone
@@ -503,17 +504,6 @@ class Ux0437Test {
         assertTrue(a.vault.hasStoredKey()); assertFalse(Session.isOpen)
     }
 
-    @Test fun strength_zxcvbnStyle_threshold10to12() {
-        assertEquals(12.0, io.github.zmlworks.kpexplorer.sec.PasswordStrength.STRONG_LOG10, 0.0)
-        fun v(p: String) = io.github.zmlworks.kpexplorer.sec.PasswordStrength.verdict(p)
-        for (p in listOf("password1", "Tr0ub4dor&3", "qwertyuiopasdfgh", "aaaaaaaaaaaaaaaaaaaa", "1234567890123456", "sakura2026", "yamada.taro1985", "keepassexplorer2026"))
-            assertEquals(p, FileInfo.Strength.WEAK, v(p))
-        for (p in listOf(STRONG_PW, "correcthorsebatterystaple", "x8Fq2LmZ9pRt", "7hJ2kL9mN4pQ"))
-            assertEquals(p, FileInfo.Strength.STRONG, v(p))
-        // long input is cut for the estimate, never judged stronger than its start
-        assertEquals(FileInfo.Strength.WEAK, v("a".repeat(5000)))
-    }
-
     @Test fun verdicts_typedUnlock_backupsInherit_rekeyUpdates_renameAndDeleteFollow() {
         assertEquals("before 0.4.37: unknown", FileInfo.LEGACY, a.store.info())
         val old = a.store.backup(java.time.LocalDate.of(2026, 11, 1))
@@ -521,7 +511,7 @@ class Ux0437Test {
         val un = lockNow()
         un.showPassword(null); un.pw.setText("sample"); un.openWithPassword()
         until("opened") { a.screen is ExplorerScreen }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK), a.store.info())
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK), a.store.info().copy(log10 = null))
         assertEquals("an older backup keeps its record", FileInfo.LEGACY, a.store.info(old))
         val b = a.store.backup(java.time.LocalDate.of(2026, 11, 2))
         assertEquals("inherits", FileInfo.Strength.WEAK, a.store.info(b).strength)
@@ -533,11 +523,11 @@ class Ux0437Test {
         assertNotNull(findTag<View>(d.frame, io.github.zmlworks.kpexplorer.ui.StrengthMeter.TAG))
         val f = allViews(d.frame).filterIsInstance<android.widget.EditText>()
         f[0].setText(STRONG_PW); f[1].setText(STRONG_PW); idle()
-        assertTrue(texts(d.frame).contains("強度: 強い"))
+        assertTrue(texts(d.frame).toString(), texts(d.frame).contains("強度: とても強い"))
         Dlg.last = d; shot("v0437/10-master-password-change.png", dialog = true)
         clickButton(d, "変更")
         until("report") { Dlg.last?.let { texts(it.frame).any { t -> t.startsWith("マスターパスワードを変更しました。") } } == true }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info())
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info().copy(log10 = null))
         assertEquals(FileInfo.Strength.STRONG, a.store.info(old).strength)
         assertEquals(FileInfo.Strength.STRONG, a.store.info(b).strength)
         assertEquals(FileInfo.Strength.WEAK, a.store.info(oth).strength)
@@ -557,7 +547,7 @@ class Ux0437Test {
         (findTag<View>(d.frame, "temp-password") as android.widget.EditText).setText(STRONG_PW)
         clickButton(d, s(R.string.open))
         until("read-only view") { Session.readOnlyTemp }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info(f))
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info(f).copy(log10 = null))
         TempImport.exitTemp(a); idle()
         // one that opens with the database's key gets the database's record
         a.store.setInfo(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK))
@@ -568,33 +558,8 @@ class Ux0437Test {
         TempImport.exitTemp(a); idle()
     }
 
-    @Test fun menuSetting_launchExport_offByDefault_onAfterExplaining() {
-        assertFalse(Security.launchExportEnabled(a))
-        val item = a.explorer!!.mainMenu().first { it.label == "起動画面からの書き出し" }
-        assertFalse(item.checked)
-        val l = labels(a.explorer!!.mainMenu())
-        assertEquals("right under the screenshot setting", l.indexOf(s(R.string.menu_secure_screen)) + 1, l.indexOf("起動画面からの書き出し"))
-        assertFalse("hidden on the launch screen while off", vis(lockNow().export))
-        a.lock(); idle()
-        // unlock again
-        Session.open(Kdbx.open(a.store.read(), key)); a.showExplorer(); idle()
-        showMainMenu(); shot("v0437/06-menu-setting.png", menuAt = W_ - W.dp(240) to W.dp(60)); Menus.dismiss()
-        Security.toggleLaunchExport(a); idle()
-        val d = latestDialog()
-        assertTrue(texts(d.frame).joinToString().contains("「強い」と判定されたファイルだけ"))
-        Dlg.last = d; shot("v0437/07-menu-setting-confirm.png", dialog = true)
-        clickButton(d, "キャンセル"); assertFalse(Security.launchExportEnabled(a))
-        Security.toggleLaunchExport(a); idle(); clickButton(latestDialog(), "有効にする")
-        assertTrue(Security.launchExportEnabled(a))
-        assertTrue(a.explorer!!.mainMenu().first { it.label == "起動画面からの書き出し" }.checked)
-        assertTrue(vis(lockNow().export))
-        Session.open(Kdbx.open(a.store.read(), key)); a.showExplorer(); idle()
-        Security.toggleLaunchExport(a); idle()
-        assertFalse("off at once", Security.launchExportEnabled(a))
-    }
-
     @Test fun launchExport_onlyStrongMasterPasswordFiles_othersGreyedWithTheReason() {
-        App.prefs(app()).edit().putBoolean(Security.PREF_LAUNCH_EXPORT, true).commit()
+        Security.setExportMinLog10(app(), 12)
         a.store.setInfo(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG))
         val strong = a.store.backup(java.time.LocalDate.of(2026, 11, 10))
         val weak = a.store.backup(java.time.LocalDate.of(2026, 11, 9)).also { a.store.setInfo(it, info(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK)) }
@@ -612,7 +577,7 @@ class Ux0437Test {
         assertEquals(listOf(true, true, false, false, false, false), radios.map { it.isEnabled })
         assertTrue("the database is picked first", radios[0].isChecked)
         fun note(i: Int) = (findTag<View>(d.frame, "export-note-$i") as android.widget.TextView).text.toString()
-        assertTrue(note(2), note(2).contains("マスターパスワードが弱い"))
+        assertTrue(note(2), note(2).contains("強度が設定"))
         assertTrue(note(3), note(3).contains("未判定"))
         assertTrue(note(4), note(4).contains("暗号化されていない"))
         assertTrue(note(5), note(5).contains("OSのkeystore"))
@@ -667,8 +632,8 @@ class Ux0437Test {
         f[0].setText(STRONG_PW); f[1].setText(STRONG_PW)
         clickButton(d, "設定")
         until("report") { Dlg.last?.let { texts(it.frame).any { x -> x.startsWith("マスターパスワードを変更しました。") } } == true }
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info())
-        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info(b))
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info().copy(log10 = null))
+        assertEquals(info(FileInfo.Protection.PASSWORD, FileInfo.Strength.STRONG), a.store.info(b).copy(log10 = null))
         assertTrue(runCatching { Kdbx.open(a.store.read(), Kdbx.compositeKey(STRONG_PW)) }.isSuccess)
         assertTrue(runCatching { Kdbx.open(b.readBytes(), Kdbx.compositeKey(STRONG_PW)) }.isSuccess)
         assertTrue(runCatching { Kdbx.open(a.store.read(), Kdbx.compositeKey("")) }.isFailure)

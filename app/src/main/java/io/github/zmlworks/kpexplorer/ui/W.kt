@@ -401,6 +401,23 @@ object W {
         minHeight = dp(36)
     }
 
+    /**
+     * 0.4.38: a classic drop-down list box — the value in a sunken white field with the ▼ button at its right; a tap
+     * anywhere opens [onOpen] (callers show [Menus.dropDown] under it). [value] is the text view (update it on change).
+     */
+    class Combo(val box: LinearLayout, val value: TextView)
+
+    fun combo(ctx: Context, text: String, onOpen: (View) -> Unit): Combo {
+        val box = hbox(ctx).apply { background = Bevel(Style.FIELD, WINDOW); gravity = Gravity.CENTER_VERTICAL; setPadding(2 * px + dp(6), 2 * px, 2 * px, 2 * px); isClickable = true }
+        val v = text(ctx, text, TEXT_SP)
+        box.addView(v, lp(0, WRAP, 1f))
+        val arrow = ImageView(ctx).apply { setImageDrawable(Glyph('v')); background = Bevel(Style.BUTTON); scaleType = ImageView.ScaleType.CENTER }
+        box.addView(arrow, lp(dp(30), dp(32)))
+        box.setOnClickListener { onOpen(box) }
+        arrow.setOnClickListener { onOpen(box) }
+        return Combo(box, v)
+    }
+
     fun radio(ctx: Context, s: String, checked: Boolean = false): RadioButton = RadioButton(ctx).apply {
         text = s
         buttonDrawable = CheckGlyph(true)

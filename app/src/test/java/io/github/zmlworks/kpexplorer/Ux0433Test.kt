@@ -341,7 +341,8 @@ class Ux0433Test {
     @Test fun mainMenu_newNames_noHowToUse_aboutLast_withoutTheBackLog() {
         val l = labels(a.explorer!!.mainMenu())
         assertFalse(l.toString(), l.any { it.contains("使い方") })
-        assertTrue(l.containsAll(listOf("現在のバックアップを作成", "外部に書き出す", "内部バックアップの一覧", "マスターパスワードの変更", "データベースのプロパティ", "About")))
+        // 0.4.38: backing up / exporting are in the toolbar 保存, the backup list in セキュリティの設定
+        assertTrue(l.containsAll(listOf("マスターパスワードの設定", "データベースのプロパティ", "About")))
         assertFalse(l.any { it.contains("データベースの情報") || it.contains("バージョン情報") || it.contains("パスワード付き") || it.contains("保存したファイル") })
         assertEquals("About", l.last())
         assertEquals("データベースのプロパティ", l[l.size - 2])
@@ -463,14 +464,14 @@ class Ux0433Test {
     }
 
     @Test fun menuBackupNow_asksFirst_namingTheFile() {
-        item(a.explorer!!.mainMenu(), "現在のバックアップを作成").action(); idle()
+        Security.confirmBackup(a); idle()   // 0.4.38: no longer a menu item (toolbar 保存 / the backup list)
         val c = latestDialog()
         assertTrue(texts(c.frame).toString(), texts(c.frame).contains("現在のデータベースを ${today()}.kdbx として内部にバックアップしますか?"))
         assertEquals(listOf("作成", "キャンセル"), c.buttonViews.map { it.text.toString() })
         clickButton(c, "キャンセル")
         Session.flush(); idle()
         assertTrue("nothing made", a.store.backups().isEmpty())
-        item(a.explorer!!.mainMenu(), "現在のバックアップを作成").action(); idle()
+        Security.confirmBackup(a); idle()
         clickButton(latestDialog(), "作成")
         waitFor("backup") { a.store.backups().map { it.name } == listOf("${today()}.kdbx") }
     }
@@ -492,7 +493,7 @@ class Ux0433Test {
 
     @Test fun backupList_title_noIconNoLocation_sortsByHeaders_remembered() {
         backupFiles()
-        item(a.explorer!!.mainMenu(), "内部バックアップの一覧").action(); idle(); layoutHost()
+        a.show(BackupScreen(a)); idle(); layoutHost()   // 0.4.38: opened from セキュリティの設定
         val bs = a.screen as BackupScreen
         val tx = texts(bs.view)
         assertTrue(tx.toString(), tx.contains("内部バックアップ"))
@@ -568,11 +569,11 @@ class Ux0433Test {
         val fs = backupFiles().take(2)
         val oth = otherBackup(); val othBytes = oth.readBytes()
         val mt = fs.map { it.lastModified() }
-        item(a.explorer!!.mainMenu(), "マスターパスワードの変更").action(); idle()
+        item(a.explorer!!.mainMenu(), "マスターパスワードの設定").action(); idle()   // 0.4.38: menu name
         val d = latestDialog()
         val tx = texts(d.frame).filter { it.isNotEmpty() }
         assertEquals(listOf("マスターパスワードの変更", "現在のパスワードで開けられる内部バックアップも新しいパスワードに書き換えます",
-            "新しいパスワード", "新しいパスワードの確認", "パスワードを表示する", "強度: (未入力)", "内部バックアップのパスワードを書き換えない", "変更", "キャンセル"), tx)   // 0.4.37: + strength
+            "新しいパスワード", "新しいパスワードの確認", "パスワードを表示する", "強度: (未入力)", "内部バックアップのパスワードを書き換える", "変更", "キャンセル"), tx)   // 0.4.37: + strength; 0.4.38: 書き換える (ticked)
         val fields = allViews(d.frame).filterIsInstance<android.widget.EditText>()
         fields[0].setText("新しいpw"); fields[1].setText("新しいpw")
         Dlg.last = d; shot("v0433/06-master-password.png", dialog = true)
@@ -593,24 +594,26 @@ class Ux0433Test {
     }
 
     @Test fun masterPassword_keepBackups_onlyAfterTheWarning() {
+        // 0.4.38: the box is 「内部バックアップのパスワードを書き換える」, ticked; unticking it is what warns
         val f = backupFiles()[0]
         Security.changeMasterPassword(a); idle()
         val d = latestDialog()
-        val keep = findTag<View>(d.frame, "keep-backups") as android.widget.CheckBox
-        keep.performClick(); idle()
-        assertFalse("not ticked before the warning is accepted", keep.isChecked)
+        val rw = findTag<View>(d.frame, "rewrite-backups") as android.widget.CheckBox
+        assertTrue("ticked by default", rw.isChecked)
+        rw.performClick(); idle()
+        assertTrue("still ticked before the warning is accepted", rw.isChecked)
         val warn = latestDialog()
         assertTrue(texts(warn.frame).contains("バックアップを開くのに古いパスワードの入力が必要になります"))
         Dlg.last = warn; shot("v0433/07-master-password-keep-warning.png", dialog = true)
         clickButton(warn, "キャンセル")
-        assertFalse(keep.isChecked)
-        keep.performClick(); idle()
+        assertTrue(rw.isChecked)
+        rw.performClick(); idle()
         clickButton(latestDialog(), "OK")
-        assertTrue("ticked after OK", keep.isChecked)
+        assertFalse("unticked after OK", rw.isChecked)
         val before = latestDialog()
-        keep.performClick(); idle()
-        assertFalse("unticking needs no warning", keep.isChecked); assertSame(before, latestDialog())
-        keep.performClick(); idle(); clickButton(latestDialog(), "OK"); assertTrue(keep.isChecked)
+        rw.performClick(); idle()
+        assertTrue("ticking needs no warning", rw.isChecked); assertSame(before, latestDialog())
+        rw.performClick(); idle(); clickButton(latestDialog(), "OK"); assertFalse(rw.isChecked)
         val fields = allViews(d.frame).filterIsInstance<android.widget.EditText>()
         fields[0].setText("pw2"); fields[1].setText("pw2")
         clickButton(d, "変更")

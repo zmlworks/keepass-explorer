@@ -190,14 +190,15 @@ class Ux0423Test {
     @Test fun menu_oneRowPerSetting_tapOpensPicker() {
         val ex = a.explorer!!
         val m = labels(ex.mainMenu())
-        // 0.4.36: Language and the date format share one row (「Languageと日付の形式」) and one window
-        assertEquals(m.toString(), listOf("Languageと日付の形式", "自動ロック: 5 分後"),
+        // 0.4.36: Language and the date format share one row and one window (0.4.38: 「Languageと日付形式」; auto-lock
+        // moved to セキュリティの設定, ごみ箱を開く to ごみ箱の設定's 「ごみ箱を見る」)
+        assertEquals(m.toString(), listOf("Languageと日付形式"),
             m.filter { it.startsWith("自動ロック") || it.startsWith("Language") || it.startsWith("日付") })
-        assertTrue(m.containsAll(listOf("ごみ箱を開く", "ごみ箱の設定")))
+        assertTrue(m.contains("ごみ箱の設定")); assertFalse(m.contains("ごみ箱を開く"))
         assertTrue("no checked radio-like rows left", ex.mainMenu().none { it.checked && (it.label.startsWith("Language") || it.label.startsWith("日付") || it.label.startsWith("自動ロック")) })
         showMainMenu(); shot("v0423/01-main-menu.png", menuAt = (W_ - W.dp(240)) to W.dp(60)); Menus.dismiss()
         // date picker: options with today's example, current one checked; tap applies and closes
-        item(ex.mainMenu(), "Languageと日付の形式").action(); idle()
+        item(ex.mainMenu(), "Languageと日付形式").action(); idle()
         val today = java.time.LocalDate.now()
         fun dr(i: Int) = findTag<View>(Dlg.last!!.frame, "date-$i") as android.widget.RadioButton
         assertEquals("YYYY/MM/DD  (%d/%02d/%02d)".format(today.year, today.monthValue, today.dayOfMonth), dr(0).text.toString())
@@ -208,14 +209,14 @@ class Ux0423Test {
         assertFalse(d.isShowing)
         assertEquals(L.DateOrder.MDY, L.dateOrder)
         // auto-lock picker
-        item(ex.mainMenu(), "自動ロック: 5 分後").action(); idle()
+        ex.pickAutoLock(); idle()
         assertTrue(radio(1).isChecked)
         shot("v0423/03-autolock-picker.png", dialog = true)
         radio(2).performClick(); idle()
         assertEquals(-1, a.autoLockMinutes())
-        assertTrue(labels(ex.mainMenu()).contains("自動ロック: しない"))
+        assertEquals(R.string.menu_autolock_never, SecuritySettings.autoLockLabel(a))
         // language picker (system / 日本語 / English); choosing the current one changes nothing
-        item(ex.mainMenu(), "Languageと日付の形式").action(); idle()
+        item(ex.mainMenu(), "Languageと日付形式").action(); idle()
         fun lr(i: Int) = findTag<View>(Dlg.last!!.frame, "lang-$i") as android.widget.RadioButton
         assertEquals(listOf("端末に合わせる", "日本語", "English"), (0..2).map { lr(it).text.toString() })
         assertTrue(lr(0).isChecked)
@@ -312,7 +313,8 @@ class Ux0423Test {
         val ex = a.explorer!!
         Session.update { Tree.setBinHidden(it, true) }; ex.refresh(); idle()
         assertFalse(treeIds().contains(bin()))
-        item(ex.mainMenu(), "ごみ箱を開く").action(); idle()
+        BinSettings.show(a); idle()
+        clickButton(Dlg.last!!, "ごみ箱を見る")   // 0.4.38: from the settings window
         assertEquals(bin(), ex.current)
         assertTrue("inside the bin it is shown", treeIds().contains(bin()))
         assertEquals(listOf(ids["old"]!!), ex.rows.map { it.uuid })
@@ -425,7 +427,7 @@ class Ux0423Test {
         BinSettings.show(act); idle()
         val tx = texts(Dlg.last!!.frame)
         assertTrue(tx.toString(), tx.containsAll(listOf("Name: ごみ箱", "Rename", "Contains: 1", "Empty", "Auto-delete: Off", "Change",
-            "Delete permanently at once (no recycle bin)", "Hide the recycle bin (open it with \"Open Recycle Bin\" in the menu)", "Close")))
+            "Delete permanently at once (no recycle bin)", "Hide the recycle bin (open it with \"View Recycle Bin\" here)", "View Recycle Bin", "Close")))
         assertTrue("no Japanese in the settings box (bin name aside)", tx.none { s -> s.any { it in '\u3040'..'\u30ff' } && !s.contains("ごみ箱") })
         Dlg.last!!.dismiss()
         ex.pickAutoLock(); idle()

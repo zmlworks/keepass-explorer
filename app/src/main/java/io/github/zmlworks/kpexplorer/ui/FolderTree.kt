@@ -60,7 +60,7 @@ class FolderTree(
      * (with the old tree's states in [expandedOverride]), so a root / parent the user closed stays closed.
      */
     revealCurrent: Boolean = true,
-    /** 0.4.36: a virtual folder above the root (main tree: 最近の鍵); not one of [rows], has no +/−, takes no drop. */
+    /** 0.4.36: a virtual folder (main tree: 最近更新した鍵; 0.4.38: the root's first child); not one of [rows], has no +/−, takes no drop. */
     private val top: Top? = null
 ) : LinearLayout(ctx) {
 
@@ -121,17 +121,20 @@ class FolderTree(
 
     fun rebuild() {
         removeAllViews(); rows.clear(); topRow = null
-        top?.let { t ->
-            val v = TopRow(context, t).apply { tag = TOP_TAG; setBackgroundColor(W.WINDOW) }
-            topRow = v
-            addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
-            // a dotted rule between the virtual folder and the real ones
-            addView(View(context).apply { background = DottedRule() }, LayoutParams(W.MATCH, W.dp(5)))
-        }
-        for ((i, n) in flatten().withIndex()) {
+        val nodes = flatten()
+        var i = 0
+        for (n in nodes) {
             val v = Row(context, n).apply { tag = n.g.uuid; if (striped) setBackgroundColor(stripe(i)) }
             rows.add(v)
             addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
+            i++
+            // 0.4.38: the virtual folder is the root's first child (up to 0.4.37 a row above "/", set off by a dotted rule)
+            if (n.depth == 0 && top != null && (isExpanded(n.g) || nodes.size == 1)) {
+                val tv = TopRow(context, top, last = nodes.size == 1).apply { tag = TOP_TAG; setBackgroundColor(if (striped) stripe(i) else W.WINDOW) }
+                topRow = tv
+                addView(tv, LayoutParams(W.MATCH, W.dp(rowDp)))
+                i++
+            }
         }
     }
 
@@ -156,29 +159,24 @@ class FolderTree(
     /** Centre x of [n]'s +/− box: on its branch line, the root's (0.4.32) left of the computer icon. */
     private fun boxX(n: Node): Int = if (n.depth == 0) W.dp(6) else n.depth * W.dp(22)
 
-    /** Thin dotted line across the middle (between the virtual folder and the tree). */
-    private class DottedRule : android.graphics.drawable.Drawable() {
-        private val q = Paint().apply { color = W.SHADOW }
-        override fun draw(c: Canvas) {
-            val b = bounds; val y = (b.top + b.bottom) / 2
-            var x = b.left + W.dp(4)
-            while (x < b.right - W.dp(4)) { c.drawRect(x.toFloat(), y.toFloat(), (x + W.px).toFloat(), (y + W.px).toFloat(), q); x += 2 * W.px }
-        }
-        override fun setAlpha(alpha: Int) {}
-        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
-        @Deprecated("Deprecated in Java")
-        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
-    }
-
-    /** The virtual folder ([top]) at the root's indent, drawn like a folder row (navy band when it is shown). */
+    /**
+     * The virtual folder ([top]) as the root's first child, drawn like a folder row with its branch line ([last] = no
+     * real folder follows), navy band when it is shown.
+     */
     @SuppressLint("ViewConstructor")
-    private inner class TopRow(ctx: Context, val t: Top) : View(ctx) {
+    private inner class TopRow(ctx: Context, val t: Top, val last: Boolean) : View(ctx) {
         private val p = Paint().apply { isAntiAlias = true; textSize = W.dp(15).toFloat(); color = W.TEXT }
         init { contentDescription = t.label }
         override fun onDraw(c: Canvas) {
             val cy = height / 2
             val sc = W.iconScale()
-            val ix = W.dp(22) / 2 + W.dp(4)
+            val indent = W.dp(22)
+            val q = Paint().apply { color = W.SHADOW }
+            var y = 0
+            while (y < (if (last) cy else height)) { c.drawRect(indent.toFloat(), y.toFloat(), (indent + W.px).toFloat(), (y + W.px).toFloat(), q); y += 2 * W.px }
+            var x = indent - (indent % (2 * W.px))
+            while (x < indent + indent / 2 + W.dp(4)) { c.drawRect(x.toFloat(), cy.toFloat(), (x + W.px).toFloat(), (cy + W.px).toFloat(), q); x += 2 * W.px }
+            val ix = indent + indent / 2 + W.dp(4)
             val iy = cy - t.icon.height * sc / 2
             c.drawBitmap(if (t.selected) Px.selected(t.icon) else t.icon, null, Rect(ix, iy, ix + t.icon.width * sc, iy + t.icon.height * sc), Paint())
             val tx = ix + t.icon.width * sc + W.dp(5)

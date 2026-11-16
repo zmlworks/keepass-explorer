@@ -10,7 +10,7 @@ import io.github.zmlworks.kpexplorer.ui.Px
 import io.github.zmlworks.kpexplorer.ui.W
 
 object Help {
-    const val VERSION = "0.4.37"
+    const val VERSION = "0.4.38"
 
     fun about(a: MainActivity) {
         val col = W.vbox(a)

@@ -32,7 +32,6 @@ class StrengthMeter(ctx: Context, private val field: EditText) : LinearLayout(ct
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) = update()
         })
-        PasswordStrength.warmUp()
         update()
     }
 
@@ -41,7 +40,7 @@ class StrengthMeter(ctx: Context, private val field: EditText) : LinearLayout(ct
         result = if (t.isNullOrEmpty()) null else PasswordStrength.judge(t)
         val r = result
         label.text = if (r == null) L.t("強度: (未入力)", "Strength: (empty)")
-            else L.t("強度: ${r.label}", "Strength: ${r.label}") + if (r.strong) "" else L.t(" — 起動画面からの書き出しには「強い」が必要です", " — export from the launch screen needs Strong")
+            else L.t("強度: ${r.label}", "Strength: ${r.label}") + if (r.strong) "" else L.t(" — 認証なしの書き出しには「強い」以上が必要です", " — export without unlocking needs Strong or better")
         label.setTextColor(if (r == null) GREY else TEXT_COLORS[r.level])
         bar.invalidate()
     }

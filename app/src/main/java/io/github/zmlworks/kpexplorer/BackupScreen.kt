@@ -104,6 +104,9 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
         }, W.lp(w, W.WRAP, weight))
         h(L.t("名前", "Name"), SortBy.NAME, 0, 1f); h(L.t("サイズ", "Size"), SortBy.SIZE, W.dp(78), 0f); h(L.t("更新日時", "Modified"), SortBy.DATE, W.dp(130), 0f)
         col.addView(header)
+        // 0.4.38: rows that the launch screen could write out without unlocking (セキュリティの設定) are green
+        val min = Security.exportMinLog10(ctx)
+        val green = files.filter { a.store.info(it).exportableAt(min) }.map { it.name }.toSet()
         val list = ListView(ctx)
         list.divider = null
         list.selector = android.graphics.drawable.ColorDrawable(0)
@@ -121,13 +124,14 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
                     setImageDrawable(Px.drawable(ctx, if (sel) Px.selected(Px.floppy16) else Px.floppy16, W.iconScale()))
                 }, W.lp(W.WRAP, W.WRAP, r = 4))
                 val nb = FrameLayout(ctx)
-                nb.addView(W.text(ctx, f.name, 15f, color = if (sel) W.HILITE else W.TEXT).apply {
+                val tc = if (f.name in green) EXPORTABLE else W.TEXT
+                nb.addView(W.text(ctx, f.name, 15f, color = if (sel) W.HILITE else tc).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(3), W.dp(2), W.dp(3), W.dp(2))
                     if (sel) setBackgroundColor(W.NAVY)
                 }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
                 row.addView(nb, W.lp(0, W.WRAP, 1f))
-                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(78), W.WRAP))
-                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(130), W.WRAP))
+                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f, color = tc).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(78), W.WRAP))
+                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f, color = tc).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(130), W.WRAP))
                 return row
             }
         }
@@ -240,5 +244,7 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
 
     companion object {
         const val PREF_SORT = "backup_sort"
+        /** 0.4.38: text of a backup that can be exported without unlocking (readable on white and pale blue). */
+        const val EXPORTABLE = 0xFF00802A.toInt()
     }
 }

@@ -136,7 +136,7 @@ object TempImport {
                 busy.dismiss()
                 r.onSuccess {
                     // 0.4.37: an internal backup opened with a typed password gets that password's verdict
-                    if (backup != null) a.store.setInfo(backup, FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(password)))
+                    if (backup != null) a.store.setInfo(backup, PasswordStrength.info(password))
                     enterTemp(a, it, label, back)
                 }
                     .onFailure { t ->
@@ -190,7 +190,13 @@ object TempImport {
         }
         val col = W.vbox(a)
         col.addView(W.text(a, a.getString(R.string.import_explain), 14f).apply { setLineSpacing(0f, 1.15f) })
-        ClassicDialog(a, a.getString(R.string.import_title), col, listOf(
+        // 0.4.38: 外部ファイルを閲覧 left the menu; it is here, as "look without importing"
+        lateinit var d: ClassicDialog
+        val r = W.hbox(a).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
+        r.addView(W.text(a, L.t("取り込まずに中身を見るだけなら:", "To look without importing:"), 14f), W.lp(0, W.WRAP, 1f))
+        r.addView(W.button(a, a.getString(R.string.browse_external)) { d.dismiss(); browseExternal(a) }.apply { tag = "import-browse" }, W.lp(W.WRAP, W.WRAP, l = 8))
+        col.addView(r, W.lp(W.MATCH, W.WRAP, t = 12))
+        d = ClassicDialog(a, a.getString(R.string.import_title), col, listOf(
             ClassicDialog.Btn(a.getString(R.string.import_from_external), true) {
                 pickExternalForImport(a); true
             },
@@ -198,7 +204,8 @@ object TempImport {
                 pickBackupForImport(a); true
             },
             ClassicDialog.Btn(a.getString(R.string.cancel))
-        )).show()
+        ))
+        d.show()
     }
 
     private fun pickExternalForImport(a: MainActivity) {
@@ -287,7 +294,7 @@ object TempImport {
                     a.runOnUiThread {
                         busy.dismiss()
                         r.onSuccess { db ->
-                            performReplace(a, bytes, db, keyForWrap = key, info = FileInfo(FileInfo.Protection.PASSWORD, PasswordStrength.verdict(pw)))
+                            performReplace(a, bytes, db, keyForWrap = key, info = PasswordStrength.info(pw))
                         }.onFailure { t ->
                             key.fill(0)
                             val msg = if (t is Kdbx.WrongPasswordException)
@@ -320,6 +327,9 @@ object TempImport {
         info: FileInfo? = null
     ) {
         val busy = Dlg.busy(a, a.getString(R.string.import_title), a.getString(R.string.import_backing_up))
+        // 0.4.38: a file opened with a typed password has another key: the backups made with the current one can follow
+        val oldKey = if (keyForWrap != null) Session.compositeCopy() else null
+        val newKey = keyForWrap?.copyOf()
         Session.afterSave({
             // 1) Forced dated backup of CURRENT primary (must succeed)
             val backup = try {
@@ -336,7 +346,7 @@ object TempImport {
         }) { res ->
             busy.dismiss()
             res.onFailure { t ->
-                keyForWrap?.fill(0)
+                keyForWrap?.fill(0); oldKey?.fill(0); newKey?.fill(0)
                 val msg = when (t) {
                     is BackupFailed -> a.getString(R.string.import_backup_failed)
                     is Session.SaveFailedException -> a.getString(R.string.import_backup_failed) + "\n" + (t.message ?: "")
@@ -366,9 +376,36 @@ object TempImport {
                     a.getString(R.string.import_title),
                     a.getString(R.string.import_ok) + "\nbackups/${backup.name}",
                     'i'
-                )
+                ).onGone.add {   // OK or ×: then the question about the backups
+                    if (oldKey != null && newKey != null && info != null) askRewriteBackups(a, oldKey, newKey, info)
+                    else { oldKey?.fill(0); newKey?.fill(0) }
+                }
             }
         }
+    }
+
+    /**
+     * 0.4.38: after importing a file opened with its own (typed) password, offer to rewrite the internal backups that
+     * open with the previous key for the imported file's password, as far as possible (others are left as they are).
+     * Both keys are wiped when done.
+     */
+    fun askRewriteBackups(a: MainActivity, oldKey: ByteArray, newKey: ByteArray, info: FileInfo) {
+        val title = a.getString(R.string.import_title)
+        val wipe = { oldKey.fill(0); newKey.fill(0) }
+        if (a.store.backups().isEmpty()) { wipe(); return }
+        var rewriting = false
+        val d = Dlg.confirm(a, title, L.t("内部バックアップも、取り込んだデータベースのパスワードに書き換えますか?\n(今までのパスワードで開けるものだけを書き換えます。書き換えないと、それらを開くには今までのパスワードが必要です)",
+            "Rewrite the internal backups for the imported database's password too?\n(Only those that open with the previous password are rewritten. If not, opening them needs the previous password.)"), '?',
+            yes = L.t("書き換える", "Rewrite"), no = L.t("書き換えない", "Keep")) {
+            rewriting = true
+            val busy = Dlg.busy(a, title, L.t("暗号化し直しています", "Re-encrypting"))
+            Session.afterSave({ a.store.rekeyBackups(oldKey, newKey, info) }) { r ->
+                wipe(); busy.dismiss()
+                r.onSuccess { rk -> Dlg.message(a, title, Security.rewrittenMessage(rk), 'i') }
+                 .onFailure { Dlg.message(a, title, L.t("書き換えられませんでした。\n${it.message ?: it}", "Could not rewrite them.\n${it.message ?: it}"), 'x') }
+            }
+        }
+        d.onGone.add { if (!rewriting) wipe() }   // 書き換えない / closed: the keys go now
     }
 
     private class BackupFailed(cause: Throwable) : Exception(cause.message, cause)
