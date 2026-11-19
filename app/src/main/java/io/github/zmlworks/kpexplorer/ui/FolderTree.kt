@@ -60,17 +60,21 @@ class FolderTree(
      * (with the old tree's states in [expandedOverride]), so a root / parent the user closed stays closed.
      */
     revealCurrent: Boolean = true,
-    /** 0.4.36: a virtual folder (main tree: 最近更新した鍵; 0.4.38: the root's first child); not one of [rows], has no +/−, takes no drop. */
-    private val top: Top? = null
+    /**
+     * 0.4.36: virtual folders (main tree: 最近更新した鍵, 0.4.39 also 最近使用した鍵; since 0.4.38 the root's first
+     * children); not [rows], no +/−, take no drop.
+     */
+    private val tops: List<Top> = emptyList()
 ) : LinearLayout(ctx) {
 
     /** The virtual folder row: [label] and [count] beside [icon] (16 px art), [selected] = it is the list shown. */
     class Top(val label: String, val icon: android.graphics.Bitmap, val count: Int, val selected: Boolean,
               val onTap: () -> Unit, val onLongPress: (Int, Int) -> Boolean)
 
-    /** The view of [top] (tests), or null. */
-    var topRow: View? = null
-        private set
+    /** The views of [tops], in order (tests). */
+    val topRows = ArrayList<View>()
+    /** The first of [topRows] (tests), or null. */
+    val topRow: View? get() = topRows.firstOrNull()
 
     private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
 
@@ -120,7 +124,7 @@ class FolderTree(
     }
 
     fun rebuild() {
-        removeAllViews(); rows.clear(); topRow = null
+        removeAllViews(); rows.clear(); topRows.clear()
         val nodes = flatten()
         var i = 0
         for (n in nodes) {
@@ -129,9 +133,9 @@ class FolderTree(
             addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
             i++
             // 0.4.38: the virtual folder is the root's first child (up to 0.4.37 a row above "/", set off by a dotted rule)
-            if (n.depth == 0 && top != null && (isExpanded(n.g) || nodes.size == 1)) {
-                val tv = TopRow(context, top, last = nodes.size == 1).apply { tag = TOP_TAG; setBackgroundColor(if (striped) stripe(i) else W.WINDOW) }
-                topRow = tv
+            if (n.depth == 0 && (isExpanded(n.g) || nodes.size == 1)) tops.forEachIndexed { k, top ->
+                val tv = TopRow(context, top, last = nodes.size == 1 && k == tops.size - 1).apply { tag = TOP_TAG; setBackgroundColor(if (striped) stripe(i) else W.WINDOW) }
+                topRows.add(tv)
                 addView(tv, LayoutParams(W.MATCH, W.dp(rowDp)))
                 i++
             }
@@ -216,9 +220,9 @@ class FolderTree(
         }
     }
 
-    /** Tap / long press the virtual folder (tests). */
-    fun tapTop() { topRow?.let { v -> val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, v.width / 2f, v.height / 2f, 0); v.onTouchEvent(e); e.recycle() } }
-    fun longPressTop(): Boolean = (topRow as? TopRow)?.fireLong() ?: false
+    /** Tap / long press virtual folder [i] (tests). */
+    fun tapTop(i: Int = 0) { topRows.getOrNull(i)?.let { v -> val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, v.width / 2f, v.height / 2f, 0); v.onTouchEvent(e); e.recycle() } }
+    fun longPressTop(i: Int = 0): Boolean = (topRows.getOrNull(i) as? TopRow)?.fireLong() ?: false
 
     @SuppressLint("ViewConstructor")
     private inner class Row(ctx: Context, val n: Node) : View(ctx) {

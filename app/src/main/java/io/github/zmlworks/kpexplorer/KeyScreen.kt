@@ -240,6 +240,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         content.addView(sv, W.lp(W.MATCH, 0, 1f))
         build()
         dirty = false
+        markUsed()
         // Outside-tap / IME Done only ends inline edit into the local draft (TextWatchers).
         // Database write happens solely via explicit footer 保存 (0.4.3).
         io.github.zmlworks.kpexplorer.ui.FieldEditSession.onCommitted = null
@@ -579,8 +580,19 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
         }
     }
 
+    /**
+     * 0.4.39: a use of this key (page opened, a field copied), for 最近使用した鍵: KeePass's LastAccessTime and
+     * UsageCount in the file (not while browsing another file read-only, not for a key not saved yet).
+     */
+    private fun markUsed() {
+        val id = entryId ?: return
+        if (Session.readOnlyTemp || !Session.isOpen) return
+        Session.update { io.github.zmlworks.kpexplorer.db.Recent.markUsed(it, id) }
+    }
+
     private fun copy(label: String, s: String, sensitive: Boolean) {
         if (s.isEmpty()) return
+        markUsed()
         Clip.copy(ctx, label, s, sensitive)
         Toast.makeText(ctx, L.t("${label}をコピーしました", "${label} copied"), Toast.LENGTH_SHORT).show()
     }

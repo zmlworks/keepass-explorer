@@ -490,6 +490,7 @@ class Ux0436Test {
         assertEquals("最近更新した鍵", top.contentDescription)   // 0.4.38: renamed, and right under the root
         assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertFalse(ex.recent)
+        App.prefs(app()).edit().putString("view", "details").commit()   // 0.4.39: the view chosen for folders applies (was always details)
         tree().tapTop(); idle(); layoutHost()
         assertTrue(ex.recent); assertFalse(ex.iconMode)
         val list = ex.rows.map { it.uuid }
@@ -500,32 +501,29 @@ class Ux0436Test {
         assertEquals("one row per key", list.size, list.toSet().size)
         assertFalse("not the bin", ids["楽天"]!! in list || ids["old"]!! in list); assertFalse("no memos", Order.children(Tree.root(Session.db!!)).first { it.name == "買い物メモ" }.uuid in list)
         val shown = texts(ex.view)
-        assertTrue(shown.toString(), shown.contains("追加・更新") && shown.contains("場所"))
-        assertTrue(shown.toString(), shown.contains("更新 " + L.dateTime(false).format(now.minusSeconds(60))))
-        assertTrue(shown.toString(), shown.contains("追加 " + L.dateTime(false).format(now.minusSeconds(110))))
+        // 0.4.39: the folders' columns (場所 as in search results), the date as in a folder
+        assertTrue(shown.toString(), shown.contains("更新日時") && shown.contains("場所"))
+        assertTrue(shown.toString(), shown.contains(L.date().format(now.minusSeconds(60))))
         assertTrue(shown.toString(), shown.contains("仕事"))
         shot("v0436/07-recent-keys.png")
-        val stamps = allViews(ex.view).filterIsInstance<android.widget.TextView>().filter { it.text.startsWith("更新 ") || it.text.startsWith("追加 ") }
-        assertTrue(stamps.size >= 10)
-        for (tv in stamps) assertEquals("not cut: ${tv.text}", 0, tv.layout.getEllipsisCount(0))
         // the date format chosen by the user
         L.setDateOrder(app(), L.DateOrder.DMY); ex.refresh(); idle(); layoutHost()
-        assertTrue(texts(ex.view).contains("更新 " + java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(java.time.ZoneId.systemDefault()).format(now.minusSeconds(60))))
-        // read-only as a folder: no create, no rename, no drag target; long press = 開く / この項目のフォルダーを開く
+        assertTrue(texts(ex.view).contains(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(java.time.ZoneId.systemDefault()).format(now.minusSeconds(60))))
+        // nothing is created there; the long press is a key's usual menu plus この項目のフォルダーを開く
         assertNull(ex.askNewFolder()); assertNull(ex.askNewMemo())
         for (k in listOf("フォルダ", "鍵", "メモ")) assertFalse(k, tool(k).isEnabled)
-        assertTrue(labels(ex.backgroundMenu()).let { l -> ex.backgroundMenu().filter { it.label in listOf(s(R.string.tool_new_folder), s(R.string.tool_new_key), s(R.string.tool_new_memo), s(R.string.paste)) }.none { it.enabled } && l.none { it == s(R.string.view_icons) } })
+        assertTrue(ex.backgroundMenu().filter { it.label in listOf(s(R.string.tool_new_folder), s(R.string.tool_new_key), s(R.string.tool_new_memo), s(R.string.paste)) }.none { it.enabled })
         val m = ex.itemMenu(ex.rows.first { it.uuid == ids["勤怠"] })
-        assertEquals(listOf(s(R.string.open), s(R.string.open_item_folder)), labels(m))
+        assertTrue(labels(m).toString(), labels(m).containsAll(listOf(s(R.string.rename), s(R.string.cut), s(R.string.move_to_folder), s(R.string.open_item_folder), s(R.string.delete))))
         assertTrue(tree().longPressTop()); idle(); Menus.dismiss()
-        m[1].action(); idle()
+        m.first { it.label == s(R.string.open_item_folder) }.action(); idle()
         assertFalse(ex.recent); assertEquals(ids["G"], ex.current); assertEquals(ids["勤怠"], ex.selection)
         // like every tree row: with a key selected the first tap only clears the selection ("one cushion")
         tree().tapTop(); idle(); assertFalse(ex.recent); assertNull(ex.selection)
         tree().tapTop(); idle(); assertTrue(ex.recent)
-        // back / 上へ leave it
+        // back / 上へ leave it (0.4.39: to "/", its parent)
         @Suppress("DEPRECATION") a.onBackPressed(); idle()
-        assertFalse(ex.recent); assertTrue(a.screen is ExplorerScreen)
+        assertFalse(ex.recent); assertTrue(a.screen is ExplorerScreen); assertEquals(Tree.root(Session.db!!).uuid, ex.current)
         tree().tapTop(); idle(); ex.goUp(); assertFalse(ex.recent)
         // opening a key from the list and coming back keeps 最近の鍵
         tree().tapTop(); idle(); layoutHost()
