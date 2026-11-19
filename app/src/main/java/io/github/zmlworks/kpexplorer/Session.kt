@@ -30,6 +30,13 @@ object Session {
     /** Bumped on open/lock so late save callbacks of an earlier session are ignored. */
     private var generation = 0L
     private var savedVersion = 0L
+    /**
+     * 0.4.40: changes made by [updateQuietly] (KeePass LastAccessTime / UsageCount from viewing an entry) and how many of
+     * them the file has. They schedule no save of their own: any later save writes them (the database is one model),
+     * and so do [lock] and [flushAll] (the app going to the background).
+     */
+    private var quietVersion = 0L
+    private var savedQuietVersion = 0L
     private val saveRunnable = Runnable { flush() }
     /** Rapid moves / reorders are coalesced into one save this long after the last change. */
     var debounceMs = 1500L
@@ -46,6 +53,7 @@ object Session {
     private var stashedPrimary: KeePassDatabase? = null
     private var stashedVersion = 0L
     private var stashedSavedVersion = 0L
+    private var stashedQuiet = 0L to 0L
     private var stashedGeneration = 0L
     /**
      * 0.4.35: the read-only view was opened from the unlock screen, with the app's own database locked (nothing
@@ -63,7 +71,7 @@ object Session {
 
     fun open(d: KeePassDatabase) {
         generation++
-        db = d; version = 0; savedVersion = 0; saveState = SaveState.SAVED
+        db = d; version = 0; savedVersion = 0; quietVersion = 0; savedQuietVersion = 0; saveState = SaveState.SAVED
         // open() always means primary (or fresh); clear any temp stash
         readOnlyTemp = false
         tempSourceLabel = ""
@@ -86,14 +94,35 @@ object Session {
         return next
     }
 
-    /** Save now (asynchronously) if there are unsaved changes. */
-    fun flush() {
+    /**
+     * 0.4.40: a change that needs no save of its own ([update] without the auto-save): the use of an entry when
+     * 「ファイルを開くたびにデータベースを更新する」 is off. Shown at once (it is in [db]); written by the next save.
+     */
+    fun updateQuietly(f: (KeePassDatabase) -> KeePassDatabase): KeePassDatabase? {
+        if (readOnlyTemp) throw IllegalStateException("read-only temp view")
+        val cur = db ?: return null
+        val next = f(cur)
+        if (next === cur) return cur
+        db = next
+        quietVersion++
+        return next
+    }
+
+    /** Changes of [updateQuietly] not in the file yet. */
+    val hasQuietUnsaved get() = db != null && quietVersion != savedQuietVersion
+
+    /** Save now if there is anything unsaved, [updateQuietly]'s changes included (lock, leaving the app). */
+    fun flushAll() = flush(quiet = true)
+
+    /** Save now (asynchronously) if there are unsaved changes ([quiet]: also only [updateQuietly]'s). */
+    fun flush(quiet: Boolean = false) {
         if (readOnlyTemp) return  // never write while browsing a temp file
         main.removeCallbacks(saveRunnable)
         val snap = db ?: return
         val st = store ?: return
-        if (version == savedVersion) return
+        if (version == savedVersion && !(quiet && quietVersion != savedQuietVersion)) return
         val v = version
+        val qv = quietVersion
         val gen = generation
         saveState = SaveState.SAVING
         notifyListener()
@@ -106,6 +135,7 @@ object Session {
                 main.post {
                     if (gen != generation) return@post
                     if (v > savedVersion) savedVersion = v
+                    if (qv > savedQuietVersion) savedQuietVersion = qv
                     saveState = if (savedVersion == version) SaveState.SAVED else SaveState.PENDING
                     lastError = null
                     notifyListener()
@@ -158,12 +188,14 @@ object Session {
         stashedPrimary = cur
         stashedVersion = version
         stashedSavedVersion = savedVersion
+        stashedQuiet = quietVersion to savedQuietVersion
         stashedGeneration = generation
         // Bump generation so in-flight primary saves are ignored while in temp view.
         generation++
         db = temp
         version = 0L
         savedVersion = 0L
+        quietVersion = 0L; savedQuietVersion = 0L
         saveState = SaveState.SAVED
         readOnlyTemp = true
         tempSourceLabel = sourceLabel
@@ -180,6 +212,7 @@ object Session {
         db = p
         version = stashedVersion
         savedVersion = stashedSavedVersion
+        quietVersion = stashedQuiet.first; savedQuietVersion = stashedQuiet.second
         // Restore saveState from version vs savedVersion
         saveState = if (version == savedVersion) SaveState.SAVED else SaveState.PENDING
         readOnlyTemp = false
@@ -199,13 +232,15 @@ object Session {
                 db = p
                 version = stashedVersion
                 savedVersion = stashedSavedVersion
+                quietVersion = stashedQuiet.first; savedQuietVersion = stashedQuiet.second
             }
         }
-        if (db != null && version != savedVersion) flush()
+        // 0.4.40: with the uses recorded quietly (see [updateQuietly])
+        if (db != null && (version != savedVersion || quietVersion != savedQuietVersion)) flushAll()
         main.removeCallbacks(saveRunnable)
         generation++
         db = null
-        version = 0; savedVersion = 0
+        version = 0; savedVersion = 0; quietVersion = 0; savedQuietVersion = 0
         saveState = SaveState.SAVED
         readOnlyTemp = false
         tempSourceLabel = ""

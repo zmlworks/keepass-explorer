@@ -487,7 +487,7 @@ class Ux0436Test {
         val ex = a.explorer!!
         ex.refresh(); idle(); layoutHost()
         val top = tree().topRow!!
-        assertEquals("最近更新した鍵", top.contentDescription)   // 0.4.38: renamed, and right under the root
+        assertEquals("最近更新されたファイル", top.contentDescription)   // 0.4.38: renamed (0.4.40 again), and right under the root
         assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertFalse(ex.recent)
         App.prefs(app()).edit().putString("view", "details").commit()   // 0.4.39: the view chosen for folders applies (was always details)
@@ -496,10 +496,10 @@ class Ux0436Test {
         val list = ex.rows.map { it.uuid }
         assertEquals(io.github.zmlworks.kpexplorer.db.Recent.LIMIT, list.size)
         assertEquals(ex.rows.take(6).map { "${it.name} ${(it as Order.Node.E).e.times?.creationTime} ${it.e.times?.lastModificationTime}" }.toString(),
-            listOf(ids["Steam"]!!, ids["Gmail"]!!, ids["Amazon"]!!, ids["勤怠"]!!), list.take(4))
+            listOf(ids["Steam"]!!, ids["Gmail"]!!, ids["Amazon"]!!, ids["勤怠"]!!), list.filter { it != Order.children(Tree.root(Session.db!!)).first { n -> n.name == "買い物メモ" }.uuid }.take(4))
         assertTrue(steamT >= now.minusSeconds(60))
         assertEquals("one row per key", list.size, list.toSet().size)
-        assertFalse("not the bin", ids["楽天"]!! in list || ids["old"]!! in list); assertFalse("no memos", Order.children(Tree.root(Session.db!!)).first { it.name == "買い物メモ" }.uuid in list)
+        assertFalse("not the bin", ids["楽天"]!! in list || ids["old"]!! in list); assertTrue("0.4.40: memos too", Order.children(Tree.root(Session.db!!)).first { it.name == "買い物メモ" }.uuid in list)
         val shown = texts(ex.view)
         // 0.4.39: the folders' columns (場所 as in search results), the date as in a folder
         assertTrue(shown.toString(), shown.contains("更新日時") && shown.contains("場所"))

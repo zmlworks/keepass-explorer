@@ -53,7 +53,16 @@ object Order {
             override val kind get() = if (isMemo(e)) Kind.MEMO else Kind.KEY
             override val name get() = Tree.title(e)
         }
+        /**
+         * 0.4.40: a virtual folder (機能フォルダ: [Recent.IDS]) listed in "/" among the real items, [name] and [count]
+         * as shown. Opens like a folder; can only be reordered inside "/" (nothing goes into it, it goes nowhere else).
+         */
+        data class V(override val uuid: UUID, override val name: String, val count: Int) : Node() {
+            override val kind get() = Kind.FOLDER
+        }
     }
+
+    fun isVirtual(id: UUID?) = id != null && id in Recent.IDS
 
     fun isMemo(e: Entry): Boolean = when (e.customData[CD_KIND]?.value) {
         "memo" -> true
@@ -73,6 +82,27 @@ object Order {
         for (id in storedOrder(g)) all.remove(id)?.let { out.add(it) }
         out.addAll(all.values)
         return out
+    }
+
+    /**
+     * 0.4.40: the ids of [g]'s children in display order; for the root ([root] = true) with the virtual folders
+     * ([Recent.IDS]) where the root's stored order has them (one the order does not name yet goes first, in the order
+     * of [Recent.IDS], as they were in 0.4.38 and 0.4.39: the root's first children in the folder tree).
+     */
+    fun order(g: Group, root: Boolean): List<UUID> {
+        val real = children(g).map { it.uuid }
+        if (!root) return real
+        val stored = storedOrder(g)
+        val realSet = real.toSet()
+        val listed = stored.filter { it in realSet || isVirtual(it) }.distinct()
+        val listedSet = listed.toSet()
+        return Recent.IDS.filter { it !in listedSet } + listed + real.filter { it !in listedSet }
+    }
+
+    /** [order] of the root: real children as [children] has them, virtual folders from [virtual] (absent = hidden). */
+    fun rootChildren(root: Group, virtual: Map<UUID, Node.V>): List<Node> {
+        val real = children(root).associateBy { it.uuid }
+        return order(root, true).mapNotNull { real[it] ?: virtual[it] }
     }
 
     /**
@@ -97,8 +127,9 @@ object Order {
         if (Tree.findGroup(d, id) == null) return d
         val parent = Tree.parentOf(Tree.root(d), id) ?: return d
         val bin = Tree.recycleBinId(d)
-        val others = children(parent).filter { it.uuid != id }
-        val lastFolder = others.indexOfLast { it is Node.F && it.uuid != bin }
+        val folders = parent.groups.map { it.uuid }.toSet()
+        val others = order(parent, parent.uuid == Tree.root(d).uuid).filter { it != id }
+        val lastFolder = others.indexOfLast { (it in folders && it != bin) || isVirtual(it) }
         return moveTo(d, id, parent.uuid, lastFolder + 1, now)
     }
 
@@ -111,13 +142,21 @@ object Order {
      */
     fun moveTo(db: KeePassDatabase, id: UUID, target: UUID, index: Int? = null, now: Instant = Instant.now()): KeePassDatabase {
         val root = Tree.root(db)
+        // 0.4.40: a virtual folder only moves inside "/" (its place in the root's order); [index] counts as below
+        if (isVirtual(id)) {
+            if (target != root.uuid) throw Tree.TreeException("a virtual folder stays in the root")
+            val ids = order(root, true).filter { it != id }.toMutableList()
+            ids.add((index ?: ids.size).coerceIn(0, ids.size), id)
+            return Tree.modifyGroup(db, root.uuid) { withOrder(it, ids, now) }
+        }
+        if (isVirtual(target)) throw Tree.TreeException("nothing goes into a virtual folder")
         val bin = Tree.recycleBinId(db)
         val from = Tree.parentOf(root, id) ?: throw Tree.TreeException("item not found")
         // 0.4.14: the bin may be reordered inside its folder, never moved to another one
         if (bin != null && id == bin && from.uuid != target) throw Tree.TreeException("cannot move the recycle bin")
         var d = if (from.uuid == target) db else Tree.move(db, id, target, now = now)
         val tg = Tree.findGroup(d, target) ?: throw Tree.TreeException("target not found")
-        val ids = children(tg).map { it.uuid }.filter { it != id }.toMutableList()
+        val ids = order(tg, target == root.uuid).filter { it != id }.toMutableList()
         // index counts positions in the list without the moved item
         ids.add((index ?: ids.size).coerceIn(0, ids.size), id)
         d = Tree.modifyGroup(d, target) { withOrder(it, ids, now) }
@@ -327,6 +366,7 @@ object Order {
         when (n) {
             is Node.E -> listOf(n)
             is Node.F -> if (n.uuid in skip) emptyList() else subtreeEntries(n.g, skip)
+            is Node.V -> emptyList()
         }
     }
 

@@ -464,7 +464,8 @@ class Ux0438Test {
 
     @Test fun mainMenu_exactlyTheUsersOrder() {
         assertEquals(listOf("ロック", "|", "Languageと日付形式", "セキュリティの設定", "マスターパスワードの設定", "外部データベースからインポートする", "|",
-            "ごみ箱の設定", "最近の鍵の設定", "|", "乱数生成器", "データベースのプロパティ", "About"), labels(a.explorer!!.mainMenu()))
+            "ごみ箱", "最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "機能フォルダの設定", "|", "乱数生成器", "データベースのプロパティ", "About"),
+            labels(a.explorer!!.mainMenu()))   // (0.4.40: the 機能フォルダ group; 0.4.38: ごみ箱の設定, 最近更新された鍵の設定)
         showMainMenu(); shot("v0438/01-menu.png", menuAt = (W_ - (Menus.current?.width ?: W.dp(300)) - W.dp(4)) to W.dp(60)); Menus.dismiss()   // where Menus.at puts it (kept on screen)
         item(a.explorer!!.mainMenu(), "マスターパスワードの設定").action(); idle()
         assertEquals("マスターパスワードの変更", texts(latestDialog().frame).first()); latestDialog().dismiss()
@@ -476,8 +477,8 @@ class Ux0438Test {
         assertTrue(texts(latestDialog().frame).contains("ランダム文字列生成")); latestDialog().dismiss()
         item(a.explorer!!.mainMenu(), "セキュリティの設定").action(); idle()
         assertEquals("セキュリティの設定", texts(latestDialog().frame).first()); latestDialog().dismiss()
-        item(a.explorer!!.mainMenu(), "最近の鍵の設定").action(); idle()   // 0.4.39: covers both virtual folders
-        assertEquals("最近の鍵の設定", texts(latestDialog().frame).first()); latestDialog().dismiss()
+        item(a.explorer!!.mainMenu(), "機能フォルダの設定").action(); idle()   // 0.4.40: the bin and the virtual folders
+        assertEquals("機能フォルダの設定", texts(latestDialog().frame).first()); latestDialog().dismiss()
     }
 
     // ---------------------------------------------------------------- item 9: セキュリティの設定
@@ -497,7 +498,8 @@ class Ux0438Test {
         Dlg.last = d; shot("v0438/02-security-settings.png", dialog = true)
         combo.performClick(); idle()
         val opts = allViews(Menus.lastView!!).filterIsInstance<android.widget.TextView>().map { it.text.toString() }.filter { it.isNotEmpty() && it != "✓" }
-        assertEquals(listOf("無効", "強い (10^12以上)", "とても強い (10^14以上)"), opts)
+        assertEquals(listOf("無効", "とても強い (10^14以上)", "強い (10^12以上)", "もう少し (10^10以上)", "やや弱い (10^8以上)", "弱い (10^5以上)",
+            "すべて (強度を問わない)", "数値で指定 (10^n)"), opts)   // (0.4.40: more levels; 0.4.38 had the first three)
         shotDialogWithMenu("v0438/03-security-settings-dropdown.png", combo)
         pickMenuRow("強い (10^12以上)")
         assertEquals(12, Security.exportMinLog10(a))
@@ -527,7 +529,7 @@ class Ux0438Test {
         n.dismiss()
         a.store.setInfo(pw(FileInfo.Strength.WEAK, 8))
         val w = SecuritySettings.show(a); idle()
-        assertEquals("強度: 弱い (推測に約 10^8 回)", t(w, "sec-strength")); w.dismiss()
+        assertEquals("強度: やや弱い (推測に約 10^8 回)", t(w, "sec-strength")); w.dismiss()
         // the backup list opens from here
         val b = SecuritySettings.show(a); idle()
         findTag<View>(b.frame, "sec-backups")!!.performClick(); idle()
@@ -708,26 +710,28 @@ class Ux0438Test {
         val ex = a.explorer!!
         ex.refresh(); idle(); layoutHost()
         val top = tree().topRow!!
-        assertEquals("最近更新した鍵", top.contentDescription)
+        assertEquals("最近更新されたファイル", top.contentDescription)   // (0.4.40 name; 0.4.38: 最近更新した鍵)
         assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertEquals("/", names(listOf(tree().rows[0].tag as UUID)).first())
         shot("v0438/11-recent-under-root.png")
-        // (0.4.39: 最近の鍵の設定, one section per virtual folder)
-        val d = RecentSettings.show(a); idle()
-        assertEquals(listOf("閉じる"), d.buttonViews.map { it.text.toString() })
-        assertEquals("表示する数: 30 件", t(d, "changed-count-text"))
-        findTag<View>(d.frame, "changed-count")!!.performClick(); idle()
+        // (0.4.40: the count in its long-press menu, showing in 機能フォルダの設定, opening from the main menu)
+        val k = FeatureFolders.Kind.CHANGED
+        FeatureFolders.pickCount(a, k); idle()
         radio(0).performClick(); idle()
-        assertEquals(10, RecentSettings.count(a))
-        assertEquals("表示する数: 10 件", t(d, "changed-count-text"))
-        (findTag<View>(d.frame, "changed-hide") as android.widget.CheckBox).performClick(); idle(); layoutHost()
-        assertFalse(RecentSettings.shown(a))
-        assertNotEquals("hidden", "最近更新した鍵", tree().topRow?.contentDescription)
-        // viewable from the settings while hidden; shown in the tree only while open
-        findTag<View>(d.frame, "changed-open")!!.performClick(); idle(); layoutHost()
-        assertTrue(ex.recent); assertEquals(10, ex.rows.size); assertEquals("最近更新した鍵", tree().topRow?.contentDescription)
+        assertEquals(10, FeatureFolders.count(a, k))
+        assertEquals("表示する数: 10 件", ex.virtualTreeMenu(k)[2].label)
+        val d = FeatureFolders.show(a); idle()
+        assertEquals(listOf("閉じる"), d.buttonViews.map { it.text.toString() })
+        (findTag<View>(d.frame, "changed-show") as android.widget.CheckBox).performClick(); idle(); layoutHost()
+        assertFalse(FeatureFolders.shown(a, k))
+        assertNotEquals("hidden", "最近更新されたファイル", tree().topRow?.contentDescription)
+        d.dismiss()
+        // opened from the menu while hidden; shown in the tree only while open
+        labels(ex.mainMenu()).let { assertTrue(it.toString(), it.contains("最近更新されたファイル")) }
+        ex.mainMenu().first { it.label == "最近更新されたファイル" }.action(); idle(); layoutHost()
+        assertTrue(ex.recent); assertEquals(10, ex.rows.size); assertEquals("最近更新されたファイル", tree().topRow?.contentDescription)
         ex.goUp(); idle(); layoutHost()
-        assertFalse(ex.recent); assertNotEquals("最近更新した鍵", tree().topRow?.contentDescription)
-        assertFalse(RecentSettings.shown(a))
+        assertFalse(ex.recent); assertNotEquals("最近更新されたファイル", tree().topRow?.contentDescription)
+        assertFalse(FeatureFolders.shown(a, k))
     }
 }

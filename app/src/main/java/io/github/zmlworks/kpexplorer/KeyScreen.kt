@@ -581,14 +581,10 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     /**
-     * 0.4.39: a use of this key (page opened, a field copied), for 最近使用した鍵: KeePass's LastAccessTime and
-     * UsageCount in the file (not while browsing another file read-only, not for a key not saved yet).
+     * 0.4.39: a use of this key (page opened, a field copied), for 最近利用したファイル / よく利用するファイル: KeePass's
+     * LastAccessTime and UsageCount (not for a key not saved yet). 0.4.40: written as [FeatureFolders.recordUse] says.
      */
-    private fun markUsed() {
-        val id = entryId ?: return
-        if (Session.readOnlyTemp || !Session.isOpen) return
-        Session.update { io.github.zmlworks.kpexplorer.db.Recent.markUsed(it, id) }
-    }
+    private fun markUsed() { FeatureFolders.recordUse(a, entryId ?: return) }
 
     private fun copy(label: String, s: String, sensitive: Boolean) {
         if (s.isEmpty()) return

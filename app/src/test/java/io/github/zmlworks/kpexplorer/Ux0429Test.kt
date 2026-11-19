@@ -255,10 +255,10 @@ class Ux0429Test {
         assertEquals("ごみ箱", listFolders().first())
         assertTrue(Tree.binLastInTree(Session.db!!))
         assertEquals("default (0.4.28): last in the tree", "ごみ箱", treeTop().last())
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         val cb = findTag<View>(Dlg.last!!.frame, "bin-tree-last") as android.widget.CheckBox
         assertTrue(cb.isChecked)
-        assertEquals("階層表示でごみ箱をいつも一番下にする", cb.text.toString())
+        assertEquals("ごみ箱をフォルダツリーで一番下にする", cb.text.toString())
         cb.performClick(); idle()
         assertFalse(Tree.binLastInTree(Session.db!!))
         assertEquals("false", Session.db!!.content.meta.customData[Tree.CD_BIN_TREE_LAST]?.value)
@@ -277,7 +277,7 @@ class Ux0429Test {
         assertEquals(bin, mt.rows.map { it.tag as UUID }.first { Tree.parentOf(Tree.root(Session.db!!), it)?.uuid == root })
         latestDialog().dismiss(); idle()
         // back on: the default again (the key is removed)
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         (findTag<View>(Dlg.last!!.frame, "bin-tree-last") as android.widget.CheckBox).performClick(); idle()
         assertTrue(Tree.binLastInTree(Session.db!!))
         assertNull(Session.db!!.content.meta.customData[Tree.CD_BIN_TREE_LAST])
@@ -287,10 +287,9 @@ class Ux0429Test {
 
     @Test fun binSetting_readOnlyAndEnglish() {
         L.setLang(app(), L.Lang.EN)
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         val cb = findTag<View>(Dlg.last!!.frame, "bin-tree-last") as android.widget.CheckBox
-        assertEquals("Always show the recycle bin last in the folder tree", cb.text.toString())
-        assertTrue(texts(Dlg.last!!.frame).any { it.startsWith("When off, the folder tree shows the bin where it is in the list") })
+        assertEquals("Show the recycle bin last in the folder tree", cb.text.toString())
         Dlg.last!!.dismiss()
     }
 

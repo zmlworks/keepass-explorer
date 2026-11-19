@@ -360,9 +360,9 @@ class Ux0426Test {
         val now = java.time.Instant.now()
         Session.update { Tree.moveToBin(it, ids["Gmail"]!!, "ごみ箱", now.minus(java.time.Duration.ofDays(10))) }
         Session.update { Tree.moveToBin(it, ids["Amazon"]!!, "ごみ箱", now.minus(java.time.Duration.ofDays(20))) }
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         val d = Dlg.last!!
-        fun pick(days: Int) { findTag<View>(d.frame, "bin-days")!!.performClick(); idle(); radio(BinSettings.DAYS.indexOf(days)).performClick(); idle() }
+        fun pick(days: Int) { findTag<View>(d.frame, "bin-days")!!.performClick(); idle(); radio(FeatureFolders.DAYS.indexOf(days)).performClick(); idle() }
         // しない → 30: nothing that old → applied without asking
         pick(30); assertEquals(30, Tree.binAutoDeleteDays(Session.db!!)); assertEquals(3, Tree.recycleBinChildCount(Session.db!!))
         // 30 → 14: Amazon (20 days) → warning with the count; いいえ keeps everything

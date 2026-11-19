@@ -34,13 +34,20 @@ data class FileInfo(val protection: Protection, val strength: Strength, val log1
 
     /**
      * Can be written out without unlocking when the setting asks for 10^[minLog10] guesses (0 = never): only master
-     * passwords whose recorded estimate reaches it.
+     * passwords whose recorded estimate reaches it. 0.4.40: [ANY] (セキュリティの設定 「すべて」) = every file with a
+     * master password, whatever its strength (also not judged yet); never one without a password or with the OS key.
      */
-    fun exportableAt(minLog10: Int): Boolean = minLog10 > 0 && (guessesLog10 ?: -1) >= minLog10
+    fun exportableAt(minLog10: Int): Boolean = when {
+        minLog10 == 0 -> false
+        minLog10 == ANY -> protection == Protection.PASSWORD
+        else -> (guessesLog10 ?: -1) >= minLog10
+    }
 
     fun encode() = "${protection.key},${strength.key}" + (log10?.let { ",$it" } ?: "")
 
     companion object {
+        /** [exportableAt]'s "any strength". */
+        const val ANY = -1
         /** Files written before 0.4.37 (and anything without a record): master password, not judged yet. */
         val LEGACY = FileInfo(Protection.PASSWORD, Strength.UNKNOWN)
         fun decode(s: String?): FileInfo? {

@@ -375,7 +375,7 @@ class Ux0431Test {
         layoutHost()
         val sv = treeBox()
         assertTrue("the tree scrolls", tree().height > sv.height)
-        sv.scrollTo(0, W.dp(32) * 5); layoutHost()
+        sv.scrollTo(0, W.dp(32) * 6); layoutHost()  // 0.4.40: three virtual folders above (one more row)
         val f = gid("フォルダ06")
         val y0 = rowY(f)
         assertTrue("row in view", y0 >= 0 && y0 + rowOf(f).height <= sv.height)

@@ -194,7 +194,7 @@ class Ux0423Test {
         // moved to セキュリティの設定, ごみ箱を開く to ごみ箱の設定's 「ごみ箱を見る」)
         assertEquals(m.toString(), listOf("Languageと日付形式"),
             m.filter { it.startsWith("自動ロック") || it.startsWith("Language") || it.startsWith("日付") })
-        assertTrue(m.contains("ごみ箱の設定")); assertFalse(m.contains("ごみ箱を開く"))
+        assertTrue(m.contains("機能フォルダの設定")); assertFalse(m.contains("ごみ箱を開く"))
         assertTrue("no checked radio-like rows left", ex.mainMenu().none { it.checked && (it.label.startsWith("Language") || it.label.startsWith("日付") || it.label.startsWith("自動ロック")) })
         showMainMenu(); shot("v0423/01-main-menu.png", menuAt = (W_ - W.dp(240)) to W.dp(60)); Menus.dismiss()
         // date picker: options with today's example, current one checked; tap applies and closes
@@ -260,14 +260,14 @@ class Ux0423Test {
 
     @Test fun binSettings_rename_empty_once_hide_days() {
         val ex = a.explorer!!
-        item(ex.mainMenu(), "ごみ箱の設定").action(); idle()
+        item(ex.mainMenu(), "機能フォルダの設定").action(); idle()
         val d = Dlg.last!!
         fun t(tag: String) = (findTag<View>(d.frame, tag) as android.widget.TextView)
-        assertEquals("名前: ごみ箱", t("bin-rename-text").text.toString())
-        assertEquals("中身: 1 個", t("bin-empty-text").text.toString())
-        assertEquals("日数で自動削除: しない", t("bin-days-text").text.toString())
-        assertFalse((findTag<View>(d.frame, "bin-once") as android.widget.CheckBox).isChecked)
-        assertFalse((findTag<View>(d.frame, "bin-hide") as android.widget.CheckBox).isChecked)
+        assertEquals("ごみ箱の名前: ごみ箱", t("bin-rename-text").text.toString())
+        assertEquals("1 個の項目", t("bin-empty-text").text.toString())
+        assertEquals("自動削除: しない", t("bin-days-text").text.toString())
+        assertNull("the file uses the bin: no line about it", findTag<View>(d.frame, "bin-enable"))
+        assertTrue((findTag<View>(d.frame, "bin-show") as android.widget.CheckBox).isChecked)
         shot("v0423/04-bin-settings.png", dialog = true)
         // rename
         t("bin-rename").performClick(); idle()
@@ -275,27 +275,28 @@ class Ux0423Test {
         find(p.frame, android.widget.EditText::class.java)!!.setText("不要なもの")
         p.buttonViews.first().performClick(); idle()
         assertEquals("不要なもの", binGroup().name)
-        assertEquals("名前: 不要なもの", t("bin-rename-text").text.toString())
+        assertEquals("ごみ箱の名前: 不要なもの", t("bin-rename-text").text.toString())
         assertTrue("tree shows the new name", texts(ex.view).any { it.startsWith("不要なもの") })
         // hide → not in the tree / list / counts / move dialog; the menu still opens it
-        val hide = findTag<View>(d.frame, "bin-hide") as android.widget.CheckBox
+        val hide = findTag<View>(d.frame, "bin-show") as android.widget.CheckBox
         hide.performClick(); idle()
         assertTrue(Tree.binHidden(Session.db!!))
         assertFalse(treeIds().contains(bin()))
         assertFalse(ex.rows.any { it.uuid == bin() })
         assertEquals("(16,38,1)", Order.counts(Tree.root(Session.db!!), Tree.hiddenGroups(Session.db!!)))
-        // once: KeePass flag off
-        val once = findTag<View>(d.frame, "bin-once") as android.widget.CheckBox
-        once.performClick(); idle()
+        // 0.4.40: no 一度で完全削除 any more; a file with KeePass's flag off says so and offers the bin
+        Session.update { Tree.setRecycleBinEnabled(it, false, "ごみ箱") }
+        FeatureFolders.fill(a, findTag<View>(d.frame, "bin-rename-text")!!.parent.parent as android.widget.LinearLayout)
         assertFalse(Session.db!!.content.meta.recycleBinEnabled)
-        once.performClick(); idle()
+        findTag<View>(d.frame, "bin-enable")!!.performClick(); idle()
         assertTrue(Session.db!!.content.meta.recycleBinEnabled)
+        assertNull(findTag<View>(d.frame, "bin-enable"))
         // days: picker; an item older than the limit asks, then goes
         val oldId = ids["old"]!!
         val gm = ids["Gmail"]!!
         Session.update { Tree.moveToBin(it, gm, "ごみ箱", java.time.Instant.now().minus(java.time.Duration.ofDays(40))) }
         t("bin-days").performClick(); idle()
-        assertEquals(BinSettings.DAYS.map { BinSettings.daysLabel(it) }, (0 until BinSettings.DAYS.size).map { radio(it).text.toString() })
+        assertEquals(FeatureFolders.DAYS.map { FeatureFolders.daysLabel(it) }, (0 until FeatureFolders.DAYS.size).map { radio(it).text.toString() })
         shot("v0423/05-bin-days-picker.png", dialog = true)
         radio(3).performClick(); idle()   // 30 days
         val c = latestDialog()
@@ -305,7 +306,7 @@ class Ux0423Test {
         assertEquals(1, Tree.recycleBinChildCount(Session.db!!))
         assertNull(Tree.findEntry(Session.db!!, gm))
         assertNotNull("moved to the bin today: stays", Tree.findEntry(Session.db!!, oldId))
-        assertEquals("日数で自動削除: 30 日後", t("bin-days-text").text.toString())
+        assertEquals("自動削除: 30 日後", t("bin-days-text").text.toString())
         d.dismiss()
     }
 
@@ -313,15 +314,14 @@ class Ux0423Test {
         val ex = a.explorer!!
         Session.update { Tree.setBinHidden(it, true) }; ex.refresh(); idle()
         assertFalse(treeIds().contains(bin()))
-        BinSettings.show(a); idle()
-        clickButton(Dlg.last!!, "ごみ箱を見る")   // 0.4.38: from the settings window
+        item(ex.mainMenu(), "ごみ箱").action(); idle()   // 0.4.40: the menu opens it (0.4.38: the settings window)
         assertEquals(bin(), ex.current)
         assertTrue("inside the bin it is shown", treeIds().contains(bin()))
         assertEquals(listOf(ids["old"]!!), ex.rows.map { it.uuid })
         shot("v0423/06-hidden-bin-opened.png")
         ex.goUp(); idle()
         assertFalse(treeIds().contains(bin()))
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         val d = Dlg.last!!
         findTag<View>(d.frame, "bin-empty")!!.performClick(); idle()
         latestDialog().buttonViews.first().performClick(); idle()
@@ -424,10 +424,10 @@ class Ux0423Test {
         assertEquals(listOf("Open", "Show all files below"), labels(ex.treeMenu(ids["G"]!!)).take(2))
         ex.showAllBelow(ids["G"]!!); idle()
         assertEquals("All keys and memos under \"仕事\" (3)  ×", (findTag<View>(ex.view, "flat-band") as android.widget.TextView).text.toString())
-        BinSettings.show(act); idle()
+        FeatureFolders.show(act); idle()
         val tx = texts(Dlg.last!!.frame)
-        assertTrue(tx.toString(), tx.containsAll(listOf("Name: ごみ箱", "Rename", "Contains: 1", "Empty", "Auto-delete: Off", "Change",
-            "Delete permanently at once (no recycle bin)", "Hide the recycle bin (open it with \"View Recycle Bin\" here)", "View Recycle Bin", "Close")))
+        assertTrue(tx.toString(), tx.containsAll(listOf("Recycle bin name: ごみ箱", "Change", "1 item(s)", "Empty Recycle Bin", "Auto-delete: Off",
+            "Show the recycle bin", "Show the recycle bin last in the folder tree", "Close")))
         assertTrue("no Japanese in the settings box (bin name aside)", tx.none { s -> s.any { it in '\u3040'..'\u30ff' } && !s.contains("ごみ箱") })
         Dlg.last!!.dismiss()
         ex.pickAutoLock(); idle()

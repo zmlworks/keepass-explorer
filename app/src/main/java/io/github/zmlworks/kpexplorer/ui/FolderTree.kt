@@ -61,14 +61,19 @@ class FolderTree(
      */
     revealCurrent: Boolean = true,
     /**
-     * 0.4.36: virtual folders (main tree: 最近更新した鍵, 0.4.39 also 最近使用した鍵; since 0.4.38 the root's first
-     * children); not [rows], no +/−, take no drop.
+     * 0.4.36: virtual folders (main tree: 最近更新した鍵, 0.4.39 also 最近使用した鍵; since 0.4.38 children of the root);
+     * not [rows], no +/−, take no drop.
      */
-    private val tops: List<Top> = emptyList()
+    private val tops: List<Top> = emptyList(),
+    /**
+     * 0.4.40: the root's children in display order, virtual folders ([Top.id]) included (Order.order): the root's
+     * folders and [tops] are shown in this order (the recycle bin still last with [binLast]). Empty = tops first.
+     */
+    private val rootOrder: List<UUID> = emptyList()
 ) : LinearLayout(ctx) {
 
     /** The virtual folder row: [label] and [count] beside [icon] (16 px art), [selected] = it is the list shown. */
-    class Top(val label: String, val icon: android.graphics.Bitmap, val count: Int, val selected: Boolean,
+    class Top(val id: UUID, val label: String, val icon: android.graphics.Bitmap, val count: Int, val selected: Boolean,
               val onTap: () -> Unit, val onLongPress: (Int, Int) -> Boolean)
 
     /** The views of [tops], in order (tests). */
@@ -76,7 +81,8 @@ class FolderTree(
     /** The first of [topRows] (tests), or null. */
     val topRow: View? get() = topRows.firstOrNull()
 
-    private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean)
+    /** A row: a folder ([g]) or, among the root's children, a virtual folder ([top]; then [g] is the root). */
+    private class Node(val g: Group, val depth: Int, val lastFlags: List<Boolean>, val last: Boolean, val top: Top? = null)
 
     private val expanded = HashMap<UUID, Boolean>()
 
@@ -117,7 +123,21 @@ class FolderTree(
             out.add(Node(g, depth, flags, last))
             if (!isExpanded(g)) return
             val kids = io.github.zmlworks.kpexplorer.db.Order.folders(g, if (binLast) binId else null).filter { it.uuid !in hidden }
-            kids.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == kids.size - 1) }
+            if (depth > 0 || tops.isEmpty()) {
+                kids.forEachIndexed { i, c -> walk(c, depth + 1, flags + last, i == kids.size - 1) }
+                return
+            }
+            // 0.4.40: the root's folders and the virtual folders in the root's order (the bin last with binLast)
+            val byId = kids.associateBy { it.uuid }
+            val topById = tops.associateBy { it.id }
+            val placed = rootOrder.filter { it in byId || it in topById }
+            val ids = (tops.map { it.id }.filter { it !in placed } + placed + kids.map { it.uuid }.filter { it !in placed })
+                .let { l -> if (binLast && binId != null && binId in l) l.filter { it != binId } + binId else l }
+            ids.forEachIndexed { i, id ->
+                val isLast = i == ids.size - 1
+                val t = topById[id]
+                if (t != null) out.add(Node(g, 1, flags + last, isLast, t)) else byId[id]?.let { walk(it, 1, flags + last, isLast) }
+            }
         }
         walk(root, 0, emptyList(), true)
         return out
@@ -128,17 +148,19 @@ class FolderTree(
         val nodes = flatten()
         var i = 0
         for (n in nodes) {
+            val top = n.top
+            if (top != null) {
+                // 0.4.38: a child of the root (up to 0.4.37 a row above "/"); 0.4.40: where the root's order has it
+                val tv = TopRow(context, top, last = n.last).apply { tag = TOP_TAG; setBackgroundColor(if (striped) stripe(i) else W.WINDOW) }
+                topRows.add(tv)
+                addView(tv, LayoutParams(W.MATCH, W.dp(rowDp)))
+                i++
+                continue
+            }
             val v = Row(context, n).apply { tag = n.g.uuid; if (striped) setBackgroundColor(stripe(i)) }
             rows.add(v)
             addView(v, LayoutParams(W.MATCH, W.dp(rowDp)))
             i++
-            // 0.4.38: the virtual folder is the root's first child (up to 0.4.37 a row above "/", set off by a dotted rule)
-            if (n.depth == 0 && (isExpanded(n.g) || nodes.size == 1)) tops.forEachIndexed { k, top ->
-                val tv = TopRow(context, top, last = nodes.size == 1 && k == tops.size - 1).apply { tag = TOP_TAG; setBackgroundColor(if (striped) stripe(i) else W.WINDOW) }
-                topRows.add(tv)
-                addView(tv, LayoutParams(W.MATCH, W.dp(rowDp)))
-                i++
-            }
         }
     }
 
@@ -233,7 +255,7 @@ class FolderTree(
             n.g.uuid == binId -> Px.bin16
             else -> Px.folder16
         }
-        val hasKids = n.g.groups.any { it.uuid !in hidden }
+        val hasKids = n.g.groups.any { it.uuid !in hidden } || (n.depth == 0 && tops.isNotEmpty())
 
         /** Test hook: same as a tap on the label. */
         fun tapLabel() { val e = MotionEvent.obtain(0, 0, MotionEvent.ACTION_UP, width - 1f, height / 2f, 0); onTouchEvent(e); e.recycle() }

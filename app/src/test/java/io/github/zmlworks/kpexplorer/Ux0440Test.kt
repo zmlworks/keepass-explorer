@@ -34,12 +34,12 @@ import java.io.FileOutputStream
 import java.util.UUID
 import io.github.zmlworks.kpexplorer.ExplorerScreen.Drop.Mode as M
 
-/** 0.4.39: the virtual folders 最近更新した鍵 / 最近使用した鍵 behave like folders; 最近使用した鍵 from KeePass LastAccessTime / UsageCount; 最近の鍵の設定. */
+/** 0.4.40 (with the 0.4.39 tests moved here): 機能フォルダ in "/" (reorderable, the tree follows), よく利用するファイル, memos counted, uses saved quietly, 機能フォルダの設定, finer export strengths. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "ja-w411dp-h891dp-port-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-class Ux0439Test {
-    private val out = File(System.getenv("KPX_SCREENS_DIR") ?: "build/reports/screens").apply { File(this, "v0439").mkdirs() }
+class Ux0440Test {
+    private val out = File(System.getenv("KPX_SCREENS_DIR") ?: "build/reports/screens").apply { File(this, "v0440").mkdirs() }
     private val key = Kdbx.compositeKey("sample")
     private lateinit var a: MainActivity
     private val ids = HashMap<String, UUID>()
@@ -354,11 +354,12 @@ class Ux0439Test {
         val x = lum(a); val y = lum(b); return (maxOf(x, y) + 0.05) / (minOf(x, y) + 0.05)
     }
 
-    // ------------------------------------------------------------------------------------------------ 0.4.39
+    // ------------------------------------------------------------------------------------------------ 0.4.40
 
     private val R_ = io.github.zmlworks.kpexplorer.db.Recent
     private fun t(d: io.github.zmlworks.kpexplorer.ui.ClassicDialog, tag: String) = (findTag<View>(d.frame, tag) as android.widget.TextView).text.toString()
     private fun entryOf(id: UUID) = Tree.findEntry(Session.db!!, id)!!.second
+    private fun rootId() = Tree.root(Session.db!!).uuid
     private fun setAll(id: UUID, created: java.time.Instant, modified: java.time.Instant, accessed: java.time.Instant) {
         Session.update { db -> val p = Tree.findEntry(db, id)!!.first
             Tree.modifyGroup(db, p.uuid) { g -> g.copy(entries = g.entries.map { e -> if (e.uuid != id) e else
@@ -370,11 +371,52 @@ class Ux0439Test {
         fun walk(g: app.keemobile.kotpass.models.Group) { g.entries.forEach { all.add(it.uuid) }; g.groups.forEach { walk(it) } }
         walk(Tree.root(Session.db!!))
         all.forEachIndexed { i, id -> val t = base.minus(java.time.Duration.ofDays(30L + i)); setAll(id, t, t, t) }
+        settle()
+    }
+    /** Lets every pending save finish (debounce, io thread). */
+    private fun settle() {
+        Session.flush(); repeat(3) { java.util.concurrent.CountDownLatch(1).also { l -> Session.io.execute { l.countDown() }; l.await() }; idle() }
     }
     private fun viewAs(det: Boolean) { val ex = a.explorer!!; if (ex.iconMode == det) ex.toggleView(); idle(); layoutHost(); layoutHost() }
     private fun topLabels() = tree().topRows.map { it.contentDescription.toString() }
+    private fun fileEntry(id: UUID) = Tree.findEntry(Kdbx.open(a.store.read(), key), id)!!.second
+    /** The root's children in the folder tree, top to bottom (virtual folders by name). */
+    private fun treeRootRows(): List<String> {
+        val t = tree(); val out = ArrayList<String>()
+        for (i in 0 until t.childCount) {
+            val v = t.getChildAt(i)
+            if (v.tag == io.github.zmlworks.kpexplorer.ui.TOP_TAG) out.add(v.contentDescription.toString())
+            else (v.tag as? UUID)?.let { id -> if (Tree.parentOf(Tree.root(Session.db!!), id)?.uuid == rootId()) out.add(Tree.findGroup(Session.db!!, id)!!.name) }
+        }
+        return out
+    }
+    private fun offsetIn(v: View, root: View): Pair<Int, Int> {
+        var x = 0; var y = 0; var c: View? = v
+        while (c != null && c !== root) { x += c.left - c.scrollX; y += c.top - c.scrollY; c = c.parent as? View }
+        return x to y
+    }
+    private fun shotDialogWithMenu(name: String, anchor: View) {
+        layoutHost()
+        val b = Bitmap.createBitmap(W_, H_, Bitmap.Config.ARGB_8888); val c = Canvas(b); a.host.draw(c)
+        val f = Dlg.last!!.frame
+        f.measure(View.MeasureSpec.makeMeasureSpec(W_ - 72, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(H_ - 300, View.MeasureSpec.AT_MOST))
+        f.layout(0, 0, f.measuredWidth, f.measuredHeight)
+        val top = (H_ - f.measuredHeight) / 2
+        c.save(); c.translate(36f, top.toFloat()); f.draw(c); c.restore()
+        val (ax, ay) = offsetIn(anchor, f)
+        Menus.lastView?.let { v ->
+            v.measure(View.MeasureSpec.makeMeasureSpec(maxOf(anchor.width, W.dp(260)), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(H_, View.MeasureSpec.AT_MOST))
+            v.layout(0, 0, v.measuredWidth, v.measuredHeight)
+            c.save(); c.translate(36f + ax, (top + ay + anchor.height).toFloat().coerceAtMost((H_ - v.measuredHeight).toFloat())); v.draw(c); c.restore()
+        }
+        FileOutputStream(File(out, name)).use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+    private fun pickMenuRow(label: String) {
+        val row = allViews(Menus.lastView!!).filterIsInstance<android.widget.TextView>().first { it.text.toString() == label }.parent as View
+        row.performClick(); idle()
+    }
 
-    // ---------------------------------------------------------------- the record (KDBX LastAccessTime / UsageCount)
+    // ---------------------------------------------------------------- the use record (KDBX LastAccessTime / UsageCount)
 
     @Test fun used_isKeePassLastAccessTime_markedWithoutTouchingModificationOrHistory() {
         ageEverything()
@@ -384,193 +426,281 @@ class Ux0439Test {
         val t = base.plusSeconds(3600)
         Session.update { R_.markUsed(it, id, t) }
         val e = entryOf(id)
-        assertEquals(t, R_.usedAt(e)); assertEquals(t, e.times!!.lastAccessTime)
-        assertEquals(1, e.times!!.usageCount)
+        assertEquals(t, R_.usedAt(e)); assertEquals(1, e.times!!.usageCount)
         assertEquals("modification kept", before.times!!.lastModificationTime, e.times!!.lastModificationTime)
         assertEquals("no History copy", before.history.size, e.history.size)
-        assertEquals("fields kept", Tree.fieldsOf(before), Tree.fieldsOf(e))
         Session.update { R_.markUsed(it, id, t.plusSeconds(60)) }
-        assertEquals(2, entryOf(id).times!!.usageCount)
-        // in the file, as KeePass keeps it
-        Session.flush(); java.util.concurrent.CountDownLatch(1).also { l -> Session.io.execute { l.countDown() }; l.await() }; idle()
-        val back = Tree.findEntry(Kdbx.open(a.store.read(), key), id)!!.second
-        assertEquals(t.plusSeconds(60), back.times!!.lastAccessTime); assertEquals(2, back.times!!.usageCount)
-        // the order: most recently used first; not memos, not the bin
+        settle()
+        assertEquals(t.plusSeconds(60), fileEntry(id).times!!.lastAccessTime); assertEquals(2, fileEntry(id).times!!.usageCount)
+        // most recently used first; memos too (0.4.40); not the bin
         Session.update { R_.markUsed(it, ids["Amazon"]!!, t.plusSeconds(120)) }
         Session.update { R_.markUsed(it, memoId(), t.plusSeconds(180)) }
         Session.update { R_.markUsed(it, ids["old"]!!, t.plusSeconds(240)) }
-        assertEquals(listOf(ids["Amazon"]!!, id), R_.used(Session.db!!).map { it.entry.uuid })
-        assertEquals(1, R_.used(Session.db!!, 1).size)
-        // an edit counts as a use (this app, like KeePass, sets the access time when saving a change)
-        Session.update { Order.saveEntry(it, ids["Steam"]!!, mapOf("Title" to "Steam", "UserName" to "taro_games2", "Password" to "p"), emptyList(), null) }
-        assertEquals(ids["Steam"], R_.used(Session.db!!).first().entry.uuid)
-        // clearing: access back to creation, count 0; modification times stay
-        val mod = entryOf(ids["Steam"]!!).times!!.lastModificationTime
+        assertEquals(listOf(memoId(), ids["Amazon"]!!, id), R_.used(Session.db!!).map { it.entry.uuid })
+        // よく利用する: the highest count first, then the most recent
+        assertEquals(listOf(id, memoId(), ids["Amazon"]!!), R_.frequent(Session.db!!).map { it.entry.uuid })
+        assertEquals(listOf(2, 1, 1), R_.frequent(Session.db!!).map { it.count })
+        assertEquals(1, R_.frequent(Session.db!!, 1).size)
+        // 最近更新されたファイル lists memos too (0.4.40)
+        setAll(ids["議事録"]!!, base, base.plusSeconds(7200), base)
+        assertEquals(ids["議事録"], R_.list(Session.db!!).first().entry.uuid)
+        // clearing empties both use lists; modification times stay
+        val mod = entryOf(id).times!!.lastModificationTime
         Session.update { R_.clearUsed(it) }
-        assertTrue(R_.used(Session.db!!).isEmpty()); assertFalse(R_.anyUsed(Session.db!!))
-        assertEquals(0, entryOf(id).times!!.usageCount); assertEquals(entryOf(id).times!!.creationTime, entryOf(id).times!!.lastAccessTime)
-        assertEquals(mod, entryOf(ids["Steam"]!!).times!!.lastModificationTime)
+        assertTrue(R_.used(Session.db!!).isEmpty()); assertTrue(R_.frequent(Session.db!!).isEmpty()); assertFalse(R_.anyUsed(Session.db!!))
+        assertEquals(mod, entryOf(id).times!!.lastModificationTime)
     }
 
-    @Test fun used_openingAKeyPage_orCopyingAField_records_notWhileBrowsingAFile() {
+    @Test fun usage_isKeptInMemory_andWrittenWithTheNextSave_orTheLock() {
         ageEverything()
         val id = ids["Amazon"]!!
-        val ks = openKey(id)
-        assertNotNull("opened = used", R_.usedAt(entryOf(id)))
-        assertEquals(1, entryOf(id).times!!.usageCount)
-        assertEquals("written to the file (as any change)", Session.SaveState.PENDING, Session.saveState)
-        assertFalse("not a change: 最近更新した鍵 does not move", R_.list(Session.db!!).first().entry.uuid == id)
-        val copy = KeyScreen::class.java.getDeclaredMethod("copy", String::class.java, String::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
-        copy.invoke(ks, "ユーザー名", "taro_y", false); idle()
-        assertEquals("copied = used again", 2, entryOf(id).times!!.usageCount)
-        copy.invoke(ks, "ユーザー名", "", false); idle()
-        assertEquals("nothing copied", 2, entryOf(id).times!!.usageCount)
+        val n0 = Session.saveCount
+        assertFalse("default: off", FeatureFolders.saveOnOpen(a))
+        openKey(id)
+        assertNotNull("shown at once", R_.usedAt(entryOf(id)))
+        assertEquals(Session.SaveState.SAVED, Session.saveState)
+        assertTrue(Session.hasQuietUnsaved)
+        ShadowLooper.idleMainLooper(Session.debounceMs + 100, java.util.concurrent.TimeUnit.MILLISECONDS); settle()
+        assertEquals("no save just from viewing", n0, Session.saveCount)
+        assertNull("not in the file yet", R_.usedAt(fileEntry(id)))
         a.showExplorer(); idle()
-        // a read-only browse (an external file or a backup) records nothing
-        Session.flush(); java.util.concurrent.CountDownLatch(1).also { l -> Session.io.execute { l.countDown() }; l.await() }; idle()
+        // a memo opened: a use too
+        a.show(MemoScreen(a, memoId())); idle()
+        assertEquals(1, entryOf(memoId()).times!!.usageCount)
+        a.showExplorer(); idle()
+        // the next save of a change writes it along
+        Session.update { Order.renameEntry(it, ids["Steam"]!!, "Steam2") }; settle()
+        assertEquals(n0 + 1, Session.saveCount)
+        assertNotNull(R_.usedAt(fileEntry(id))); assertEquals(1, fileEntry(memoId()).times!!.usageCount)
+        assertFalse(Session.hasQuietUnsaved)
+        // another view, then leaving the app / the lock writes it (once)
+        openKey(ids["Gmail"]!!); a.showExplorer(); idle()
+        assertTrue(Session.hasQuietUnsaved)
+        Session.flushAll(); settle()
+        assertEquals(n0 + 2, Session.saveCount)
+        assertNotNull(R_.usedAt(fileEntry(ids["Gmail"]!!)))
+        // with 「ファイルを開くたびにデータベースを更新する」 on: saved like a change (0.4.39)
+        App.prefs(app()).edit().putBoolean(FeatureFolders.PREF_SAVE_ON_OPEN, true).commit()
+        openKey(ids["楽天"]!!)
+        assertEquals(Session.SaveState.PENDING, Session.saveState)
+        a.showExplorer(); idle(); settle()
+        assertNotNull(R_.usedAt(fileEntry(ids["楽天"]!!)))
+        // a read-only browse records nothing
+        val steamUses = entryOf(ids["Steam"]!!).times!!.usageCount
         Session.beginTempView(Session.db!!, "外部.kdbx")
         openKey(ids["Steam"]!!)
-        assertNull(R_.usedAt(entryOf(ids["Steam"]!!)))
-        assertEquals(Session.SaveState.SAVED, Session.saveState)
+        assertEquals(steamUses, entryOf(ids["Steam"]!!).times!!.usageCount)
         a.showExplorer(); idle(); Session.exitTempView(); idle()
-        assertNull(R_.usedAt(entryOf(ids["Steam"]!!)))
+        // the lock writes what is left
+        App.prefs(app()).edit().putBoolean(FeatureFolders.PREF_SAVE_ON_OPEN, false).commit()
+        openKey(ids["X (Twitter)"]!!); a.showExplorer(); idle()
+        a.lock(); idle()
+        java.util.concurrent.CountDownLatch(1).also { l -> Session.io.execute { l.countDown() }; l.await() }
+        assertNotNull(R_.usedAt(Tree.findEntry(Kdbx.open(App.store(app()).read(), key), ids["X (Twitter)"]!!)!!.second))
     }
 
-    // ---------------------------------------------------------------- both virtual folders under "/"
+    // ---------------------------------------------------------------- the virtual folders in "/"
 
-    @Test fun virtualFolders_bothUnderTheRoot_withTheirIcons() {
+    @Test fun virtualFolders_inTheRoot_iconsAndDetails_treeInTheSameOrder() {
         ageEverything()
         Session.update { R_.markUsed(it, ids["Gmail"]!!, base.plusSeconds(60)) }
-        val ex = a.explorer!!; ex.refresh(); idle(); layoutHost()
-        assertEquals(listOf("最近更新した鍵", "最近使用した鍵"), topLabels())
-        assertEquals(listOf(1, 2), tree().topRows.map { tree().indexOfChild(it) })
-        assertTrue(io.github.zmlworks.kpexplorer.ui.FugueIcons.used(app()).sameAs(android.graphics.BitmapFactory.decodeResource(app().resources, R.drawable.fugue_clock_arrow, android.graphics.BitmapFactory.Options().apply { inScaled = false })))
-        assertFalse(io.github.zmlworks.kpexplorer.ui.FugueIcons.used(app()).sameAs(io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(app())))
-        shot("v0439/01-tree-both.png")
-    }
-
-    @Test fun virtualFolder_behavesLikeAFolder_historyUpViewMenusDrag() {
-        ageEverything()
-        val now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
-        setAll(ids["Gmail"]!!, base.minus(java.time.Duration.ofDays(400)), now.minusSeconds(60), now.minusSeconds(60))
-        setAll(ids["勤怠"]!!, base.minus(java.time.Duration.ofDays(100)), now.minusSeconds(3600), now.minusSeconds(3600))
-        Session.update { R_.markUsed(it, ids["Amazon"]!!, now.minusSeconds(30)) }
-        Session.update { R_.markUsed(it, ids["会社メール"]!!, now.minusSeconds(90)) }
+        Session.update { R_.markUsed(it, ids["Gmail"]!!, base.plusSeconds(70)) }
+        Session.update { R_.markUsed(it, memoId(), base.plusSeconds(80)) }
         val ex = a.explorer!!
-        ex.navigate(ids["G"]!!); idle(); layoutHost()
-        // open from the tree: a place in the back history, like a folder
-        tree().tapTop(1); idle(); layoutHost()
-        assertEquals(RecentSettings.Kind.USED, ex.virtual)
-        assertEquals(listOf(ids["Amazon"], ids["Gmail"], ids["会社メール"], ids["勤怠"]), ex.rows.map { it.uuid })
-        assertEquals("最近使用した鍵 - KeePass Explorer", ex.caption.title.text.toString())
-        assertEquals("no band (as a folder)", View.GONE, findTag<View>(ex.view, "flat-band")!!.visibility)
-        assertTrue("icons, as chosen for folders", ex.iconMode)
-        assertTrue(tool("上へ").isEnabled)
-        for (k in listOf("フォルダ", "鍵", "メモ")) assertFalse(k, tool(k).isEnabled)
-        shot("v0439/02-recently-used-icons.png")
+        assertEquals(2, R_.used(Session.db!!).size)
+        ex.navigate(rootId()); ex.refresh(); idle(); viewAs(false)
+        val names3 = listOf("最近更新されたファイル", "最近利用したファイル", "よく利用するファイル")
+        // (an older file: its root order does not name them) first, as the root's first children in 0.4.38 / 0.4.39
+        assertEquals(names3, ex.rows.take(3).map { it.name })
+        assertTrue(ex.rows.take(3).all { it is Order.Node.V })
+        assertEquals(names3, topLabels())
+        assertEquals(names3 + listOf("仕事", "銀行"), treeRootRows().take(5))
+        assertEquals("ごみ箱", treeRootRows().last())
+        assertEquals(listOf(R_.LIMIT, 2, 2), ex.rows.take(3).map { (it as Order.Node.V).count })
+        shot("v0440/01-root-icons.png")
         viewAs(true)
         val shown = texts(ex.view)
-        assertTrue(shown.toString(), shown.containsAll(listOf("名前", "場所", "使用日時", "仕事", "メール", L.date().format(now.minusSeconds(30)))))
-        shot("v0439/03-recently-used-details.png")
-        // the same long-press menus as a folder's keys (plus この項目のフォルダーを開く)
-        val m = labels(ex.itemMenu(ex.rows.first { it.uuid == ids["勤怠"] }))
-        assertEquals(listOf(s(R.string.view_icons), s(R.string.reset_columns), "|", s(R.string.rename), "|", s(R.string.cut), s(R.string.move_to_folder),
-            s(R.string.move_up_folder), s(R.string.open_item_folder), "|", s(R.string.delete)), m)
-        assertEquals(listOf(s(R.string.view_icons), s(R.string.reset_columns), "|"), labels(ex.backgroundMenu()).take(3))
-        // back returns to 仕事, forward again by the tree; up goes to "/", back to the folder
-        ex.goBack(); idle()
-        assertNull(ex.virtual); assertEquals(ids["G"], ex.current)
-        tree().tapTop(1); idle()
+        assertTrue(shown.toString(), shown.containsAll(names3 + listOf("機能フォルダ")))
+        shot("v0440/02-root-details.png")
+        // a tap selects it (preview: its files), the next tap opens it, like a folder
+        ex.tap(ex.rows[1]); idle(); layoutHost()
+        assertEquals(FeatureFolders.Kind.USED.id, ex.selection)
+        assertTrue(texts(ex.view).contains("鍵とメモ 2 個 (機能フォルダ)"))
+        ex.tap(ex.rows.first { it.uuid == FeatureFolders.Kind.USED.id }); idle(); layoutHost()
+        assertEquals(FeatureFolders.Kind.USED, ex.virtual)
+        assertEquals(listOf(memoId(), ids["Gmail"]), ex.rows.map { it.uuid })
         ex.goUp(); idle()
-        assertNull(ex.virtual); assertEquals(Tree.root(Session.db!!).uuid, ex.current)
-        ex.goBack(); idle()
-        assertEquals("back into it", RecentSettings.Kind.USED, ex.virtual)
-        // the other one, from here
-        tree().tapTop(0); idle(); layoutHost()
-        assertEquals(RecentSettings.Kind.CHANGED, ex.virtual)
-        assertEquals("更新日時", texts(ex.view).first { it == "更新日時" })
-        shot("v0439/04-recently-changed-details.png")
-        ex.goBack(); idle(); assertEquals(RecentSettings.Kind.USED, ex.virtual)
-        viewAs(false); tree().tapTop(0); idle(); layoutHost()
-        shot("v0439/05-recently-changed-icons.png")
-        viewAs(true); tree().tapTop(1); idle(); layoutHost()
-        // tap selects, tap again opens; coming back keeps the list (the key used moves to the top)
-        ex.select(ids["勤怠"]); idle()
-        ex.open(ex.rows.first { it.uuid == ids["勤怠"] }); idle()
-        assertTrue(a.screen is KeyScreen)
-        a.showExplorer(); idle(); layoutHost()
-        assertEquals(RecentSettings.Kind.USED, a.explorer!!.virtual)
-        assertEquals(ids["勤怠"], a.explorer!!.rows.first().uuid)
-        // the system back goes up to "/", as from a folder under it
-        @Suppress("DEPRECATION") a.onBackPressed(); idle()
-        assertNull(ex.virtual); assertEquals(Tree.root(Session.db!!).uuid, ex.current)
-        // the usual operations work on its keys: move to the recycle bin
-        tree().tapTop(1); idle()
-        Session.update { Tree.moveToBin(it, ids["Amazon"]!!, "ごみ箱") }; ex.refresh(); idle()
-        assertFalse("the bin is not listed", ex.rows.any { it.uuid == ids["Amazon"] })
+        // よく利用するファイル: 使用回数 column
+        ex.openVirtual(FeatureFolders.Kind.FREQUENT); idle(); layoutHost()
+        assertTrue(texts(ex.view).containsAll(listOf("使用回数", "2 回", "1 回")))
+        assertEquals(listOf(ids["Gmail"], memoId()), ex.rows.map { it.uuid })
+        shot("v0440/03-frequently-used-details.png")
+        ex.goUp(); idle(); viewAs(false)
     }
 
-    @Test fun virtualFolder_dragAKeyOntoAFolderOfTheTree_movesIt() {
+    @Test fun virtualFolders_reorderedInTheRoot_treeFollows_binStaysLast() {
+        val ex = a.explorer!!
+        ex.navigate(rootId()); viewAs(false)
+        // drop 最近利用したファイル after 銀行
+        ex.performDrop(FeatureFolders.Kind.USED.id, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.AFTER, gid("銀行"))); idle(); layoutHost()
+        val order = ex.rows.map { it.name }
+        assertEquals(listOf("最近更新されたファイル", "よく利用するファイル", "仕事", "銀行", "最近利用したファイル", "フォルダ01"), order.take(6))
+        assertEquals("the tree follows the list", order.filter { it in treeRootRows() && it != "ごみ箱" }.take(6), treeRootRows().take(6))
+        // stored in the file (the root's order; KeePass ignores it)
+        assertTrue(Order.storedOrder(Tree.root(Session.db!!)).containsAll(R_.IDS))
+        settle()
+        assertEquals(Order.order(Tree.root(Session.db!!), true), Order.order(Tree.root(Kdbx.open(a.store.read(), key)), true))
+        // to the end of "/": after the bin in the list, the bin still last in the tree (setting on)
+        ex.performDrop(FeatureFolders.Kind.CHANGED.id, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.END, null)); idle(); layoutHost()
+        assertEquals("最近更新されたファイル", ex.rows.last().name)
+        assertEquals(listOf("最近更新されたファイル", "ごみ箱"), treeRootRows().takeLast(2))
+        shot("v0440/04-tree-reordered.png")
+        Session.update { Tree.setBinLastInTree(it, false) }; ex.refresh(); idle(); layoutHost()
+        assertEquals("setting off: as in the list", "最近更新されたファイル", treeRootRows().last())
+        Session.update { Tree.setBinLastInTree(it, true) }; ex.refresh(); idle()
+        // nothing goes into it, it goes nowhere else
+        val before = Order.order(Tree.root(Session.db!!), true)
+        ex.performDrop(ids["Gmail"]!!, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, FeatureFolders.Kind.FREQUENT.id)); idle()
+        assertEquals(rootId(), Tree.parentOf(Tree.root(Session.db!!), ids["Gmail"]!!)!!.uuid)
+        ex.performDrop(FeatureFolders.Kind.FREQUENT.id, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, gid("銀行"), pathFolder = true)); idle()
+        assertEquals(before, Order.order(Tree.root(Session.db!!), true))
+        try { Order.moveTo(Session.db!!, FeatureFolders.Kind.FREQUENT.id, gid("銀行")); fail() } catch (_: Tree.TreeException) {}
+        try { Order.moveTo(Session.db!!, ids["Gmail"]!!, FeatureFolders.Kind.FREQUENT.id); fail() } catch (_: Tree.TreeException) {}
+        // keys around them keep their places: a key dropped before 最近利用したファイル lands there
+        ex.performDrop(ids["Gmail"]!!, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.BEFORE, FeatureFolders.Kind.USED.id)); idle()
+        val o = ex.rows.map { it.uuid }
+        assertEquals(o.indexOf(FeatureFolders.Kind.USED.id) - 1, o.indexOf(ids["Gmail"]))
+        // a new folder in "/" still goes to the end; a folder restored from the bin after the folders
+        ex.newFolder("新規"); idle()
+        assertEquals("新規", ex.rows.last().name)
+    }
+
+    @Test fun virtualFolders_menus_hiddenOnes_openFromTheMainMenu() {
         ageEverything()
         Session.update { R_.markUsed(it, ids["Gmail"]!!, base.plusSeconds(60)) }
         val ex = a.explorer!!
-        tree().tapTop(1); idle(); layoutHost()
-        val r = ex.rows.first { it.uuid == ids["Gmail"] }
-        ex.performDrop(r.uuid, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, gid("銀行"), pathFolder = true)); idle()
-        assertEquals(gid("銀行"), Tree.parentOf(Tree.root(Session.db!!), ids["Gmail"]!!)!!.uuid)
-        assertEquals("still listed (still used)", RecentSettings.Kind.USED, ex.virtual); assertTrue(ex.rows.any { it.uuid == ids["Gmail"] })
-    }
-
-    // ---------------------------------------------------------------- 最近の鍵の設定
-
-    @Test fun settings_bothFolders_hideCountOpen_andClearTheHistory() {
-        ageEverything()
-        Session.update { R_.markUsed(it, ids["Gmail"]!!, base.plusSeconds(60)) }
-        Session.update { R_.markUsed(it, ids["Steam"]!!, base.plusSeconds(120)) }
-        val ex = a.explorer!!; ex.refresh(); idle(); layoutHost()
-        assertTrue(labels(ex.mainMenu()).contains("最近の鍵の設定"))
-        val d = RecentSettings.show(a); idle()
-        val tx = texts(d.frame)
-        assertEquals("最近の鍵の設定", tx.first())
-        for (x in listOf("最近更新した鍵", "最近使用した鍵", "最近更新した鍵を見る", "最近使用した鍵を見る", "使用履歴を消去")) assertTrue("$x in $tx", tx.contains(x))
-        assertFalse("no ellipsis in the window", tx.any { it.contains("…") || it.contains("...") })
-        assertTrue(findTag<View>(d.frame, "used-clear")!!.isEnabled)
-        Dlg.last = d; shot("v0439/06-recent-settings.png", dialog = true)
-        // counts per folder
-        findTag<View>(d.frame, "used-count")!!.performClick(); idle(); radio(0).performClick(); idle()
-        assertEquals(10, RecentSettings.count(a, RecentSettings.Kind.USED)); assertEquals(30, RecentSettings.count(a, RecentSettings.Kind.CHANGED))
-        assertEquals("表示する数: 10 件", t(d, "used-count-text"))
-        // hide 最近使用した鍵 only
-        (findTag<View>(d.frame, "used-hide") as android.widget.CheckBox).performClick(); idle(); layoutHost()
-        assertFalse(RecentSettings.shown(a, RecentSettings.Kind.USED)); assertTrue(RecentSettings.shown(a, RecentSettings.Kind.CHANGED))
-        assertEquals(listOf("最近更新した鍵"), topLabels())
-        findTag<View>(d.frame, "used-open")!!.performClick(); idle(); layoutHost()
-        assertFalse(d.isShowing)
-        assertEquals(RecentSettings.Kind.USED, ex.virtual); assertEquals(listOf("最近更新した鍵", "最近使用した鍵"), topLabels())
-        ex.goUp(); idle(); layoutHost()
-        assertEquals(listOf("最近更新した鍵"), topLabels())
-        (findTag<View>(RecentSettings.show(a).frame, "used-hide") as android.widget.CheckBox).performClick(); idle()
-        Dlg.last!!.dismiss(); layoutHost()
-        // the tree's long-press menu: 開く, the settings, 使用履歴を消去
-        val menu = ex.virtualTreeMenu(RecentSettings.Kind.USED)
-        assertEquals(listOf(s(R.string.open), "|", "最近の鍵の設定", "使用履歴を消去"), labels(menu))
-        assertEquals(listOf(s(R.string.open), "|", "最近の鍵の設定"), labels(ex.virtualTreeMenu(RecentSettings.Kind.CHANGED)))
+        ex.navigate(rootId()); viewAs(false)
+        val v = ex.rows.first { it.uuid == FeatureFolders.Kind.USED.id }
+        assertEquals(listOf(s(R.string.view_details), "|", "表示する数: 30 件", "利用履歴を消去", "|", "機能フォルダの設定"), labels(ex.itemMenu(v)))
+        assertEquals(listOf(s(R.string.view_details), "|", "表示する数: 30 件", "|", "機能フォルダの設定"), labels(ex.itemMenu(ex.rows.first { it.uuid == FeatureFolders.Kind.CHANGED.id })))
+        assertEquals(listOf(s(R.string.open), "|", "表示する数: 30 件", "利用履歴を消去", "|", "機能フォルダの設定"), labels(ex.virtualTreeMenu(FeatureFolders.Kind.FREQUENT)))
         val row = tree().topRows[1]; val l = IntArray(2); row.getLocationInWindow(l)
         assertTrue(tree().longPressTop(1)); idle()
-        shot("v0439/07-used-tree-menu.png", menuAt = (l[0] + W.dp(120)) to (l[1] + row.height / 2)); Menus.dismiss()
-        // clearing asks first
-        menu.last().action(); idle()
-        val c = latestDialog()
-        assertTrue(texts(c.frame).joinToString(), texts(c.frame).joinToString().contains("「最近使用した鍵」の履歴を消去しますか?"))
-        Dlg.last = c; shot("v0439/08-clear-history-confirm.png", dialog = true)
-        clickButton(c, "キャンセル"); assertTrue(R_.anyUsed(Session.db!!))
-        menu.last().action(); idle(); clickButton(latestDialog(), "消去")
+        shot("v0440/05-tree-menu.png", menuAt = (l[0] + W.dp(120)) to (l[1] + row.height / 2)); Menus.dismiss()
+        // 表示する数
+        ex.itemMenu(v).first { it.label == "表示する数: 30 件" }.action(); idle(); radio(0).performClick(); idle()
+        assertEquals(10, FeatureFolders.count(a, FeatureFolders.Kind.USED))
+        // 利用履歴を消去 asks first
+        ex.itemMenu(v).first { it.label == "利用履歴を消去" }.action(); idle()
+        assertTrue(texts(latestDialog().frame).joinToString().contains("「最近利用したファイル」と「よく利用するファイル」の履歴を消去しますか?"))
+        clickButton(latestDialog(), "消去")
         assertFalse(R_.anyUsed(Session.db!!))
-        tree().tapTop(1); idle(); layoutHost()
-        assertTrue(ex.rows.isEmpty())
-        assertTrue(texts(ex.view).contains("このフォルダーは空です。"))
-        assertFalse(ex.virtualTreeMenu(RecentSettings.Kind.USED).last().enabled)
+        assertFalse(ex.virtualTreeMenu(FeatureFolders.Kind.USED).first { it.label == "利用履歴を消去" }.enabled)
+        // the main menu: ごみ箱, the three, 機能フォルダの設定 between separators
+        val m = labels(ex.mainMenu())
+        val i = m.indexOf("ごみ箱")
+        assertEquals(listOf("|", "ごみ箱", "最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "機能フォルダの設定", "|"), m.subList(i - 1, i + 6))
+        showMainMenu(); shot("v0440/06-menu.png", menuAt = (W_ - (Menus.current?.width ?: W.dp(300)) - W.dp(4)) to W.dp(60)); Menus.dismiss()
+        // hidden: not in "/" nor the tree; the menu opens it, and the tree shows it while open
+        App.prefs(app()).edit().putBoolean(FeatureFolders.Kind.FREQUENT.prefShow, false).commit(); ex.refresh(); idle()
+        assertFalse(ex.rows.any { it.uuid == FeatureFolders.Kind.FREQUENT.id }); assertFalse(topLabels().contains("よく利用するファイル"))
+        ex.mainMenu().first { it.label == "よく利用するファイル" }.action(); idle()
+        assertEquals(FeatureFolders.Kind.FREQUENT, ex.virtual); assertTrue(topLabels().contains("よく利用するファイル"))
+        ex.goUp(); idle(); assertFalse(topLabels().contains("よく利用するファイル"))
+        // ごみ箱 opens the bin (also hidden)
+        Session.update { Tree.setBinHidden(it, true) }; ex.refresh(); idle()
+        ex.mainMenu().first { it.label == "ごみ箱" }.action(); idle()
+        assertEquals(bin(), ex.current)
+    }
+
+    // ---------------------------------------------------------------- 機能フォルダの設定
+
+    @Test fun settings_theUsersLayout_defaults_andEachSetting() {
+        Session.update { Tree.moveToBin(it, ids["Steam"]!!, "ごみ箱") }
+        val ex = a.explorer!!
+        item(ex.mainMenu(), "機能フォルダの設定").action(); idle()
+        val d = Dlg.last!!
+        val tx = texts(d.frame)
+        assertEquals("機能フォルダの設定", tx.first())
+        val want = listOf("ごみ箱の名前: ごみ箱", "変更", "2 個の項目", "ごみ箱を空にする", "自動削除: しない", "変更", "ごみ箱を表示する", "ごみ箱をフォルダツリーで一番下にする",
+            "最近更新されたファイルを表示する", "最近利用したファイルを表示する", "よく利用するファイルを表示する", "ファイルを開くたびにデータベースを更新する", "閉じる")
+        assertEquals(want, tx.drop(1).filter { it.isNotEmpty() })
+        fun cb(tag: String) = findTag<View>(d.frame, tag) as android.widget.CheckBox
+        assertTrue(cb("bin-show").isChecked); assertTrue(cb("bin-tree-last").isChecked)
+        for (k in FeatureFolders.Kind.entries) assertTrue(cb("${k.name.lowercase()}-show").isChecked)
+        assertFalse(cb("save-on-open").isChecked)
+        assertEquals("grey", W.SHADOW, cb("save-on-open").currentTextColor)
+        assertEquals(W.TEXT, cb("bin-show").currentTextColor)
+        assertTrue(tx.none { it.contains("…") || it.contains("...") })
+        shot("v0440/07-feature-folder-settings.png", dialog = true)
+        // each one
+        cb("used-show").performClick(); idle(); layoutHost()
+        assertFalse(FeatureFolders.shown(a, FeatureFolders.Kind.USED)); assertFalse(topLabels().contains("最近利用したファイル"))
+        cb("used-show").performClick(); idle()
+        cb("save-on-open").performClick(); idle()
+        assertTrue(FeatureFolders.saveOnOpen(a))
+        cb("bin-show").performClick(); idle()
+        assertTrue(Tree.binHidden(Session.db!!)); assertFalse(treeIds().contains(bin()))
+        cb("bin-show").performClick(); idle()
+        cb("bin-tree-last").performClick(); idle()
+        assertFalse(Tree.binLastInTree(Session.db!!))
+        findTag<View>(d.frame, "bin-empty")!!.performClick(); idle()
+        latestDialog().buttonViews.first().performClick(); idle()
+        assertEquals("0 個の項目", t(d, "bin-empty-text"))
+        d.dismiss()
         L.setLang(app(), L.Lang.EN)
-        assertEquals("Recently used keys", RecentSettings.Kind.USED.label); assertEquals("Recent keys settings", L.t(RecentSettings.TITLE_JA, RecentSettings.TITLE_EN))
+        val e = FeatureFolders.show(a); idle()
+        assertTrue(texts(e.frame).containsAll(listOf("Special folder settings", "Show recently changed files", "Show frequently used files", "Update the database every time a file is opened")))
+        e.dismiss()
+    }
+
+    // ---------------------------------------------------------------- export strength
+
+    @Test fun exportStrength_moreLevels_typedPowerOfTen_warnsBelowStrong() {
+        a.store.setInfo(FileInfo(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK, 9))
+        val d = SecuritySettings.show(a); idle()
+        assertTrue(t(d, "sec-strength").contains("やや弱い (推測に約 10^9 回)"))
+        val combo = findTag<View>(d.frame, "sec-export-level")!!
+        combo.performClick(); idle()
+        shotDialogWithMenu("v0440/08-security-dropdown.png", combo)
+        pickMenuRow("やや弱い (10^8以上)")
+        val w = latestDialog()
+        assertTrue(texts(w.frame).joinToString(), texts(w.frame).joinToString().contains("「強い」(10^12) より弱い設定です"))
+        assertTrue(texts(w.frame).joinToString().contains("GPU 1 台で"))
+        clickButton(w, "キャンセル"); assertEquals(0, Security.exportMinLog10(a))
+        findTag<View>(d.frame, "sec-export-level")!!.performClick(); idle(); pickMenuRow("やや弱い (10^8以上)"); clickButton(latestDialog(), "設定する")
+        assertEquals(8, Security.exportMinLog10(a))
+        assertEquals("現在のデータベース: 起動画面から書き出せます", t(d, "sec-export-current"))
+        assertTrue(t(d, "sec-export-note").contains("10^8 回の推測は、平均でGPU 1 台で約 1 時間"))
+        Dlg.last = d; shot("v0440/09-security-settings.png", dialog = true)
+        // typed: 10^11
+        findTag<View>(d.frame, "sec-export-level")!!.performClick(); idle(); pickMenuRow("数値で指定 (10^n)")
+        val p = latestDialog()
+        find(p.frame, android.widget.EditText::class.java)!!.setText("99"); p.buttonViews.first().performClick(); idle()
+        assertTrue("out of range: stays open", p.isShowing)
+        find(p.frame, android.widget.EditText::class.java)!!.setText("11"); p.buttonViews.first().performClick(); idle()
+        clickButton(latestDialog(), "設定する")
+        assertEquals(11, Security.exportMinLog10(a))
+        assertEquals("10^11以上 (もう少し)", texts(findTag<View>(d.frame, "sec-export-level")!!).first { it.contains("10^") })
+        assertEquals("現在のデータベース: 起動画面からは書き出せません", t(d, "sec-export-current"))
+        // strong ones apply without asking; すべて asks
+        findTag<View>(d.frame, "sec-export-level")!!.performClick(); idle(); pickMenuRow("強い (10^12以上)")
+        assertEquals(12, Security.exportMinLog10(a))
+        findTag<View>(d.frame, "sec-export-level")!!.performClick(); idle(); pickMenuRow("すべて (強度を問わない)")
+        assertTrue(texts(latestDialog().frame).joinToString().contains("「すべて」にすると"))
+        clickButton(latestDialog(), "設定する")
+        assertEquals(Security.EXPORT_ANY, Security.exportMinLog10(a))
+        d.dismiss()
+        // what each level lets out
+        val unknown = FileInfo(FileInfo.Protection.PASSWORD, FileInfo.Strength.UNKNOWN)
+        assertTrue(unknown.exportableAt(Security.EXPORT_ANY)); assertFalse(unknown.exportableAt(5))
+        assertFalse(FileInfo(FileInfo.Protection.NONE, FileInfo.Strength.UNKNOWN).exportableAt(Security.EXPORT_ANY))
+        assertFalse(FileInfo(FileInfo.Protection.KEYSTORE, FileInfo.Strength.UNKNOWN).exportableAt(Security.EXPORT_ANY))
+        assertTrue(FileInfo(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK, 6).exportableAt(5))
+        assertFalse(FileInfo(FileInfo.Protection.PASSWORD, FileInfo.Strength.WEAK, 4).exportableAt(5))
+        assertTrue(Security.launchExportEnabled(a))
+        // the green list follows
+        Security.setExportMinLog10(a, 10)
+        assertFalse(a.store.info().exportableAt(Security.exportMinLog10(a)))
     }
 }

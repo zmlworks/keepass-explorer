@@ -140,7 +140,7 @@ class UiScreenshotsTest {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
-        assertEquals(listOf("メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Recycle Bin", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
+        assertEquals(listOf("最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Recycle Bin", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
             ex.rows.map { ex.label(it) })
         assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
         save(shot(a.host), "01-main-no-selection.png")
@@ -358,7 +358,7 @@ class UiScreenshotsTest {
         ex.performDrop(nm, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, nf)); idle()
         assertEquals(nf, Tree.findEntry(Session.db!!, nm)!!.first.uuid)
         ex.performDrop(nf2, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.BEFORE, ids["メール"])); idle()
-        assertEquals("新しいフォルダ2", ex.rows.first().name)
+        assertEquals("新しいフォルダ2", ex.rows.first { it !is io.github.zmlworks.kpexplorer.db.Order.Node.V }.name)
         ex.navigate(ids["メール"]!!); idle()
         val root = Tree.root(Session.db!!).uuid
         ex.performDrop(ids["Yahoo!メール"]!!, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.INTO, root, pathFolder = true)); idle()

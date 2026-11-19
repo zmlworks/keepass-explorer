@@ -334,7 +334,7 @@ class Ux0433Test {
         for (d in listOf(Security.saveDialog(a), Security.changeMasterPassword(a), Security.askExportPassword(a, "x.kdbx") { Session.db })) {
             idle(); assertTrue(texts(d.frame).toString(), texts(d.frame).none { hasEllipsis(it) }); d.dismiss()
         }
-        BinSettings.show(a); idle()
+        FeatureFolders.show(a); idle()
         assertTrue(texts(latestDialog().frame).none { hasEllipsis(it) }); latestDialog().dismiss()
     }
 

@@ -69,8 +69,11 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * (場所 instead of ユーザー名 and the folder's own time in the date column, as search results), the usual long-press
      * menu of a key plus この項目のフォルダーを開く, dragging onto a folder of the path tree. Not possible there:
      * creating, pasting, reordering (the order is the time), renaming or moving the folder itself.
+     * 0.4.40: three of them (最近更新されたファイル, 最近利用したファイル, よく利用するファイル: [FeatureFolders]), listed in
+     * "/" among its items (icons and details) where the root's order has them; they are reordered there like any
+     * item, and the folder tree follows that order (the recycle bin may still be kept last there).
      */
-    var virtual: RecentSettings.Kind? = null
+    var virtual: FeatureFolders.Kind? = null
         private set
     /** A virtual folder is shown. */
     val recent: Boolean get() = virtual != null
@@ -255,7 +258,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         // reorder or a drop scrolled back to the top. Now the same folder / search / view keeps its list view and
         // only reloads the rows (the adapters read [rows]); the rebuilt path tree gets its old scroll offset back.
         val key = listOf<Any?>(g.uuid, q, flat, virtual, iconMode, L.dateOrder, W.iconScale(), L.t("ja", "en")) +
-            RecentSettings.Kind.entries.flatMap { listOf(RecentSettings.shown(ctx, it), RecentSettings.count(ctx, it)) }
+            FeatureFolders.Kind.entries.flatMap { listOf(FeatureFolders.shown(ctx, it), FeatureFolders.count(ctx, it)) }
         val same = key == shownKey
         val keepTreeY = if (same) (pathBox.getChildAt(0) as? ScrollView)?.scrollY else null
         // 0.4.31: the path tree's offset before this refresh (null = no tree shown, e.g. search results)
@@ -276,21 +279,28 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         } else {
             val hidden = Tree.hiddenGroups(d, g.uuid)
             val bin = Tree.recycleBinId(d)
-            val lists = RecentSettings.Kind.entries.associateWith { it.items(ctx, d) }
+            val lists = FeatureFolders.Kind.entries.associateWith { it.items(ctx, d) }
             val vk = virtual
             recentInfo = if (vk != null) lists.getValue(vk).associateBy { it.entry.uuid } else emptyMap()
+            val isRoot = g.uuid == Tree.root(d).uuid
+            // 0.4.40: in "/", the virtual folders shown (one hidden in the settings is not listed, as the hidden bin)
+            val shownKinds = FeatureFolders.Kind.entries.filter { FeatureFolders.shown(ctx, it) || vk == it }
             rows = if (vk != null) lists.getValue(vk).map { Order.Node.E(it.entry) }
                 else if (flat) Order.subtreeEntries(g, if (bin != null && g.uuid != bin) setOf(bin) else emptySet())
+                else if (isRoot) Order.rootChildren(g, shownKinds.filter { FeatureFolders.shown(ctx, it) }.associate { k ->
+                    k.id to Order.Node.V(k.id, k.label, lists.getValue(k).size) }).filter { it.uuid !in hidden }
                 else Order.children(g).filter { it.uuid !in hidden }
             caption.title.text = if (vk != null) "${vk.label} - KeePass Explorer"
                 else if (flat) L.t("${groupLabel(g)} 以下すべて - KeePass Explorer", "All under ${groupLabel(g)} - KeePass Explorer")
                 else "${groupLabel(g)} - KeePass Explorer"
-            // 0.4.38: the virtual folders directly under "/" (hidden from 最近の鍵の設定: shown only while open, as the bin)
-            val tops = RecentSettings.Kind.entries.filter { RecentSettings.shown(ctx, it) || vk == it }.map { k ->
-                FolderTree.Top(k.label, virtualIcon(k), lists.getValue(k).size, vk == k,
+            // 0.4.38: the virtual folders directly under "/" (a hidden one shows only while open, as the bin);
+            // 0.4.40: in the root's order, as in the list
+            val tops = shownKinds.map { k ->
+                FolderTree.Top(k.id, k.label, virtualIcon(k), lists.getValue(k).size, vk == k,
                     onTap = { openVirtual(k) }, onLongPress = { x, y -> virtualTreeMenu(k, x, y) }) }
             val shownFolder = if (recent) null else g.uuid
             val tree = FolderTree(ctx, Tree.root(d), shownFolder, Tree.recycleBinId(d), hidden = hidden, tops = tops,
+                rootOrder = Order.order(Tree.root(d), true),
                 onToggle = { gid, exp -> if (!Session.readOnlyTemp) Session.update { Tree.setExpanded(it, gid, exp) } else tempExpanded[gid] = exp },
                 onSelect = { }, showCounts = true, current = shownFolder, onJump = { navigate(it) }, rowDp = 32,
                 onLongPress = { gid, x, y -> pathLongPress(gid, x, y) }, cushion = { cushionTap() }, striped = true, binLast = Tree.binLastInTree(d), toggleSelected = !flat,
@@ -456,7 +466,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (gid == Tree.recycleBinId(d)) {
             out.add(Menus.sep())
             out.add(Menus.Item(ctx.getString(R.string.empty_recycle_bin), w && Tree.recycleBinChildCount(d) > 0) { askEmptyBin() })
-            out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings"), w) { BinSettings.show(a) })
+            out.add(Menus.Item(L.t(FeatureFolders.TITLE_JA, FeatureFolders.TITLE_EN)) { FeatureFolders.show(a) })
             return out
         }
         if (inBin) {   // a folder inside the bin: as in the list
@@ -489,6 +499,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val ic = (r as? Order.Node.E)?.takeIf { it.kind == Order.Kind.KEY }?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }
         val sz = if (large) 32 else 16
         val b = when {
+            r is Order.Node.V -> virtualBmp(r.uuid, sz)
             isRecycleBinFolder(r) -> if (large) Px.bin32 else Px.bin16
             ic != null -> io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(ctx, ic, sz)
             r.kind == Order.Kind.FOLDER -> if (large) Px.folder32 else Px.folder16
@@ -631,11 +642,25 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             is Order.Node.E -> if (r.kind == Order.Kind.MEMO) {
                 preview.addView(Parts.RuledText(ctx, editable = false).apply { setText(Tree.notes(r.e)); minLines = 4 }, W.lp(W.MATCH, W.WRAP))
             } else keyPreview(r.e)
+            // 0.4.40: a virtual folder's preview lists its files, as a folder's does
+            is Order.Node.V -> {
+                val k = FeatureFolders.Kind.of(r.uuid)
+                val items = k?.items(ctx, db()).orEmpty()
+                preview.addView(W.text(ctx, L.t("鍵とメモ ${items.size} 個 (機能フォルダ)", "${items.size} keys and memos (special folder)"), 14f))
+                items.take(30).forEach { it ->
+                    val n = Order.Node.E(it.entry)
+                    val line = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; tag = "preview-child" }
+                    line.addView(W.icon(ctx, bmpFor(n, false), maxOf(1, W.iconScale() - 1)), W.lp(W.WRAP, W.WRAP, l = 8, r = 6))
+                    line.addView(W.text(ctx, label(n), 14f).apply { isSingleLine = true; ellipsize = android.text.TextUtils.TruncateAt.END }, W.lp(0, W.WRAP, 1f))
+                    preview.addView(line, W.lp(W.MATCH, W.WRAP, t = 2))
+                }
+            }
         }
         highlightPreview()
     }
 
     private fun unselected(r: Order.Node): Bitmap = when {
+        r is Order.Node.V -> virtualBmp(r.uuid, 32)
         isBin(r) -> Px.bin32; r.kind == Order.Kind.FOLDER -> Px.folder32; r.kind == Order.Kind.MEMO -> Ico.notepad32
         else -> io.github.zmlworks.kpexplorer.ui.FugueIcons.bitmap(ctx, (r as? Order.Node.E)?.let { io.github.zmlworks.kpexplorer.db.EntryIcon.of(it.e) }, 32)
     }
@@ -1060,7 +1085,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val inRecent = recent && !inSearch
         h(L.t("名前", "Name"), colName, 0f, true)
         h(if (inSearch || inRecent) L.t("場所", "Location") else L.t("ユーザー名", "User name"), colUser, 0f, true)
-        h(if (inRecent && virtual == RecentSettings.Kind.USED) L.t("使用日時", "Used") else L.t("更新日時", "Modified"), 0, 1f, false)
+        h(when { !inRecent -> L.t("更新日時", "Modified"); virtual == FeatureFolders.Kind.USED -> L.t("使用日時", "Used")
+            virtual == FeatureFolders.Kind.FREQUENT -> L.t("使用回数", "Uses"); else -> L.t("更新日時", "Modified") }, 0, 1f, false)
         header.contentDescription = L.t("列の見出し (境目をドラッグで幅を変更)", "Column headers (drag a border to resize)")
         attachHeaderResize(header)
         col.addView(header, W.lp())
@@ -1094,12 +1120,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
                         else if (inSearch) Tree.parentOf(Tree.root(db()), r.uuid)?.name.orEmpty()
                         else if (r.kind == Order.Kind.MEMO) L.t("メモ", "Memo") else Tree.userName(r.e)
                     is Order.Node.F -> L.t("フォルダー", "Folder")
+                    is Order.Node.V -> L.t("機能フォルダ", "Special folder")
                 }
                 row.addView(W.text(ctx, second, 14f, color = if (inSearch || info != null) W.SHADOW else W.TEXT).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, W.dp(2), 0)
                 }, W.lp(colUser, W.WRAP))
-                val t = when (r) { is Order.Node.E -> r.e.times?.lastModificationTime; is Order.Node.F -> r.g.times?.lastModificationTime }
-                val stamp = (info?.time ?: t)?.let { dateFmt.format(it) } ?: ""
+                val t = when (r) { is Order.Node.E -> r.e.times?.lastModificationTime; is Order.Node.F -> r.g.times?.lastModificationTime; is Order.Node.V -> null }
+                val stamp = if (info != null && virtual == FeatureFolders.Kind.FREQUENT) L.t("${info.count} 回", "${info.count}")
+                    else (info?.time ?: t)?.let { dateFmt.format(it) } ?: ""
                 row.addView(W.text(ctx, stamp, 13f).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, 0, 0) },
                     W.lp(0, W.WRAP, 1f))
@@ -1177,7 +1205,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
     }
 
     fun hit(dragged: UUID, rx: Float, ry: Float): Drop? {
-        val binDrag = dragged == Tree.recycleBinId(db())
+        // the recycle bin (0.4.14) and the virtual folders (0.4.40) only move inside "/": no drop into a folder
+        val binDrag = dragged == Tree.recycleBinId(db()) || Order.isVirtual(dragged)
         // 0.4.21: the path tree sits in a scroll box (at most 30 % of the screen). Rows scrolled out of that box
         // still have screen positions — below it they lie over the item list — so only the visible part counts.
         // (Before, a hidden row (usually the recycle bin, the last row) caught drops in the middle of the list.)
@@ -1188,7 +1217,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             if (binDrag || !inBox || !line.isShown) continue
             val l = IntArray(2); line.getLocationOnScreen(l)
             if (rx >= l[0] && rx < l[0] + line.width && ry >= l[1] && ry < l[1] + line.height) {
-                val id = line.tag as UUID
+                val id = line.tag as? UUID ?: return null
                 return if (id == current) null else Drop(Drop.Mode.INTO, id, pathFolder = true)
             }
         }
@@ -1218,7 +1247,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         // 0.4.23: the flat list (items of many folders) has no order of its own: drop only on the path tree
         if ((flat || recent) && search == null) return null
         val r = rowAt(v, pos) ?: return if (search == null) Drop(Drop.Mode.END, null) else null
-        if (search != null) return if (!binDrag && r.kind == Order.Kind.FOLDER && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
+        if (search != null) return if (!binDrag && r is Order.Node.F && r.uuid != dragged) Drop(Drop.Mode.INTO, r.uuid) else null
         if (r.uuid == dragged) return null
         val cell = v.getChildAt(pos - v.firstVisiblePosition) ?: return null
         val vertical = v is ListView
@@ -1226,18 +1255,20 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         // 0.4.20: "into the folder" only in the middle 40 % (was 56 %): 30 % bands on both sides reorder
         val fy = ((y - cell.top) / cell.height.coerceAtLeast(1)).coerceIn(0f, 1f)
         val into = if (vertical) f in INTO_FROM..INTO_TO else f in INTO_FROM..INTO_TO && fy in 0.08f..0.92f
-        return if (r.kind == Order.Kind.FOLDER && !binDrag && into) Drop(Drop.Mode.INTO, r.uuid)
+        return if (r is Order.Node.F && !binDrag && into) Drop(Drop.Mode.INTO, r.uuid)
         else Drop(if (f < 0.5f) Drop.Mode.BEFORE else Drop.Mode.AFTER, r.uuid)
     }
 
     fun performDrop(id: UUID, dr: Drop) {
-        if (id == Tree.recycleBinId(db()) && (dr.mode == Drop.Mode.INTO || current != Tree.root(db()).uuid)) return
+        val isRoot = current == Tree.root(db()).uuid
+        if ((id == Tree.recycleBinId(db()) || Order.isVirtual(id)) && (dr.mode == Drop.Mode.INTO || !isRoot || recent)) return
+        if (Order.isVirtual(dr.target) && dr.mode == Drop.Mode.INTO) return
         try {
             when (dr.mode) {
                 Drop.Mode.INTO -> Session.update { Order.moveTo(it, id, dr.target!!) }
                 Drop.Mode.END -> Session.update { Order.moveTo(it, id, current) }
                 Drop.Mode.BEFORE, Drop.Mode.AFTER -> {
-                    val ids = Order.children(currentGroup()).map { it.uuid }.filter { it != id }
+                    val ids = Order.order(currentGroup(), isRoot).filter { it != id }
                     val i = ids.indexOf(dr.target) + if (dr.mode == Drop.Mode.AFTER) 1 else 0
                     Session.update { Order.moveTo(it, id, current, i) }
                 }
@@ -1251,14 +1282,14 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     // ------------------------------------------------------------------ navigation
 
-    /** Where the list is: the folder, or (0.4.39) the virtual folder's [RecentSettings.Kind.id]. */
+    /** Where the list is: the folder, or (0.4.39) the virtual folder's [FeatureFolders.Kind.id]. */
     fun location(): UUID = virtual?.id ?: current
 
     private fun pushHistory() { history.add(location()); if (history.size > 50) history.removeAt(0) }
 
     /** Opens folder [id] (or, 0.4.39, the virtual folder of that id). */
     fun navigate(id: UUID, push: Boolean = true) {
-        RecentSettings.Kind.of(id)?.let { openVirtual(it, push); return }
+        FeatureFolders.Kind.of(id)?.let { openVirtual(it, push); return }
         if (search == null && id == current && !flat && !recent) return
         if (push && id != location()) pushHistory()
         search = null; flat = false; virtual = null
@@ -1279,7 +1310,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * Opens virtual folder [k] like a folder under "/" (0.4.39: a place in the back history; up goes to "/"; up to
      * 0.4.38 back / up / × returned to the folder shown before).
      */
-    fun openVirtual(k: RecentSettings.Kind, push: Boolean = true) {
+    fun openVirtual(k: FeatureFolders.Kind, push: Boolean = true) {
         if (virtual == k && search == null) return
         if (search != null) { liveHandler.removeCallbacks(liveRun); search = null }
         if (push && virtual != k) pushHistory()
@@ -1287,18 +1318,35 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         refresh()
     }
 
-    private fun virtualIcon(k: RecentSettings.Kind) =
-        if (k == RecentSettings.Kind.CHANGED) io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(ctx) else io.github.zmlworks.kpexplorer.ui.FugueIcons.used(ctx)
+    private fun virtualIcon(k: FeatureFolders.Kind) = when (k) {
+        FeatureFolders.Kind.CHANGED -> io.github.zmlworks.kpexplorer.ui.FugueIcons.recent(ctx)
+        FeatureFolders.Kind.USED -> io.github.zmlworks.kpexplorer.ui.FugueIcons.used(ctx)
+        FeatureFolders.Kind.FREQUENT -> io.github.zmlworks.kpexplorer.ui.FugueIcons.frequent(ctx)
+    }
 
-    /** Long press on a virtual folder in the path tree: 開く, then its settings (and 使用履歴を消去). */
-    fun virtualTreeMenu(k: RecentSettings.Kind): List<Menus.Item> = listOf(
-        Menus.Item(ctx.getString(R.string.open)) { openVirtual(k) },
-        Menus.sep(),
-        Menus.Item(L.t(RecentSettings.TITLE_JA, RecentSettings.TITLE_EN)) { RecentSettings.show(a) }) +
-        if (k == RecentSettings.Kind.USED) listOf(Menus.Item(L.t("使用履歴を消去", "Clear usage history"),
-            !Session.readOnlyTemp && io.github.zmlworks.kpexplorer.db.Recent.anyUsed(db())) { RecentSettings.askClearUsed(a) }) else emptyList()
+    /** The icon of virtual folder [id] at [size] px (its 16 px art, doubled for the icon view). */
+    private fun virtualBmp(id: UUID, size: Int): Bitmap =
+        FeatureFolders.Kind.of(id)?.let { io.github.zmlworks.kpexplorer.ui.FugueIcons.scaled(virtualIcon(it), size) } ?: Px.folder16
 
-    private fun virtualTreeMenu(k: RecentSettings.Kind, x: Int, y: Int): Boolean {
+    /**
+     * Long press on a virtual folder — in the path tree 開く first, in the list the view items first (a folder's menu
+     * there has no 開く either): 表示する数: n 件, for the two from the use record 利用履歴を消去, then 機能フォルダの設定.
+     */
+    fun virtualMenu(k: FeatureFolders.Kind, inTree: Boolean): List<Menus.Item> {
+        val out = ArrayList<Menus.Item>()
+        if (inTree) { out.add(Menus.Item(ctx.getString(R.string.open)) { openVirtual(k) }); out.add(Menus.sep()) }
+        out.add(Menus.Item(L.t("表示する数: ${FeatureFolders.count(ctx, k)} 件", "Files listed: ${FeatureFolders.count(ctx, k)}")) { FeatureFolders.pickCount(a, k) })
+        if (k.usage) out.add(Menus.Item(L.t("利用履歴を消去", "Clear usage history"),
+            !Session.readOnlyTemp && io.github.zmlworks.kpexplorer.db.Recent.anyUsed(db())) { FeatureFolders.askClearUsed(a) })
+        out.add(Menus.sep())
+        out.add(Menus.Item(L.t(FeatureFolders.TITLE_JA, FeatureFolders.TITLE_EN)) { FeatureFolders.show(a) })
+        return out
+    }
+
+    /** The path tree's menu of virtual folder [k] (tests). */
+    fun virtualTreeMenu(k: FeatureFolders.Kind): List<Menus.Item> = virtualMenu(k, inTree = true)
+
+    private fun virtualTreeMenu(k: FeatureFolders.Kind, x: Int, y: Int): Boolean {
         Menus.at(pathBox, x, y, virtualTreeMenu(k))
         return true
     }
@@ -1319,7 +1367,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         if (search != null) { search = null; refresh(); return }
         if (flat) { exitFlat(); return }
         val prev = history.removeLastOrNull() ?: return
-        if (RecentSettings.Kind.of(prev) != null || Tree.findGroup(db(), prev) != null) navigate(prev, push = false) else goBack()
+        if (FeatureFolders.Kind.of(prev) != null || Tree.findGroup(db(), prev) != null) navigate(prev, push = false) else goBack()
     }
 
     override fun onBack(): Boolean {
@@ -1333,7 +1381,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     fun open(r: Order.Node) {
         when {
-            r is Order.Node.F -> navigate(r.uuid)
+            r is Order.Node.F || r is Order.Node.V -> navigate(r.uuid)
             r.kind == Order.Kind.MEMO -> a.show(MemoScreen(a, r.uuid))
             else -> a.show(KeyScreen(a, r.uuid, Tree.parentOf(Tree.root(db()), r.uuid)?.uuid ?: current))
         }
@@ -1414,7 +1462,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /**
      * 0.4.38: the user's menu, exactly — ロック | Languageと日付形式, セキュリティの設定, マスターパスワードの設定,
-     * 外部データベースからインポートする | ごみ箱の設定, 最近の鍵の設定 | 乱数生成器, データベースのプロパティ, About.
+     * 外部データベースからインポートする | ごみ箱, 最近更新されたファイル, 最近利用したファイル, よく利用するファイル,
+     * 機能フォルダの設定 (0.4.40; before, ごみ箱の設定 and 最近の鍵の設定) | 乱数生成器, データベースのプロパティ, About.
      * What used to be here lives in those windows (screen protection, auto-lock, internal backups → セキュリティの設定;
      * ごみ箱を開く → ごみ箱の設定; 外部ファイルを閲覧 → the import window), or in the toolbar's 保存 (save in the app,
      * export). While a read-only file is shown, its 閲覧を終了 comes first.
@@ -1434,8 +1483,10 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(L.t("マスターパスワードの設定", "Master password"), !ro) { Security.changeMasterPassword(a) })
         out.add(Menus.Item(L.t("外部データベースからインポートする", "Import from an external database"), !ro) { TempImport.showImportMenu(a) })
         out.add(Menus.sep())
-        out.add(Menus.Item(L.t("ごみ箱の設定", "Recycle Bin settings")) { BinSettings.show(a) })
-        out.add(Menus.Item(L.t(RecentSettings.TITLE_JA, RecentSettings.TITLE_EN)) { RecentSettings.show(a) })
+        // 0.4.40: the 機能フォルダ, each opened (also a hidden one), and their settings
+        out.add(Menus.Item(L.t("ごみ箱", "Recycle Bin"), Session.db?.let { FeatureFolders.binId(it) } != null) { FeatureFolders.openBin(a) })
+        for (k in FeatureFolders.Kind.entries) out.add(Menus.Item(k.label) { FeatureFolders.open(a, k) })
+        out.add(Menus.Item(L.t(FeatureFolders.TITLE_JA, FeatureFolders.TITLE_EN)) { FeatureFolders.show(a) })
         out.add(Menus.sep())
         out.add(Menus.Item(L.t("乱数生成器", "Random generator")) { PassGen.show(a) })
         out.add(Menus.Item(ctx.getString(R.string.menu_db_info)) { Help.dbInfo(a) })
@@ -1494,6 +1545,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         val inBin = Tree.isInRecycleBin(db(), r.uuid) && !binFolder
         val ro = Session.readOnlyTemp
         if (r is Order.Node.E && !inBin) return fileMenu(r)
+        if (r is Order.Node.V) return viewHead() + FeatureFolders.Kind.of(r.uuid)?.let { virtualMenu(it, inTree = false) }.orEmpty()
         val out = ArrayList<Menus.Item>(viewHead())
         if (inBin || binFolder) {
             // recycle bin and items inside it: as before (open / restore / delete permanently / empty)
@@ -1616,6 +1668,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
             when (r) {
                 is Order.Node.F -> Session.update { Tree.renameGroup(it, r.uuid, n) }
                 is Order.Node.E -> Session.update { Order.renameEntry(it, r.uuid, n) }
+                is Order.Node.V -> {}   // (a virtual folder has no rename)
             }
             refresh(); true
         }

@@ -48,6 +48,8 @@ class Ux0413Test {
     @Before fun setUp() {
         Session.lock(); Session.store = null; Session.debounceMs = 50
         Vault(app()).clear(); App.prefs(app()).edit().clear().commit()
+        // the cell positions below are those of the keys alone (0.4.40: the virtual folders hidden here)
+        App.prefs(app()).edit().apply { FeatureFolders.Kind.entries.forEach { putBoolean(it.prefShow, false) } }.commit()
         Vault.forceAvailableForTest = true
         App.store(app()).let { s -> s.delete(); s.backups().forEach { it.delete() } }
         File(app().filesDir, "data-version").writeText(App.DATA_VERSION.toString())

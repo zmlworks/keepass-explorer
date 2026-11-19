@@ -81,6 +81,14 @@ object FugueIcons {
     /** 0.4.39: the 最近使用した鍵 folder (Fugue `clock--arrow`, untouched 16 px; not an entry icon). */
     fun used(ctx: Context): Bitmap = folderIcon(ctx, "#used", R.drawable.fugue_clock_arrow)
 
+    /** 0.4.40: the よく利用するファイル folder (Fugue `chart-up-color`, untouched 16 px; not an entry icon). */
+    fun frequent(ctx: Context): Bitmap = folderIcon(ctx, "#frequent", R.drawable.fugue_chart_up_color)
+
+    /** A virtual folder's 16 px art at [size] px (whole multiples, pixels kept sharp: the icon view's 32 px). */
+    fun scaled(b: Bitmap, size: Int): Bitmap = if (b.width == size) b else cache.getOrPut("#scaled/${System.identityHashCode(b)}/$size") {
+        Bitmap.createScaledBitmap(b, size, size, false)
+    }
+
     private fun folderIcon(ctx: Context, key: String, res: Int): Bitmap = src.getOrPut(key) {
         val o = android.graphics.BitmapFactory.Options().apply { inScaled = false }
         android.graphics.BitmapFactory.decodeResource(ctx.resources, res, o)

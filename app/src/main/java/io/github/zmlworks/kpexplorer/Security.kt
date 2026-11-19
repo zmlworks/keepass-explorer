@@ -352,13 +352,48 @@ object Security {
     const val PREF_EXPORT_MIN = "export_min_log10"
     /** 0.4.37's on / off setting (read once for the migration, then removed). */
     const val PREF_LAUNCH_EXPORT_OLD = "launch_export"
-    val EXPORT_LEVELS = listOf(0, PasswordStrength.STRONG_LOG10.toInt(), PasswordStrength.VERY_STRONG_LOG10.toInt())
+    /**
+     * 0.4.40: more levels, the strength meter's words with their powers of ten — 無効 / とても強い 10^14 / 強い 10^12 /
+     * もう少し 10^10 / やや弱い 10^8 / 弱い 10^5 / すべて ([EXPORT_ANY]: every file with a master password, also one not
+     * judged yet) — and any other power of ten typed in (「数値で指定」, [EXPORT_MIN_N]..[EXPORT_MAX_N]).
+     */
+    const val EXPORT_ANY = FileInfo.ANY
+    const val EXPORT_MIN_N = 1
+    const val EXPORT_MAX_N = 40
+    val EXPORT_LEVELS = listOf(0, PasswordStrength.VERY_STRONG_LOG10.toInt(), PasswordStrength.STRONG_LOG10.toInt(), 10, 8, 5, EXPORT_ANY)
 
-    fun exportLevelLabel(n: Int) = when (n) {
-        0 -> L.t("無効", "Off")
-        PasswordStrength.STRONG_LOG10.toInt() -> L.t("強い (10^12以上)", "Strong (10^12 or more)")
-        PasswordStrength.VERY_STRONG_LOG10.toInt() -> L.t("とても強い (10^14以上)", "Very strong (10^14 or more)")
-        else -> "10^$n"
+    /** The strength words of a power of ten (as the strength meter has them). */
+    fun strengthWord(n: Int) = when {
+        n >= PasswordStrength.VERY_STRONG_LOG10 -> L.t("とても強い", "Very strong")
+        n >= PasswordStrength.STRONG_LOG10 -> L.t("強い", "Strong")
+        n >= 10 -> L.t("もう少し", "Almost")
+        n >= 8 -> L.t("やや弱い", "Fair")
+        n >= 5 -> L.t("弱い", "Weak")
+        else -> L.t("とても弱い", "Very weak")
+    }
+
+    fun exportLevelLabel(n: Int) = when {
+        n == 0 -> L.t("無効", "Off")
+        n == EXPORT_ANY -> L.t("すべて (強度を問わない)", "All (any strength)")
+        n in EXPORT_LEVELS -> L.t("${strengthWord(n)} (10^${n}以上)", "${strengthWord(n)} (10^$n or more)")
+        else -> L.t("10^${n}以上 (${strengthWord(n)})", "10^$n or more (${strengthWord(n)})")
+    }
+
+    /**
+     * How long 10^[n] guesses take on average (half of them) at about 10^4 Argon2id guesses per second per GPU (see
+     * PasswordStrength): "GPU 1 台で約 3 年、100 台で約 12 日".
+     */
+    fun crackTime(n: Int): String {
+        fun span(sec: Double): String = when {
+            sec < 60 -> L.t("1 分未満", "under a minute")
+            sec < 3600 -> L.t("約 ${(sec / 60).toInt()} 分", "about ${(sec / 60).toInt()} minutes")
+            sec < 86400 -> L.t("約 ${(sec / 3600).toInt()} 時間", "about ${(sec / 3600).toInt()} hours")
+            sec < 86400 * 365.0 -> L.t("約 ${(sec / 86400).toInt()} 日", "about ${(sec / 86400).toInt()} days")
+            sec < 86400 * 365.0 * 1e6 -> L.t("約 ${"%,d".format((sec / 86400 / 365).toLong())} 年", "about ${"%,d".format((sec / 86400 / 365).toLong())} years")
+            else -> L.t("100 万年以上", "over a million years")
+        }
+        val one = Math.pow(10.0, n.toDouble()) / 2 / 1e4
+        return L.t("GPU 1 台で${span(one)}、100 台で${span(one / 100)}", "${span(one)} on one GPU, ${span(one / 100)} on 100")
     }
 
     fun exportMinLog10(a: android.content.Context): Int {
@@ -373,7 +408,7 @@ object Security {
 
     fun setExportMinLog10(a: android.content.Context, n: Int) { App.prefs(a).edit().putInt(PREF_EXPORT_MIN, n).remove(PREF_LAUNCH_EXPORT_OLD).apply() }
 
-    fun launchExportEnabled(a: MainActivity) = exportMinLog10(a) > 0
+    fun launchExportEnabled(a: MainActivity) = exportMinLog10(a) != 0
 
     /** A file the launch screen can offer: the app database or an internal backup, with its record. */
     class ExportItem(val file: File, val label: String, val info: FileInfo, val main: Boolean, val minLog10: Int) {
@@ -393,7 +428,7 @@ object Security {
 
     /** Why a file cannot be written out from the launch screen (null = it can). */
     fun notExportableReason(i: FileInfo, minLog10: Int): String? = when {
-        minLog10 <= 0 -> L.t("認証なしの書き出しは無効です (セキュリティの設定)", "Export without unlocking is off (Security settings)")
+        minLog10 == 0 -> L.t("認証なしの書き出しは無効です (セキュリティの設定)", "Export without unlocking is off (Security settings)")
         i.protection == FileInfo.Protection.NONE -> L.t("暗号化されていないため書き出せません", "Not encrypted, so it cannot be exported")
         i.protection == FileInfo.Protection.KEYSTORE -> L.t("OSのkeystoreの鍵で保護されているため書き出せません (他の端末では開けません)", "Protected by the OS keystore key, so it cannot be exported (it would not open anywhere else)")
         i.strength == FileInfo.Strength.UNKNOWN -> L.t("パスワードの強度が未判定のため書き出せません (一度マスターパスワードを入力して開くと判定されます)", "The password strength is not known yet, so it cannot be exported (it is judged when you open it by typing the master password)")
