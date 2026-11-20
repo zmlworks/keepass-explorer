@@ -487,7 +487,7 @@ class Ux0436Test {
         val ex = a.explorer!!
         ex.refresh(); idle(); layoutHost()
         val top = tree().topRow!!
-        assertEquals("最近更新されたファイル", top.contentDescription)   // 0.4.38: renamed (0.4.40 again), and right under the root
+        assertEquals("最近の更新", top.contentDescription)   // 0.4.38: renamed (0.4.40 again), and right under the root
         assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertFalse(ex.recent)
         App.prefs(app()).edit().putString("view", "details").commit()   // 0.4.39: the view chosen for folders applies (was always details)

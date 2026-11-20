@@ -463,8 +463,8 @@ class Ux0438Test {
     // ---------------------------------------------------------------- item 1: the menu
 
     @Test fun mainMenu_exactlyTheUsersOrder() {
-        assertEquals(listOf("ロック", "|", "Languageと日付形式", "セキュリティの設定", "マスターパスワードの設定", "外部データベースからインポートする", "|",
-            "ごみ箱", "最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "機能フォルダの設定", "|", "乱数生成器", "データベースのプロパティ", "About"),
+        assertEquals(listOf("ロック", "|", "Languageと日付形式", "セキュリティの設定", "マスターパスワードの設定", "外部データベースからインポートする", "内部バックアップの一覧", "|",
+            "ごみ箱", "最近の更新", "最近使用", "頻繁に使用", "機能フォルダの設定", "|", "乱数生成器", "データベースのプロパティ", "About"),
             labels(a.explorer!!.mainMenu()))   // (0.4.40: the 機能フォルダ group; 0.4.38: ごみ箱の設定, 最近更新された鍵の設定)
         showMainMenu(); shot("v0438/01-menu.png", menuAt = (W_ - (Menus.current?.width ?: W.dp(300)) - W.dp(4)) to W.dp(60)); Menus.dismiss()   // where Menus.at puts it (kept on screen)
         item(a.explorer!!.mainMenu(), "マスターパスワードの設定").action(); idle()
@@ -579,19 +579,13 @@ class Ux0438Test {
         listOf(weak, strong, stamped, unknown).forEachIndexed { i, f -> f.setLastModified(1_794_500_000_000L - i * 86_400_000L) }
         Security.setExportMinLog10(a, 12)
         val bs = BackupScreen(a); a.show(bs); idle(); layoutHost()
-        val list = find(bs.view, ListView::class.java)!!
-        fun color(name: String): Int {
-            val rowView = (0 until list.childCount).map { list.getChildAt(it) }.first { r -> texts(r).contains(name) }
-            return allViews(rowView).filterIsInstance<android.widget.TextView>().first { it.text.toString() == name }.currentTextColor
-        }
-        assertEquals(BackupScreen.EXPORTABLE, color(strong.name)); assertEquals(BackupScreen.EXPORTABLE, color(stamped.name))
-        assertEquals(W.TEXT, color(weak.name)); assertEquals(W.TEXT, color(unknown.name))
+        // 0.4.41: marked "*" in the 強度 column instead of green (see Ux0441Test)
+        assertTrue(bs.marks(strong).startsWith("*")); assertTrue(bs.marks(stamped).startsWith("*"))
+        assertFalse(bs.marks(weak).startsWith("*")); assertFalse(bs.marks(unknown).startsWith("*"))
         shot("v0438/05-backup-list-green.png")
-        // 無効: nothing green
+        // 無効: nothing marked
         Security.setExportMinLog10(a, 0)
-        val bs2 = BackupScreen(a); a.show(bs2); idle(); layoutHost()
-        val l2 = find(bs2.view, ListView::class.java)!!
-        assertTrue((0 until l2.childCount).flatMap { allViews(l2.getChildAt(it)).filterIsInstance<android.widget.TextView>() }.none { it.currentTextColor == BackupScreen.EXPORTABLE })
+        assertTrue(listOf(weak, strong, stamped, unknown).none { bs.marks(it).startsWith("*") })
     }
 
     // ---------------------------------------------------------------- item 4: import asks about the backups
@@ -710,7 +704,7 @@ class Ux0438Test {
         val ex = a.explorer!!
         ex.refresh(); idle(); layoutHost()
         val top = tree().topRow!!
-        assertEquals("最近更新されたファイル", top.contentDescription)   // (0.4.40 name; 0.4.38: 最近更新した鍵)
+        assertEquals("最近の更新", top.contentDescription)   // (0.4.40 name; 0.4.38: 最近更新した鍵)
         assertEquals("the root's first child", 1, tree().indexOfChild(top))
         assertEquals("/", names(listOf(tree().rows[0].tag as UUID)).first())
         shot("v0438/11-recent-under-root.png")
@@ -724,14 +718,14 @@ class Ux0438Test {
         assertEquals(listOf("閉じる"), d.buttonViews.map { it.text.toString() })
         (findTag<View>(d.frame, "changed-show") as android.widget.CheckBox).performClick(); idle(); layoutHost()
         assertFalse(FeatureFolders.shown(a, k))
-        assertNotEquals("hidden", "最近更新されたファイル", tree().topRow?.contentDescription)
+        assertNotEquals("hidden", "最近の更新", tree().topRow?.contentDescription)
         d.dismiss()
         // opened from the menu while hidden; shown in the tree only while open
-        labels(ex.mainMenu()).let { assertTrue(it.toString(), it.contains("最近更新されたファイル")) }
-        ex.mainMenu().first { it.label == "最近更新されたファイル" }.action(); idle(); layoutHost()
-        assertTrue(ex.recent); assertEquals(10, ex.rows.size); assertEquals("最近更新されたファイル", tree().topRow?.contentDescription)
+        labels(ex.mainMenu()).let { assertTrue(it.toString(), it.contains("最近の更新")) }
+        ex.mainMenu().first { it.label == "最近の更新" }.action(); idle(); layoutHost()
+        assertTrue(ex.recent); assertEquals(10, ex.rows.size); assertEquals("最近の更新", tree().topRow?.contentDescription)
         ex.goUp(); idle(); layoutHost()
-        assertFalse(ex.recent); assertNotEquals("最近更新されたファイル", tree().topRow?.contentDescription)
+        assertFalse(ex.recent); assertNotEquals("最近の更新", tree().topRow?.contentDescription)
         assertFalse(FeatureFolders.shown(a, k))
     }
 }

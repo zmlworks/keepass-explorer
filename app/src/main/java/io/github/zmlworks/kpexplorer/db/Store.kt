@@ -50,6 +50,13 @@ class Store(dataDir: File, val backupDir: File) {
     @Synchronized
     fun setInfo(backup: File, i: FileInfo) { val p = loadInfo(); p.setProperty(BACKUP_KEY + backup.name, i.encode()); saveInfo(p) }
 
+    /** 0.4.41: records whether [backup] opens with the key named [token] ([FileInfo.keyCheck]). */
+    @Synchronized
+    fun setKeyCheck(backup: File, token: String, same: Boolean) {
+        if (!backup.isFile) return
+        setInfo(backup, info(backup).copy(keyCheck = (if (same) "+" else "-") + token))
+    }
+
     /** A new backup is a copy of the database: it inherits the database's record. */
     private fun inherit(backup: File) = setInfo(backup, info())
 

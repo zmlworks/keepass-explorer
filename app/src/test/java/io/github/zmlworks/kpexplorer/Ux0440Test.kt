@@ -34,7 +34,7 @@ import java.io.FileOutputStream
 import java.util.UUID
 import io.github.zmlworks.kpexplorer.ExplorerScreen.Drop.Mode as M
 
-/** 0.4.40 (with the 0.4.39 tests moved here): 機能フォルダ in "/" (reorderable, the tree follows), よく利用するファイル, memos counted, uses saved quietly, 機能フォルダの設定, finer export strengths. */
+/** 0.4.40 (with the 0.4.39 tests moved here): 機能フォルダ in "/" (reorderable, the tree follows), 頻繁に使用, memos counted, uses saved quietly, 機能フォルダの設定, finer export strengths. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "ja-w411dp-h891dp-port-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -441,7 +441,7 @@ class Ux0440Test {
         assertEquals(listOf(id, memoId(), ids["Amazon"]!!), R_.frequent(Session.db!!).map { it.entry.uuid })
         assertEquals(listOf(2, 1, 1), R_.frequent(Session.db!!).map { it.count })
         assertEquals(1, R_.frequent(Session.db!!, 1).size)
-        // 最近更新されたファイル lists memos too (0.4.40)
+        // 最近の更新 lists memos too (0.4.40)
         setAll(ids["議事録"]!!, base, base.plusSeconds(7200), base)
         assertEquals(ids["議事録"], R_.list(Session.db!!).first().entry.uuid)
         // clearing empties both use lists; modification times stay
@@ -509,7 +509,7 @@ class Ux0440Test {
         val ex = a.explorer!!
         assertEquals(2, R_.used(Session.db!!).size)
         ex.navigate(rootId()); ex.refresh(); idle(); viewAs(false)
-        val names3 = listOf("最近更新されたファイル", "最近利用したファイル", "よく利用するファイル")
+        val names3 = listOf("最近の更新", "最近使用", "頻繁に使用")
         // (an older file: its root order does not name them) first, as the root's first children in 0.4.38 / 0.4.39
         assertEquals(names3, ex.rows.take(3).map { it.name })
         assertTrue(ex.rows.take(3).all { it is Order.Node.V })
@@ -530,7 +530,7 @@ class Ux0440Test {
         assertEquals(FeatureFolders.Kind.USED, ex.virtual)
         assertEquals(listOf(memoId(), ids["Gmail"]), ex.rows.map { it.uuid })
         ex.goUp(); idle()
-        // よく利用するファイル: 使用回数 column
+        // 頻繁に使用: 使用回数 column
         ex.openVirtual(FeatureFolders.Kind.FREQUENT); idle(); layoutHost()
         assertTrue(texts(ex.view).containsAll(listOf("使用回数", "2 回", "1 回")))
         assertEquals(listOf(ids["Gmail"], memoId()), ex.rows.map { it.uuid })
@@ -541,10 +541,10 @@ class Ux0440Test {
     @Test fun virtualFolders_reorderedInTheRoot_treeFollows_binStaysLast() {
         val ex = a.explorer!!
         ex.navigate(rootId()); viewAs(false)
-        // drop 最近利用したファイル after 銀行
+        // drop 最近使用 after 銀行
         ex.performDrop(FeatureFolders.Kind.USED.id, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.AFTER, gid("銀行"))); idle(); layoutHost()
         val order = ex.rows.map { it.name }
-        assertEquals(listOf("最近更新されたファイル", "よく利用するファイル", "仕事", "銀行", "最近利用したファイル", "フォルダ01"), order.take(6))
+        assertEquals(listOf("最近の更新", "頻繁に使用", "仕事", "銀行", "最近使用", "フォルダ01"), order.take(6))
         assertEquals("the tree follows the list", order.filter { it in treeRootRows() && it != "ごみ箱" }.take(6), treeRootRows().take(6))
         // stored in the file (the root's order; KeePass ignores it)
         assertTrue(Order.storedOrder(Tree.root(Session.db!!)).containsAll(R_.IDS))
@@ -552,11 +552,11 @@ class Ux0440Test {
         assertEquals(Order.order(Tree.root(Session.db!!), true), Order.order(Tree.root(Kdbx.open(a.store.read(), key)), true))
         // to the end of "/": after the bin in the list, the bin still last in the tree (setting on)
         ex.performDrop(FeatureFolders.Kind.CHANGED.id, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.END, null)); idle(); layoutHost()
-        assertEquals("最近更新されたファイル", ex.rows.last().name)
-        assertEquals(listOf("最近更新されたファイル", "ごみ箱"), treeRootRows().takeLast(2))
+        assertEquals("最近の更新", ex.rows.last().name)
+        assertEquals(listOf("最近の更新", "ごみ箱"), treeRootRows().takeLast(2))
         shot("v0440/04-tree-reordered.png")
         Session.update { Tree.setBinLastInTree(it, false) }; ex.refresh(); idle(); layoutHost()
-        assertEquals("setting off: as in the list", "最近更新されたファイル", treeRootRows().last())
+        assertEquals("setting off: as in the list", "最近の更新", treeRootRows().last())
         Session.update { Tree.setBinLastInTree(it, true) }; ex.refresh(); idle()
         // nothing goes into it, it goes nowhere else
         val before = Order.order(Tree.root(Session.db!!), true)
@@ -566,7 +566,7 @@ class Ux0440Test {
         assertEquals(before, Order.order(Tree.root(Session.db!!), true))
         try { Order.moveTo(Session.db!!, FeatureFolders.Kind.FREQUENT.id, gid("銀行")); fail() } catch (_: Tree.TreeException) {}
         try { Order.moveTo(Session.db!!, ids["Gmail"]!!, FeatureFolders.Kind.FREQUENT.id); fail() } catch (_: Tree.TreeException) {}
-        // keys around them keep their places: a key dropped before 最近利用したファイル lands there
+        // keys around them keep their places: a key dropped before 最近使用 lands there
         ex.performDrop(ids["Gmail"]!!, ExplorerScreen.Drop(ExplorerScreen.Drop.Mode.BEFORE, FeatureFolders.Kind.USED.id)); idle()
         val o = ex.rows.map { it.uuid }
         assertEquals(o.indexOf(FeatureFolders.Kind.USED.id) - 1, o.indexOf(ids["Gmail"]))
@@ -592,21 +592,21 @@ class Ux0440Test {
         assertEquals(10, FeatureFolders.count(a, FeatureFolders.Kind.USED))
         // 利用履歴を消去 asks first
         ex.itemMenu(v).first { it.label == "利用履歴を消去" }.action(); idle()
-        assertTrue(texts(latestDialog().frame).joinToString().contains("「最近利用したファイル」と「よく利用するファイル」の履歴を消去しますか?"))
+        assertTrue(texts(latestDialog().frame).joinToString().contains("「最近使用」と「頻繁に使用」の履歴を消去しますか?"))
         clickButton(latestDialog(), "消去")
         assertFalse(R_.anyUsed(Session.db!!))
         assertFalse(ex.virtualTreeMenu(FeatureFolders.Kind.USED).first { it.label == "利用履歴を消去" }.enabled)
         // the main menu: ごみ箱, the three, 機能フォルダの設定 between separators
         val m = labels(ex.mainMenu())
         val i = m.indexOf("ごみ箱")
-        assertEquals(listOf("|", "ごみ箱", "最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "機能フォルダの設定", "|"), m.subList(i - 1, i + 6))
+        assertEquals(listOf("|", "ごみ箱", "最近の更新", "最近使用", "頻繁に使用", "機能フォルダの設定", "|"), m.subList(i - 1, i + 6))
         showMainMenu(); shot("v0440/06-menu.png", menuAt = (W_ - (Menus.current?.width ?: W.dp(300)) - W.dp(4)) to W.dp(60)); Menus.dismiss()
         // hidden: not in "/" nor the tree; the menu opens it, and the tree shows it while open
         App.prefs(app()).edit().putBoolean(FeatureFolders.Kind.FREQUENT.prefShow, false).commit(); ex.refresh(); idle()
-        assertFalse(ex.rows.any { it.uuid == FeatureFolders.Kind.FREQUENT.id }); assertFalse(topLabels().contains("よく利用するファイル"))
-        ex.mainMenu().first { it.label == "よく利用するファイル" }.action(); idle()
-        assertEquals(FeatureFolders.Kind.FREQUENT, ex.virtual); assertTrue(topLabels().contains("よく利用するファイル"))
-        ex.goUp(); idle(); assertFalse(topLabels().contains("よく利用するファイル"))
+        assertFalse(ex.rows.any { it.uuid == FeatureFolders.Kind.FREQUENT.id }); assertFalse(topLabels().contains("頻繁に使用"))
+        ex.mainMenu().first { it.label == "頻繁に使用" }.action(); idle()
+        assertEquals(FeatureFolders.Kind.FREQUENT, ex.virtual); assertTrue(topLabels().contains("頻繁に使用"))
+        ex.goUp(); idle(); assertFalse(topLabels().contains("頻繁に使用"))
         // ごみ箱 opens the bin (also hidden)
         Session.update { Tree.setBinHidden(it, true) }; ex.refresh(); idle()
         ex.mainMenu().first { it.label == "ごみ箱" }.action(); idle()
@@ -623,7 +623,7 @@ class Ux0440Test {
         val tx = texts(d.frame)
         assertEquals("機能フォルダの設定", tx.first())
         val want = listOf("ごみ箱の名前: ごみ箱", "変更", "2 個の項目", "ごみ箱を空にする", "自動削除: しない", "変更", "ごみ箱を表示する", "ごみ箱をフォルダツリーで一番下にする",
-            "最近更新されたファイルを表示する", "最近利用したファイルを表示する", "よく利用するファイルを表示する", "ファイルを開くたびにデータベースを更新する", "閉じる")
+            "「最近の更新」を表示する", "「最近使用」を表示する", "「頻繁に使用」を表示する", "ファイルを開くたびにデータベースを更新する", "閉じる")
         assertEquals(want, tx.drop(1).filter { it.isNotEmpty() })
         fun cb(tag: String) = findTag<View>(d.frame, tag) as android.widget.CheckBox
         assertTrue(cb("bin-show").isChecked); assertTrue(cb("bin-tree-last").isChecked)
@@ -635,7 +635,7 @@ class Ux0440Test {
         shot("v0440/07-feature-folder-settings.png", dialog = true)
         // each one
         cb("used-show").performClick(); idle(); layoutHost()
-        assertFalse(FeatureFolders.shown(a, FeatureFolders.Kind.USED)); assertFalse(topLabels().contains("最近利用したファイル"))
+        assertFalse(FeatureFolders.shown(a, FeatureFolders.Kind.USED)); assertFalse(topLabels().contains("最近使用"))
         cb("used-show").performClick(); idle()
         cb("save-on-open").performClick(); idle()
         assertTrue(FeatureFolders.saveOnOpen(a))
@@ -650,7 +650,7 @@ class Ux0440Test {
         d.dismiss()
         L.setLang(app(), L.Lang.EN)
         val e = FeatureFolders.show(a); idle()
-        assertTrue(texts(e.frame).containsAll(listOf("Special folder settings", "Show recently changed files", "Show frequently used files", "Update the database every time a file is opened")))
+        assertTrue(texts(e.frame).containsAll(listOf("Special folder settings", "Show \"Recently updated\"", "Show \"Frequently used\"", "Update the database every time a file is opened")))
         e.dismiss()
     }
 

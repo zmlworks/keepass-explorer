@@ -69,7 +69,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
      * (場所 instead of ユーザー名 and the folder's own time in the date column, as search results), the usual long-press
      * menu of a key plus この項目のフォルダーを開く, dragging onto a folder of the path tree. Not possible there:
      * creating, pasting, reordering (the order is the time), renaming or moving the folder itself.
-     * 0.4.40: three of them (最近更新されたファイル, 最近利用したファイル, よく利用するファイル: [FeatureFolders]), listed in
+     * 0.4.40: three of them (最近の更新, 最近使用, 頻繁に使用: [FeatureFolders]), listed in
      * "/" among its items (icons and details) where the root's order has them; they are reordered there like any
      * item, and the folder tree follows that order (the recycle bin may still be kept last there).
      */
@@ -1021,21 +1021,6 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         loadCols(); setColumnWidths(colName, colUser, persist = false)
     }
 
-    /** Header grip at the right edge of a resizable column (two short raised lines like a column divider). */
-    private class Grip : Drawable() {
-        private val dark = Paint().apply { color = W.SHADOW }
-        private val light = Paint().apply { color = W.HILITE }
-        override fun draw(c: Canvas) {
-            val b = bounds; val px = W.px.toFloat(); val x = b.right - 4 * px
-            val t = b.top + b.height() * 0.22f; val bt = b.bottom - b.height() * 0.22f
-            c.drawRect(x - 3 * px, t, x - 2 * px, bt, dark); c.drawRect(x - 2 * px, t, x - px, bt, light)
-            c.drawRect(x, t, x + px, bt, dark); c.drawRect(x + px, t, x + 2 * px, bt, light)
-        }
-        override fun setAlpha(alpha: Int) {}
-        override fun setColorFilter(colorFilter: ColorFilter?) {}
-        @Deprecated("Deprecated in Java") override fun getOpacity() = PixelFormat.TRANSLUCENT
-    }
-
     /** Which divider a header touch at [x] grabs: 1 = after 名前, 2 = after ユーザー名/場所, 0 = none. */
     fun headerDividerAt(x: Float): Int {
         val r = W.dp(16)
@@ -1079,7 +1064,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         fun h(s: String, w: Int, weight: Float, grip: Boolean) = header.addView(W.text(ctx, s, 13f).apply {
             background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(8), W.dp(10), W.dp(8)); isSingleLine = true
             ellipsize = TextUtils.TruncateAt.END
-            if (grip) foreground = Grip()
+            if (grip) foreground = io.github.zmlworks.kpexplorer.ui.HeaderGrip()
         }, W.lp(w, W.WRAP, weight))
         val inSearch = search != null
         val inRecent = recent && !inSearch
@@ -1462,7 +1447,7 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
 
     /**
      * 0.4.38: the user's menu, exactly — ロック | Languageと日付形式, セキュリティの設定, マスターパスワードの設定,
-     * 外部データベースからインポートする | ごみ箱, 最近更新されたファイル, 最近利用したファイル, よく利用するファイル,
+     * 外部データベースからインポートする, 内部バックアップの一覧 (0.4.41) | ごみ箱, 最近の更新, 最近使用, 頻繁に使用,
      * 機能フォルダの設定 (0.4.40; before, ごみ箱の設定 and 最近の鍵の設定) | 乱数生成器, データベースのプロパティ, About.
      * What used to be here lives in those windows (screen protection, auto-lock, internal backups → セキュリティの設定;
      * ごみ箱を開く → ごみ箱の設定; 外部ファイルを閲覧 → the import window), or in the toolbar's 保存 (save in the app,
@@ -1482,6 +1467,8 @@ class ExplorerScreen(private val a: MainActivity) : MainActivity.Screen {
         out.add(Menus.Item(L.t(SecuritySettings.TITLE_JA, "Security settings")) { SecuritySettings.show(a) })
         out.add(Menus.Item(L.t("マスターパスワードの設定", "Master password"), !ro) { Security.changeMasterPassword(a) })
         out.add(Menus.Item(L.t("外部データベースからインポートする", "Import from an external database"), !ro) { TempImport.showImportMenu(a) })
+        // 0.4.41: back in the menu (up to 0.4.37 here too, 0.4.38 to 0.4.40 only from セキュリティの設定)
+        out.add(Menus.Item(ctx.getString(R.string.menu_backup_list), !ro) { a.show(BackupScreen(a)) })
         out.add(Menus.sep())
         // 0.4.40: the 機能フォルダ, each opened (also a hidden one), and their settings
         out.add(Menus.Item(L.t("ごみ箱", "Recycle Bin"), Session.db?.let { FeatureFolders.binId(it) } != null) { FeatureFolders.openBin(a) })

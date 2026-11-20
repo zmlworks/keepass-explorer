@@ -56,6 +56,14 @@ object Kdbx {
             return out
         }
         fun clear() = synchronized(this) { map.values.forEach { it.fill(0) }; map.clear() }
+
+        /** 0.4.41: uses a remembered result, but a new one is not kept (checking other files keeps the cache for saves). */
+        val lookupOnly = object : app.keemobile.kotpass.cryptography.format.KdfProvider {
+            override fun transformKey(kdfParameters: KdfParameters, compositeKey: ByteArray): ByteArray {
+                synchronized(this@KdfCache) { map[id(kdfParameters, compositeKey)]?.let { return it.copyOf() } }
+                return app.keemobile.kotpass.cryptography.format.BaseKdfProvider.transformKey(kdfParameters, compositeKey)
+            }
+        }
     }
 
     /** Starts with the KeePass 2 file signature (03 D9 A2 9A 67 FB 4B B5). */
@@ -78,12 +86,32 @@ object Kdbx {
 
     fun credentials(composite: ByteArray): Credentials = Credentials.fromComposite(composite)
 
-    fun open(bytes: ByteArray, composite: ByteArray): KeePassDatabase = try {
-        KeePassDatabase.decode(ByteArrayInputStream(bytes), credentials(composite), cipherProviders = CIPHERS, kdfProvider = KdfCache)
+    fun open(bytes: ByteArray, composite: ByteArray, remember: Boolean = true): KeePassDatabase = try {
+        KeePassDatabase.decode(ByteArrayInputStream(bytes), credentials(composite), cipherProviders = CIPHERS,
+            kdfProvider = if (remember) KdfCache else KdfCache.lookupOnly)
     } catch (e: app.keemobile.kotpass.errors.FormatError.InvalidContent) {
         throw WrongPasswordException(e)
     } catch (e: app.keemobile.kotpass.errors.CryptoError) {
         throw WrongPasswordException(e)
+    }
+
+    /** 0.4.41: whether [bytes] open with [composite] (a wrong key or a damaged file = false); the KDF result is not kept. */
+    fun opensWith(bytes: ByteArray, composite: ByteArray): Boolean = try { open(bytes, composite, remember = false); true } catch (_: Exception) { false }
+
+    /**
+     * 0.4.41: names the key of [db] without revealing it: SHA-256 of its MasterKeyChanged time and its KDF parameters
+     * (salt included), both in every KDBX for anyone to read. Changing the key ([withCredentials]) changes the time and
+     * (on the next fresh header) the salt, so a cached [FileInfo.keyCheck] never outlives the key it was made for.
+     */
+    fun keyToken(db: KeePassDatabase): String {
+        val kdf = when (val h = db.header) {
+            is DatabaseHeader.Ver4x -> h.kdfParameters.toString()
+            is DatabaseHeader.Ver3x -> "aes:${h.transformSeed.hex()}:${h.transformRounds}"
+        }
+        val md = MessageDigest.getInstance("SHA-256")
+        md.update((db.content.meta.masterKeyChanged?.toEpochMilli()?.toString() ?: "-").toByteArray())
+        md.update(kdf.toByteArray())
+        return md.digest().take(8).joinToString("") { "%02x".format(it) }
     }
 
     fun isTwofish(db: KeePassDatabase) = db.header.cipherId == TwofishCipher.uuid

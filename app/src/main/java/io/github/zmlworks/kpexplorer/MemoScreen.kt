@@ -69,7 +69,7 @@ class MemoScreen(private val a: MainActivity, private val entryId: UUID) : MainA
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) { footer.setChanged(dirty) }
         })
-        // 0.4.40: opening a memo is a use (最近利用したファイル / よく利用するファイル), as for a key page
+        // 0.4.40: opening a memo is a use (最近使用 / 頻繁に使用), as for a key page
         if (e != null) FeatureFolders.recordUse(a, entryId)
     }
 

@@ -33,15 +33,21 @@ object SecuritySettings {
             FileInfo.Protection.KEYSTORE -> L.t("OSのkeystoreの鍵", "OS keystore key")
         }
         val n = i.guessesLog10
-        val strength = when {
+        val strength = strengthLabel(i) + if (n != null && i.log10 != null) L.t(" (推測に約 10^$n 回)", " (about 10^$n guesses)") else ""
+        return mode to strength
+    }
+
+    /** The verdict in a word (also the 強度 column of the internal backup list, 0.4.41). */
+    fun strengthLabel(i: FileInfo): String {
+        val n = i.guessesLog10
+        return when {
             i.protection != FileInfo.Protection.PASSWORD -> L.t("— (パスワードなし)", "— (no password)")
             i.strength == FileInfo.Strength.UNKNOWN -> L.t("未判定", "Not judged yet")
             n != null && i.log10 != null -> Security.strengthWord(n)   // 0.4.40: the meter's words (やや弱い, もう少し ...)
             n != null && n >= io.github.zmlworks.kpexplorer.sec.PasswordStrength.VERY_STRONG_LOG10 -> L.t("とても強い", "Very strong")
             i.strength == FileInfo.Strength.STRONG -> L.t("強い", "Strong")
             else -> L.t("弱い", "Weak")
-        } + if (n != null && i.log10 != null) L.t(" (推測に約 10^$n 回)", " (about 10^$n guesses)") else ""
-        return mode to strength
+        }
     }
 
     /** The caution that follows from the protection and strength. */

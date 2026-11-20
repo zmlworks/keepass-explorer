@@ -26,15 +26,24 @@ import java.time.format.DateTimeFormatter
  * Internal backups (app storage): list, create, password-protected export (SAF), restore, delete.
  * 0.4.33: titled 「内部バックアップ」 without an icon, no 場所 row, the columns sort by a tap on their header
  * (again = the other way; remembered), 「今すぐ作成」 asks first, 閲覧 comes back here when it ends.
+ * 0.4.41: back in the main menu; only 今すぐ作成 / 閲覧 / エクスポート on top (復元, 名前の変更, 削除 in the long-press
+ * menu); the column widths follow a drag on the header borders ([Columns]); a 強度 column, marked "*" when the launch
+ * screen could write it out without unlocking (was: green text) and "#" when it opens with the current database's key
+ * ([checkKeys], remembered in its [io.github.zmlworks.kpexplorer.db.FileInfo.keyCheck]).
  */
 class BackupScreen(private val a: MainActivity, select: String? = null) : MainActivity.Screen {
     private val ctx = a
-    private val root = W.vbox(ctx)
+    private val root = W.vbox(ctx).apply { setBackgroundColor(W.FACE) }
     override val view: View get() = root
     var files: List<File> = emptyList()
         private set
     var selected: File? = null
     private val listHolder = FrameLayout(ctx)
+    private val legend = W.text(ctx, "", 12f).apply { tag = "backup-legend"; setPadding(W.dp(6), W.dp(4), W.dp(6), W.dp(6)) }
+    private val cols = io.github.zmlworks.kpexplorer.ui.Columns(ctx, PREF_COLS, intArrayOf(0, 60, 120), 96, intArrayOf(80, 40, 64, 48))
+    private var adapter: BaseAdapter? = null
+    /** Backups whose key check runs now. */
+    private val checking = HashSet<String>()
     private val fmt: DateTimeFormatter get() = L.dateTime(false)
 
     enum class SortBy(val key: String) { NAME("name"), SIZE("size"), DATE("date") }
@@ -52,15 +61,13 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
         val tb = W.hbox(ctx).apply { setPadding(W.dp(4), W.dp(4), W.dp(4), W.dp(4)) }
         fun b(s: String, f: () -> Unit) = tb.addView(W.button(ctx, s) { f() }.apply { minWidth = W.dp(64) }, W.lp(W.WRAP, W.WRAP, r = 4))
         b(L.t("今すぐ作成", "Create now")) { Security.confirmBackup(a) { f -> selected = f; reload() } }
-        b(ctx.getString(R.string.browse_backup)) { selected?.let { browse(it) } ?: need() }
-        b(L.t("外部に書き出す", "Export")) { selected?.let { export(it) } ?: need() }
-        b(L.t("復元", "Restore")) { selected?.let { restore(it) } ?: need() }
-        b(L.t("名前の変更", "Rename")) { selected?.let { rename(it) } ?: need() }
-        b(L.t("削除", "Delete")) { selected?.let { delete(it) } ?: need() }
+        b(L.t("閲覧", "Browse")) { selected?.let { browse(it) } ?: need() }
+        b(L.t("エクスポート", "Export")) { selected?.let { export(it) } ?: need() }
         root.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(tb) }, W.lp())
         listHolder.background = W.Bevel(W.Style.FIELD)
         listHolder.setPadding(2 * W.px, 2 * W.px, 2 * W.px, 2 * W.px)
         root.addView(listHolder, W.lp(W.MATCH, 0, 1f, l = 2, r = 2))
+        root.addView(legend, W.lp())
         if (select != null) selected = a.store.backupFile(select)
         reload()
     }
@@ -91,27 +98,56 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
 
     private fun need() = Dlg.message(ctx, L.t("バックアップ", "Backup"), L.t("先に一覧からバックアップを選んでください。", "Select a backup in the list first."), 'i')
 
+    /** Width the columns share (the list pane minus its bevel). */
+    private fun avail(): Int {
+        val w = if (listHolder.width > 0) listHolder.width - listHolder.paddingLeft - listHolder.paddingRight
+            else ctx.resources.displayMetrics.widthPixels - W.dp(4) - 4 * W.px
+        return w.coerceAtLeast(W.dp(200))
+    }
+
+    /** The 強度 cell: "*" = exportable without unlocking, "#" = opens with the current key, then the verdict. */
+    fun strengthText(f: File): String {
+        val i = a.store.info(f)
+        return marks(f) + if (i.protection != io.github.zmlworks.kpexplorer.db.FileInfo.Protection.PASSWORD) L.t("パスワードなし", "No password")
+            else SecuritySettings.strengthLabel(i)
+    }
+
+    fun marks(f: File): String {
+        val i = a.store.info(f)
+        val token = Session.db?.takeIf { !Session.readOnlyTemp }?.let { Kdbx.keyToken(it) }
+        return (if (i.exportableAt(Security.exportMinLog10(ctx))) "*" else "") + (if (token != null && i.sameKey(token) == true) "#" else "")
+    }
+
+    private fun updateLegend() {
+        legend.text = L.t("* 認証なしで書き出せる (セキュリティの設定)　# 今のデータベースと同じパスワード", "* can be exported without unlocking (Security settings)   # same password as the current database") +
+            if (checking.isEmpty()) "" else L.t("\nパスワードを確認しています (残り ${checking.size} 個)", "\nChecking the passwords (${checking.size} left)")
+    }
+
     fun reload() {
         files = sorted(a.store.backups())
         if (selected != null && files.none { it.name == selected!!.name }) selected = null
         listHolder.removeAllViews()
+        cols.load(avail())
         val col = W.vbox(ctx).apply { setBackgroundColor(W.WINDOW) }
-        val header = W.hbox(ctx)
-        fun h(s: String, by: SortBy, w: Int, weight: Float) = header.addView(W.text(ctx, s + if (by == sortBy) (if (ascending) " ▲" else " ▼") else "", 13f).apply {
-            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(10), W.dp(4), W.dp(10))
-            isSingleLine = true; tag = "sort-" + by.key
-            isClickable = true; setOnClickListener { sortOn(by) }
-        }, W.lp(w, W.WRAP, weight))
-        h(L.t("名前", "Name"), SortBy.NAME, 0, 1f); h(L.t("サイズ", "Size"), SortBy.SIZE, W.dp(78), 0f); h(L.t("更新日時", "Modified"), SortBy.DATE, W.dp(130), 0f)
+        var ad: BaseAdapter? = null
+        val header = cols.header(::avail) { ad?.notifyDataSetChanged() }
+        fun h(s: String, by: SortBy?, w: Int, tag: String) = header.addView(W.text(ctx, s + if (by != null && by == sortBy) (if (ascending) " ▲" else " ▼") else "", 13f).apply {
+            background = W.Bevel(W.Style.HEADER); setPadding(W.dp(6), W.dp(10), W.dp(10), W.dp(10))
+            isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; this.tag = tag
+            if (w > 0) foreground = io.github.zmlworks.kpexplorer.ui.HeaderGrip()
+            if (by != null) { isClickable = true; setOnClickListener { sortOn(by) } }
+        }, if (w > 0) W.lp(w, W.WRAP) else W.lp(0, W.WRAP, 1f))
+        h(L.t("名前", "Name"), SortBy.NAME, cols.widths[0], "sort-name"); h(L.t("サイズ", "Size"), SortBy.SIZE, cols.widths[1], "sort-size")
+        h(L.t("更新日時", "Modified"), SortBy.DATE, cols.widths[2], "sort-date"); h(L.t("強度", "Strength"), null, 0, "col-strength")
+        header.contentDescription = L.t("列の見出し (境目をドラッグで幅を変更)", "Column headers (drag a border to resize)")
         col.addView(header)
-        // 0.4.38: rows that the launch screen could write out without unlocking (セキュリティの設定) are green
-        val min = Security.exportMinLog10(ctx)
-        val green = files.filter { a.store.info(it).exportableAt(min) }.map { it.name }.toSet()
         val list = ListView(ctx)
         list.divider = null
         list.selector = android.graphics.drawable.ColorDrawable(0)
         W.classicScrollbars(list)
-        val adapter = object : BaseAdapter() {
+        fun cell(s: String, size: Float, end: Boolean = false) = W.text(ctx, s, size).apply {
+            isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(6), 0, W.dp(6), 0); if (end) gravity = Gravity.END }
+        ad = object : BaseAdapter() {
             override fun getCount() = files.size
             override fun getItem(p: Int) = files[p]
             override fun getItemId(p: Int) = p.toLong()
@@ -119,27 +155,30 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
                 val f = files[p]
                 val sel = f.name == selected?.name
                 // 0.4.36: white / pale blue rows, as in the folder tree
-                val row = W.hbox(ctx).apply { setPadding(W.dp(4), 0, 0, 0); minimumHeight = W.dp(40); setBackgroundColor(stripe(p)) }
-                row.addView(ImageView(ctx).apply {
+                val row = W.hbox(ctx).apply { minimumHeight = W.dp(40); setBackgroundColor(stripe(p)) }
+                val nc = W.hbox(ctx).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(W.dp(4), 0, 0, 0) }
+                nc.addView(ImageView(ctx).apply {
                     setImageDrawable(Px.drawable(ctx, if (sel) Px.selected(Px.floppy16) else Px.floppy16, W.iconScale()))
                 }, W.lp(W.WRAP, W.WRAP, r = 4))
                 val nb = FrameLayout(ctx)
-                val tc = if (f.name in green) EXPORTABLE else W.TEXT
-                nb.addView(W.text(ctx, f.name, 15f, color = if (sel) W.HILITE else tc).apply {
+                nb.addView(W.text(ctx, f.name, 15f, color = if (sel) W.HILITE else W.TEXT).apply {
                     isSingleLine = true; ellipsize = TextUtils.TruncateAt.END; setPadding(W.dp(3), W.dp(2), W.dp(3), W.dp(2))
                     if (sel) setBackgroundColor(W.NAVY)
                 }, FrameLayout.LayoutParams(W.WRAP, W.WRAP, Gravity.CENTER_VERTICAL))
-                row.addView(nb, W.lp(0, W.WRAP, 1f))
-                row.addView(W.text(ctx, "${(f.length() + 1023) / 1024} KB", 14f, color = tc).apply { gravity = Gravity.END; setPadding(0, 0, W.dp(6), 0) }, W.lp(W.dp(78), W.WRAP))
-                row.addView(W.text(ctx, fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f, color = tc).apply { setPadding(W.dp(6), 0, 0, 0) }, W.lp(W.dp(130), W.WRAP))
+                nc.addView(nb, W.lp(0, W.WRAP, 1f))
+                row.addView(nc, W.lp(cols.widths[0], W.WRAP))
+                row.addView(cell("${(f.length() + 1023) / 1024} KB", 14f, end = true), W.lp(cols.widths[1], W.WRAP))
+                row.addView(cell(fmt.format(Instant.ofEpochMilli(f.lastModified())), 13f), W.lp(cols.widths[2], W.WRAP))
+                row.addView(cell(strengthText(f), 13f).apply { tag = "strength-" + f.name }, W.lp(0, W.WRAP, 1f))
                 return row
             }
         }
-        list.adapter = adapter
+        adapter = ad
+        list.adapter = ad
         // 0.4.31: the long press is the app's own ([W.longPressMs]), not GestureDetector's system delay
         val long = io.github.zmlworks.kpexplorer.ui.LongPress(list) { x, y ->
             files.getOrNull(list.pointToPosition(x.toInt(), y.toInt()))?.let { f ->
-                selected = f; adapter.notifyDataSetChanged(); updateStatus()
+                selected = f; ad?.notifyDataSetChanged(); updateStatus()
                 val loc = IntArray(2); list.getLocationInWindow(loc)
                 Menus.at(list, loc[0] + x.toInt(), loc[1] + y.toInt(), menuFor(f))
             }
@@ -149,7 +188,7 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 if (long.fired) return true
                 val pos = list.pointToPosition(e.x.toInt(), e.y.toInt())
-                selected = files.getOrNull(pos); adapter.notifyDataSetChanged(); updateStatus(); return true
+                selected = files.getOrNull(pos); ad?.notifyDataSetChanged(); updateStatus(); return true
             }
         }).also { it.setIsLongpressEnabled(false) }
         list.setOnTouchListener { _, e -> long.onTouch(e); gd.onTouchEvent(e); false }
@@ -162,6 +201,34 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
         } else col.addView(list, W.lp(W.MATCH, 0, 1f))
         listHolder.addView(col)
         updateStatus()
+        updateLegend()
+        checkKeys()
+    }
+
+    /**
+     * 0.4.41: the "#" mark. Each backup not yet checked against the current key ([Kdbx.keyToken]) is opened with it on
+     * a background thread, one at a time ([Kdbx.opensWith]; a backup made from this database shares its KDF salt, so
+     * the key derivation of the unlock is reused; another salt costs one derivation, not kept). The answer goes into
+     * the backup's record, so the page does it once per backup and key. Not while browsing another file read-only.
+     */
+    private fun checkKeys() {
+        if (Session.readOnlyTemp) return
+        val db = Session.db ?: return
+        val token = Kdbx.keyToken(db)
+        val todo = files.filter { it.name !in checking && a.store.info(it).sameKey(token) == null }
+        if (todo.isEmpty()) return
+        val key = Session.compositeCopy() ?: return
+        checking.addAll(todo.map { it.name }); updateLegend()
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        CHECKER.execute {
+            try {
+                for (f in todo) {
+                    val same = runCatching { Kdbx.opensWith(f.readBytes(), key) }.getOrDefault(false)
+                    runCatching { a.store.setKeyCheck(f, token, same) }
+                    main.post { checking.remove(f.name); adapter?.notifyDataSetChanged(); updateLegend() }
+                }
+            } finally { key.fill(0) }
+        }
     }
 
     /** Row background of list row [p]: white, pale blue, white … */
@@ -244,7 +311,8 @@ class BackupScreen(private val a: MainActivity, select: String? = null) : MainAc
 
     companion object {
         const val PREF_SORT = "backup_sort"
-        /** 0.4.38: text of a backup that can be exported without unlocking (readable on white and pale blue). */
-        const val EXPORTABLE = 0xFF00802A.toInt()
+        const val PREF_COLS = "backup_cols"
+        /** 0.4.41: the "#" checks, one file at a time, off the main thread (not the save thread). */
+        val CHECKER: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "kpx-keycheck").apply { isDaemon = true } }
     }
 }

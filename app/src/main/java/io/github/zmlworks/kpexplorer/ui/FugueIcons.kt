@@ -81,7 +81,7 @@ object FugueIcons {
     /** 0.4.39: the 最近使用した鍵 folder (Fugue `clock--arrow`, untouched 16 px; not an entry icon). */
     fun used(ctx: Context): Bitmap = folderIcon(ctx, "#used", R.drawable.fugue_clock_arrow)
 
-    /** 0.4.40: the よく利用するファイル folder (Fugue `chart-up-color`, untouched 16 px; not an entry icon). */
+    /** 0.4.40: the 頻繁に使用 folder (Fugue `chart-up-color`, untouched 16 px; not an entry icon). */
     fun frequent(ctx: Context): Bitmap = folderIcon(ctx, "#frequent", R.drawable.fugue_chart_up_color)
 
     /** A virtual folder's 16 px art at [size] px (whole multiples, pixels kept sharp: the icon view's 32 px). */

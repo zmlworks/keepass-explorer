@@ -581,7 +581,7 @@ class KeyScreen(private val a: MainActivity, private var entryId: UUID?, private
     }
 
     /**
-     * 0.4.39: a use of this key (page opened, a field copied), for 最近利用したファイル / よく利用するファイル: KeePass's
+     * 0.4.39: a use of this key (page opened, a field copied), for 最近使用 / 頻繁に使用: KeePass's
      * LastAccessTime and UsageCount (not for a key not saved yet). 0.4.40: written as [FeatureFolders.recordUse] says.
      */
     private fun markUsed() { FeatureFolders.recordUse(a, entryId ?: return) }

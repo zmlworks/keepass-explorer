@@ -12,15 +12,15 @@ import java.util.UUID
  * The virtual folders (機能フォルダ) in "/", worked out from the file each time. 0.4.40: keys and independent memos
  * (up to 0.4.39 keys only), not the recycle bin, not History copies (those are not in any folder).
  *
- * - 「最近更新されたファイル」 (0.4.36 「最近の鍵」, 0.4.38 「最近更新した鍵」, [list]): time = the later of the entry's
+ * - 「最近の更新」 (0.4.36 「最近の鍵」, 0.4.38 「最近更新した鍵」, [list]): time = the later of the entry's
  *   CreationTime and LastModificationTime. This app moves Last Modified only for a change of content (fields, tags) or
  *   of the icon; moving, reordering, showing / hiding fields keep it (see Order.saveEntry, Tree.move, Tree.restoreFromBin).
- * - 「最近利用したファイル」 (0.4.39 「最近使用した鍵」, [used]): KeePass's own LastAccessTime / UsageCount, kept in the
+ * - 「最近使用」 (0.4.39 「最近使用した鍵」, [used]): KeePass's own LastAccessTime / UsageCount, kept in the
  *   KDBX like every other KeePass client does (KeePass itself moves them when an entry is used or edited). This app
  *   records a use when a key or memo page is opened or a field is copied ([markUsed]); editing sets the access time
  *   too (an edit is a use, as in KeePass). An entry counts as used once its access time is later than its creation (by
  *   more than [SAME_AS_CREATED]): a new entry's access time equals its creation time.
- * - 0.4.40 「よく利用するファイル」 ([frequent]): UsageCount, highest first (then the most recently used); only entries
+ * - 0.4.40 「頻繁に使用」 ([frequent]): UsageCount, highest first (then the most recently used); only entries
  *   used at least once.
  *
  * [clearUsed] sets the access times back to the creation times and the use counts to 0 (modification times and
@@ -63,13 +63,13 @@ object Recent {
         return out.sortedWith(order).take(limit)
     }
 
-    /** 最近更新されたファイル: newest first. */
+    /** 最近の更新: newest first. */
     fun list(db: KeePassDatabase, limit: Int = LIMIT): List<Item> = collect(db, limit, newestFirst) { e, g -> item(e, g) }
 
-    /** 最近利用したファイル: most recently used first. */
+    /** 最近使用: most recently used first. */
     fun used(db: KeePassDatabase, limit: Int = LIMIT): List<Item> = collect(db, limit, newestFirst) { e, g -> usedItem(e, g) }
 
-    /** よく利用するファイル: the highest UsageCount first. */
+    /** 頻繁に使用: the highest UsageCount first. */
     fun frequent(db: KeePassDatabase, limit: Int = LIMIT): List<Item> =
         collect(db, limit, mostUsedFirst) { e, g -> if ((e.times?.usageCount ?: 0) > 0) Item(e, g, Kind.USED, usedAt(e) ?: e.times?.lastAccessTime ?: Instant.EPOCH) else null }
 
@@ -104,7 +104,7 @@ object Recent {
         }
     }
 
-    /** Whether anything would show in 最近利用したファイル or よく利用するファイル (the bin aside). */
+    /** Whether anything would show in 最近使用 or 頻繁に使用 (the bin aside). */
     fun anyUsed(db: KeePassDatabase): Boolean = used(db, 1).isNotEmpty() || frequent(db, 1).isNotEmpty()
 
     /** 利用履歴を消去: every entry's (also in the bin) access time back to its creation time, use count 0. */

@@ -140,7 +140,7 @@ class UiScreenshotsTest {
         val a = openSample()
         val ex = a.explorer!!
         assertTrue(ex.iconMode)
-        assertEquals(listOf("最近更新されたファイル", "最近利用したファイル", "よく利用するファイル", "メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Recycle Bin", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
+        assertEquals(listOf("最近の更新", "最近使用", "頻繁に使用", "メール", "銀行・カード", "ショッピング", "仕事", "SNS", "ゲーム", "Recycle Bin", "Wi-Fi (自宅)", "買い物リスト", "会議メモ"),
             ex.rows.map { ex.label(it) })
         assertEquals("/ - KeePass Explorer", ex.caption.title.text.toString())
         save(shot(a.host), "01-main-no-selection.png")

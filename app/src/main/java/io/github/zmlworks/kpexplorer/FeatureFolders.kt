@@ -11,8 +11,8 @@ import io.github.zmlworks.kpexplorer.ui.W
 import java.util.UUID
 
 /**
- * 0.4.40: 機能フォルダ — the recycle bin and the three virtual folders (最近更新されたファイル, 最近利用したファイル,
- * よく利用するファイル; see [Recent]) — and the user's 「機能フォルダの設定」 window, which replaces 0.4.38's ごみ箱の設定 and
+ * 0.4.40: 機能フォルダ — the recycle bin and the three virtual folders (最近の更新, 最近使用,
+ * 頻繁に使用; see [Recent]) — and the user's 「機能フォルダの設定」 window, which replaces 0.4.38's ごみ箱の設定 and
  * 0.4.39's 最近の鍵の設定. The main menu opens each folder (also a hidden one) and this window.
  *
  * Where things are kept: the bin's settings in the database file (KeePass's recycle-bin flag, KP Explorer keys in Meta
@@ -28,9 +28,10 @@ object FeatureFolders {
 
     /** A virtual folder. [id] stands for it in the back history and in the root's order (no group has it). */
     enum class Kind(val nameJa: String, val nameEn: String, val prefShow: String, val prefCount: String, val id: UUID) {
-        CHANGED("最近更新されたファイル", "Recently changed files", "recent_show", "recent_count", Recent.CHANGED_ID),
-        USED("最近利用したファイル", "Recently used files", "used_show", "used_count", Recent.USED_ID),
-        FREQUENT("よく利用するファイル", "Frequently used files", "frequent_show", "frequent_count", Recent.FREQUENT_ID);
+        // 0.4.41 names (0.4.40: 最近更新されたファイル, 最近利用したファイル, よく利用するファイル)
+        CHANGED("最近の更新", "Recently updated", "recent_show", "recent_count", Recent.CHANGED_ID),
+        USED("最近使用", "Recently used", "used_show", "used_count", Recent.USED_ID),
+        FREQUENT("頻繁に使用", "Frequently used", "frequent_show", "frequent_count", Recent.FREQUENT_ID);
 
         val label get() = L.t(nameJa, nameEn)
         /** Its list comes from the use record (KeePass LastAccessTime / UsageCount). */
@@ -73,7 +74,7 @@ object FeatureFolders {
             App.prefs(a).edit().putInt(k.prefCount, COUNTS[i]).apply(); a.explorer?.refresh(); done()
         }
 
-    /** 利用履歴を消去, after asking: empties 最近利用したファイル and よく利用するファイル. */
+    /** 利用履歴を消去, after asking: empties 最近使用 and 頻繁に使用. */
     fun askClearUsed(a: MainActivity, done: () -> Unit = {}): ClassicDialog =
         Dlg.confirm(a, L.t("利用履歴を消去", "Clear usage history"),
             L.t("「${Kind.USED.nameJa}」と「${Kind.FREQUENT.nameJa}」の履歴を消去しますか?\nすべての鍵とメモの最終アクセス日時を作成日時に戻し、使用回数を 0 にします (データベースファイルに保存されます。更新日時と履歴は変わりません)。",
@@ -141,7 +142,7 @@ object FeatureFolders {
             Session.update { Tree.setBinLastInTree(it, on) }; changed(a, body)
         }
         body.addView(W.hsep(a), W.lp(W.MATCH, 4 * W.px, t = 10, b = 6))
-        for (k in Kind.entries) check(a, body, L.t("${k.nameJa}を表示する", "Show ${k.nameEn.lowercase()}"), shown(a, k), "${k.name.lowercase()}-show", true) { on ->
+        for (k in Kind.entries) check(a, body, L.t("「${k.nameJa}」を表示する", "Show \"${k.nameEn}\""), shown(a, k), "${k.name.lowercase()}-show", true) { on ->
             p.edit().putBoolean(k.prefShow, on).apply(); changed(a, body)
         }
         check(a, body, L.t("ファイルを開くたびにデータベースを更新する", "Update the database every time a file is opened"), saveOnOpen(a), "save-on-open", true, grey = true) { on ->

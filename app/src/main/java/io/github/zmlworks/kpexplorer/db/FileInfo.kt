@@ -7,8 +7,11 @@ package io.github.zmlworks.kpexplorer.db
  * typed in this version, or for files that have no password). [log10] (0.4.38): the estimate's whole power of ten
  * (null in 0.4.37 records: a "strong" one then counts as 10^12, the threshold of that version). Kept in
  * db/files.properties by [Store].
+ * [keyCheck] (0.4.41, backups): whether the file opens with the current database's key, as "+token" / "-token", where
+ * token is [io.github.zmlworks.kpexplorer.db.Kdbx.keyToken] of the database it was checked against (no key material:
+ * a hash of the key-change time and the KDF salt, both readable in any KDBX). A new token = not checked yet.
  */
-data class FileInfo(val protection: Protection, val strength: Strength, val log10: Int? = null) {
+data class FileInfo(val protection: Protection, val strength: Strength, val log10: Int? = null, val keyCheck: String? = null) {
     enum class Protection(val key: String) {
         /** Standard KDBX protected by the user's master password (and the optional fingerprint / PIN unlock). */
         PASSWORD("password"),
@@ -43,7 +46,14 @@ data class FileInfo(val protection: Protection, val strength: Strength, val log1
         else -> (guessesLog10 ?: -1) >= minLog10
     }
 
-    fun encode() = "${protection.key},${strength.key}" + (log10?.let { ",$it" } ?: "")
+    /** Opens with the key whose [Kdbx.keyToken] is [token]: true / false, null = not checked for that key. */
+    fun sameKey(token: String): Boolean? = when (keyCheck) { "+$token" -> true; "-$token" -> false; else -> null }
+
+    fun encode() = "${protection.key},${strength.key}" + when {
+        keyCheck != null -> ",${log10 ?: ""},$keyCheck"
+        log10 != null -> ",$log10"
+        else -> ""
+    }
 
     companion object {
         /** [exportableAt]'s "any strength". */
@@ -53,7 +63,7 @@ data class FileInfo(val protection: Protection, val strength: Strength, val log1
         fun decode(s: String?): FileInfo? {
             val p = s?.split(',') ?: return null
             val prot = Protection.of(p.getOrNull(0)) ?: return null
-            return FileInfo(prot, Strength.of(p.getOrNull(1)), p.getOrNull(2)?.toIntOrNull())
+            return FileInfo(prot, Strength.of(p.getOrNull(1)), p.getOrNull(2)?.toIntOrNull(), p.getOrNull(3)?.takeIf { it.isNotEmpty() })
         }
     }
 }
