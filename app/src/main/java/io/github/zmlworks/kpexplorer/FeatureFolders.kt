@@ -54,12 +54,13 @@ object FeatureFolders {
     /**
      * A use of entry [id] (its page opened, a field copied): KeePass LastAccessTime / UsageCount ([Recent.markUsed]).
      * With 「ファイルを開くたびにデータベースを更新する」 on, a change like any other (saved a moment later); off (the
-     * default), only in memory — the lists show it at once and the next save writes it: a save of an edit, the lock, or
-     * the app going to the background ([Session.updateQuietly]). Nothing while a file is browsed read-only.
+     * default), only in memory — the lists show it at once and the next save of an edit writes it; locking or leaving
+     * the app puts it in the encrypted side file (0.4.42, [Session.recordUse], [io.github.zmlworks.kpexplorer.db.UsageLog]),
+     * merged back at the next unlock. Nothing while a file is browsed read-only.
      */
     fun recordUse(ctx: Context, id: UUID) {
         if (Session.readOnlyTemp || !Session.isOpen) return
-        if (saveOnOpen(ctx)) Session.update { Recent.markUsed(it, id) } else Session.updateQuietly { Recent.markUsed(it, id) }
+        if (saveOnOpen(ctx)) Session.update { Recent.markUsed(it, id) } else Session.recordUse(id)
     }
 
     fun binId(db: KeePassDatabase): UUID? = Tree.recycleBinId(db)?.takeIf { Tree.findGroup(db, it) != null }

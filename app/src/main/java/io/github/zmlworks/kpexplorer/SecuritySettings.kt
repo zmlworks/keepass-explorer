@@ -96,10 +96,10 @@ object SecuritySettings {
         note(a, body, when {
             cur == 0 -> L.t("起動画面の「外部に書き出す」は使えません。", "The launch screen's Export cannot be used.")
             else -> (if (cur == Security.EXPORT_ANY)
-                L.t("マスターパスワードのあるデータベースと内部バックアップを、強度を問わず (未判定でも)、ロックを解除しないで起動画面から暗号化したまま書き出せます (内部バックアップの一覧では緑の文字)。",
-                    "The database and internal backups with a master password can be exported, still encrypted, from the launch screen without unlocking, whatever its strength (also not judged yet) (green in the internal backup list).")
-                else L.t("マスターパスワードの推定が 10^$cur 回以上のデータベースと内部バックアップを、ロックを解除しないで起動画面から暗号化したまま書き出せます (内部バックアップの一覧では緑の文字)。10^$cur 回の推測は、平均で${Security.crackTime(cur)}かかる見積もりです。",
-                    "The database and internal backups whose master password estimate reaches 10^$cur guesses can be exported, still encrypted, from the launch screen without unlocking (green in the internal backup list). 10^$cur guesses take, on average, ${Security.crackTime(cur)}.")) +
+                L.t("マスターパスワードのあるデータベースと内部バックアップを、強度を問わず (未判定でも)、ロックを解除しないで起動画面から暗号化したまま書き出せます (内部バックアップの一覧では強度に「*」)。",
+                    "The database and internal backups with a master password can be exported, still encrypted, from the launch screen without unlocking, whatever its strength (also not judged yet) (marked \"*\" in the internal backup list).")
+                else L.t("マスターパスワードの推定が 10^$cur 回以上のデータベースと内部バックアップを、ロックを解除しないで起動画面から暗号化したまま書き出せます (内部バックアップの一覧では強度に「*」)。10^$cur 回の推測は、平均で${Security.crackTime(cur)}かかる見積もりです。",
+                    "The database and internal backups whose master password estimate reaches 10^$cur guesses can be exported, still encrypted, from the launch screen without unlocking (marked \"*\" in the internal backup list). 10^$cur guesses take, on average, ${Security.crackTime(cur)}.")) +
                 L.t("端末を手にした人なら誰でも暗号化されたファイルを持ち出せる点に注意してください。", " Note that anyone holding the device could then take the encrypted file away.")
         }, "sec-export-note")
         note(a, body, if (info.exportableAt(cur)) L.t("現在のデータベース: 起動画面から書き出せます", "Current database: can be exported from the launch screen")
@@ -112,6 +112,14 @@ object SecuritySettings {
             setOnClickListener { p.edit().putBoolean("secure", isChecked).apply(); a.applySecure() }
         }
         body.addView(secure, W.lp(W.MATCH, W.WRAP, t = 4))
+        // 0.4.42: only for a database that is not encrypted
+        if (info.protection == FileInfo.Protection.NONE) {
+            val gate = W.check(a, L.t("開くときに指紋認証を求める", "Ask for the fingerprint when opening"), Security.noneGate(a)).apply { tag = "sec-none-gate" }
+            gate.setOnClickListener { Security.setNoneGate(a, gate.isChecked) { on -> gate.isChecked = on } }
+            body.addView(gate, W.lp(W.MATCH, W.WRAP, t = 4))
+            note(a, body, L.t("開く前に指紋 (使えないときは端末の PIN・パターン・パスワード) で確認するだけです。ファイルは暗号化されないままで、端末から抜き取られれば読まれます。",
+                "Only a check with your fingerprint (or the device PIN, pattern or password) before opening. The file stays unencrypted: anyone who copies it off the device can read it."), "sec-none-gate-note")
+        }
         val lockRow = W.hbox(a).apply { gravity = android.view.Gravity.CENTER_VERTICAL }
         lockRow.addView(W.text(a, a.getString(autoLockLabel(a)), 14f).apply { tag = "sec-autolock-text" }, W.lp(0, W.WRAP, 1f))
         lockRow.addView(W.button(a, L.t("変更", "Change")) { a.explorer?.pickAutoLock { fill(a, body, d) } }.apply { tag = "sec-autolock" }, W.lp(W.WRAP, W.WRAP, l = 8))

@@ -473,7 +473,7 @@ class Ux0440Test {
         assertEquals(n0 + 1, Session.saveCount)
         assertNotNull(R_.usedAt(fileEntry(id))); assertEquals(1, fileEntry(memoId()).times!!.usageCount)
         assertFalse(Session.hasQuietUnsaved)
-        // another view, then leaving the app / the lock writes it (once)
+        // another view, then an explicit flushAll (as when turning 「ファイルを開くたびにデータベースを更新する」 on) writes it
         openKey(ids["Gmail"]!!); a.showExplorer(); idle()
         assertTrue(Session.hasQuietUnsaved)
         Session.flushAll(); settle()
@@ -491,12 +491,13 @@ class Ux0440Test {
         openKey(ids["Steam"]!!)
         assertEquals(steamUses, entryOf(ids["Steam"]!!).times!!.usageCount)
         a.showExplorer(); idle(); Session.exitTempView(); idle()
-        // the lock writes what is left
+        // the lock keeps what is left (0.4.42: in the side file, not the database; see Ux0442Test)
         App.prefs(app()).edit().putBoolean(FeatureFolders.PREF_SAVE_ON_OPEN, false).commit()
         openKey(ids["X (Twitter)"]!!); a.showExplorer(); idle()
         a.lock(); idle()
         java.util.concurrent.CountDownLatch(1).also { l -> Session.io.execute { l.countDown() }; l.await() }
-        assertNotNull(R_.usedAt(Tree.findEntry(Kdbx.open(App.store(app()).read(), key), ids["X (Twitter)"]!!)!!.second))
+        assertNull(R_.usedAt(Tree.findEntry(Kdbx.open(App.store(app()).read(), key), ids["X (Twitter)"]!!)!!.second))
+        assertTrue(App.store(app()).usageFile.isFile)
     }
 
     // ---------------------------------------------------------------- the virtual folders in "/"

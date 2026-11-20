@@ -20,6 +20,9 @@ class Store(dataDir: File, val backupDir: File) {
 
     fun read(): ByteArray = dbFile.readBytes()
 
+    /** 0.4.42: uses not in the database yet ([UsageLog]; encrypted, bound to the database's key). */
+    val usageFile get() = File(dbFile.parentFile, "usage.bin")
+
     // ---------------------------------------------------------------- 0.4.37: per-file protection / strength
 
     /** db/files.properties: "database" and "backup:<name>" → [FileInfo.encode]. No secrets, only verdicts. */
@@ -77,6 +80,7 @@ class Store(dataDir: File, val backupDir: File) {
     fun delete() {
         dbFile.delete()
         infoFile.delete()   // 0.4.37: the records go with the database
+        usageFile.delete()
     }
 
     /**

@@ -149,8 +149,8 @@ class MainActivity : Activity() {
     override fun onStop() {
         super.onStop()
         stoppedAt = SystemClock.elapsedRealtime()
-        // 0.4.40: leaving the app also writes the uses recorded only in memory (see FeatureFolders.recordUse)
-        if (Session.isOpen && !isChangingConfigurations) Session.flushAll()
+        // 0.4.42: leaving the app saves edits; uses recorded only in memory go to the side file (Session.leave)
+        if (Session.isOpen && !isChangingConfigurations) Session.leave()
         if (Session.isOpen && autoLockMinutes() == 0 && !isChangingConfigurations) lock()   // 0.4.20: not for a language switch
     }
 

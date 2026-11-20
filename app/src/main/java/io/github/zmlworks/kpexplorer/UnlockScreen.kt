@@ -45,7 +45,7 @@ class UnlockScreen(private val a: MainActivity, prompt: Boolean = true) : MainAc
     /** Why a button cannot be used now (it is drawn grey; a tap shows this). */
     private val why = HashMap<View, String>()
     /** The unlock button: OS認証で解除, or (not encrypted) 開く (暗号化なし). */
-    val bio = bigButton(if (protection == FileInfo.Protection.NONE) L.t("開く (暗号化なし)", "Open (not encrypted)") else L.t("OS認証で解除", "Unlock with device lock")) {
+    val bio = bigButton(if (protection == FileInfo.Protection.NONE) (if (Security.noneGate(a)) L.t("指紋認証で開く (暗号化なし)", "Open with fingerprint (not encrypted)") else L.t("開く (暗号化なし)", "Open (not encrypted)")) else L.t("OS認証で解除", "Unlock with device lock")) {
         if (protection == FileInfo.Protection.NONE) { error.text = ""; Security.openUnencrypted(a, onError = { error.text = it }) { a.showExplorer() } } else unlock()
     }
     val pwButton = bigButton(L.t("マスターパスワード", "Master password")) { showPassword(null) }

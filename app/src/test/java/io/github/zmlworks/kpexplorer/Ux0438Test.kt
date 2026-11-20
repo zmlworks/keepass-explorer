@@ -504,7 +504,7 @@ class Ux0438Test {
         pickMenuRow("強い (10^12以上)")
         assertEquals(12, Security.exportMinLog10(a))
         assertTrue(texts(findTag<View>(d.frame, "sec-export-level")!!).contains("強い (10^12以上)"))
-        assertTrue(t(d, "sec-export-note").contains("緑の文字"))
+        assertTrue(t(d, "sec-export-note").contains("強度に「*」"))
         findTag<View>(d.frame, "sec-export-level")!!.performClick(); idle(); pickMenuRow("とても強い (10^14以上)")
         assertEquals(14, Security.exportMinLog10(a))
         // screen protection and auto-lock (out of the menu)

@@ -98,6 +98,20 @@ class Vault(ctx: Context) {
     private fun cancelled(code: Int) = code == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED ||
         code == BiometricPrompt.BIOMETRIC_ERROR_CANCELED || code == 13 /* ERROR_NEGATIVE_BUTTON */
 
+    /**
+     * 0.4.42: the OS asks for the fingerprint (or, as with every prompt of this app, the device PIN / pattern /
+     * password) and nothing is decrypted: an access check only (「開くときに指紋認証を求める」). done(null) = confirmed,
+     * "" = cancelled, else the OS's error.
+     */
+    fun confirm(activity: Activity, title: String, subtitle: String, done: (String?) -> Unit) {
+        testBackend?.let { done(it.answer); return }
+        prompt(activity, title, subtitle).authenticate(CancellationSignal(), activity.mainExecutor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = done(null)
+                override fun onAuthenticationError(code: Int, msg: CharSequence) = done(if (cancelled(code)) "" else msg.toString())
+            })
+    }
+
     /** Store [composite] (copied) wrapped by a new Keystore key, after one OS authentication. done(error or null; "" = cancelled). */
     fun wrap(activity: Activity, composite: ByteArray, done: (String?) -> Unit) {
         testBackend?.let { t ->

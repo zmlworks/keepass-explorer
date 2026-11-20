@@ -73,9 +73,45 @@ object Security {
         }, keep = true)
     }
 
-    /** 0.4.37 「暗号化せずに使う」: the database's key is the empty password, so opening needs nothing. */
-    fun openUnencrypted(a: MainActivity, onError: (String) -> Unit, onOk: () -> Unit) =
-        openStored(a, Kdbx.compositeKey(""), onError, onOk)
+    /**
+     * 0.4.37 「暗号化せずに使う」: the database's key is the empty password, so opening needs nothing. 0.4.42: unless
+     * 「開くときに指紋認証を求める」 ([noneGate]): first the OS prompt (fingerprint, or the device PIN / pattern /
+     * password). With no screen lock left on the device it opens with a note, so nobody is locked out of a file that
+     * is not encrypted anyway.
+     */
+    fun openUnencrypted(a: MainActivity, onError: (String) -> Unit, onOk: () -> Unit) {
+        if (!noneGate(a)) { openStored(a, Kdbx.compositeKey(""), onError, onOk); return }
+        if (!a.vault.isAvailable()) {
+            toast(a, L.t("この端末に指紋・画面ロックがないため、確認なしで開きます。", "This device has no fingerprint or screen lock, so it opens without the check."))
+            openStored(a, Kdbx.compositeKey(""), onError, onOk); return
+        }
+        a.vault.confirm(a, L.t("KeePass Explorer を開く", "Open KeePass Explorer"), L.t("指紋または画面ロックで確認します", "Confirm with your fingerprint or screen lock")) { err ->
+            when (err) {
+                null -> openStored(a, Kdbx.compositeKey(""), onError, onOk)
+                "" -> onError(L.t("確認がキャンセルされました。", "The check was cancelled."))
+                else -> onError(err)
+            }
+        }
+    }
+
+    /** 0.4.42: 「開くときに指紋認証を求める」 (a device setting) applies: only to a database that is not encrypted. */
+    const val PREF_NONE_GATE = "none_bio_gate"
+    fun noneGate(a: MainActivity) = protection(a) == FileInfo.Protection.NONE && App.prefs(a).getBoolean(PREF_NONE_GATE, false)
+
+    /** Turns the check on after one successful prompt (so it is known to work here), or off. [done] gets the new state. */
+    fun setNoneGate(a: MainActivity, on: Boolean, done: (Boolean) -> Unit) {
+        if (!on) { App.prefs(a).edit().putBoolean(PREF_NONE_GATE, false).apply(); done(false); return }
+        if (!a.vault.isAvailable()) {
+            Dlg.message(a, L.t("指紋認証", "Fingerprint"), L.t("この端末には指紋・画面ロック (PIN・パターン・パスワード) が設定されていないため使えません。端末の設定で設定してから選んでください。",
+                "This device has no fingerprint or screen lock (PIN, pattern, password), so this cannot be used. Set one in the device settings first."), 'i')
+            done(false); return
+        }
+        a.vault.confirm(a, L.t("開くときに指紋認証を求める", "Ask for the fingerprint when opening"), L.t("確認できたら、次から開くたびに求めます", "Once confirmed, it is asked every time you open")) { err ->
+            if (err == null) App.prefs(a).edit().putBoolean(PREF_NONE_GATE, true).apply()
+            else if (err.isNotEmpty()) Dlg.message(a, L.t("指紋認証", "Fingerprint"), err, 'x')
+            done(err == null)
+        }
+    }
 
     /** The app database's protection (0.4.37; databases made before are [FileInfo.Protection.PASSWORD]). */
     fun protection(a: MainActivity): FileInfo.Protection = a.store.info().protection

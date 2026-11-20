@@ -4,7 +4,10 @@ import android.os.Handler
 import android.os.Looper
 import app.keemobile.kotpass.database.KeePassDatabase
 import io.github.zmlworks.kpexplorer.db.Kdbx
+import io.github.zmlworks.kpexplorer.db.Recent
 import io.github.zmlworks.kpexplorer.db.Store
+import io.github.zmlworks.kpexplorer.db.Tree
+import io.github.zmlworks.kpexplorer.db.UsageLog
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -37,6 +40,12 @@ object Session {
      */
     private var quietVersion = 0L
     private var savedQuietVersion = 0L
+    /**
+     * 0.4.42: entries used ([recordUse]) since the file last had their use, with the [quietVersion] of the use. Locking
+     * or leaving the app writes their values to the side file ([UsageLog], [writeUsageFile]) instead of the database;
+     * a save of the database writes them and removes that file.
+     */
+    private val pendingUse = HashMap<java.util.UUID, Long>()
     private val saveRunnable = Runnable { flush() }
     /** Rapid moves / reorders are coalesced into one save this long after the last change. */
     var debounceMs = 1500L
@@ -71,7 +80,14 @@ object Session {
 
     fun open(d: KeePassDatabase) {
         generation++
-        db = d; version = 0; savedVersion = 0; quietVersion = 0; savedQuietVersion = 0; saveState = SaveState.SAVED
+        // 0.4.42: uses not in a file yet follow a database that replaces this one (restore, import) where their
+        // entries still exist; an unlock takes them back from the side file (unreadable with another key = none)
+        val carried = db?.takeIf { !readOnlyTemp }?.let { UsageLog.of(it, pendingUse.keys) }.orEmpty()
+        val fromFile = store?.let { st -> d.credentials.passphrase?.getBinary()?.let { k -> try { UsageLog.read(st.usageFile, k, d) } finally { k.fill(0) } } }.orEmpty()
+        val merged = UsageLog.merge(d, carried + fromFile)
+        db = merged; version = 0; savedVersion = 0; quietVersion = 0; savedQuietVersion = 0; saveState = SaveState.SAVED
+        pendingUse.clear()
+        if (merged !== d) { quietVersion = 1; (carried + fromFile).filter { Tree.findEntry(merged, it.id) != null }.forEach { pendingUse[it.id] = 1 } }
         // open() always means primary (or fresh); clear any temp stash
         readOnlyTemp = false
         tempSourceLabel = ""
@@ -108,6 +124,36 @@ object Session {
         return next
     }
 
+    /** 0.4.42: a use of entry [id] (KeePass LastAccessTime / UsageCount), kept in memory: see [pendingUse]. */
+    fun recordUse(id: java.util.UUID) {
+        val before = db
+        if (updateQuietly { Recent.markUsed(it, id) } !== before) pendingUse[id] = quietVersion
+    }
+
+    /** Entries whose use is only in memory or in the side file (tests). */
+    val pendingUses: Set<java.util.UUID> get() = pendingUse.keys
+
+    /**
+     * 0.4.42: leaving the app or locking. Unsaved edits are saved (with the uses); only uses: they go to the side
+     * file, the database is not rewritten.
+     */
+    fun leave() {
+        if (readOnlyTemp || db == null) return
+        if (version != savedVersion) flushAll()
+        else if (quietVersion != savedQuietVersion && pendingUse.isNotEmpty()) writeUsageFile()
+    }
+
+    /** The pending uses to the side file (on [io], after any save in progress). */
+    private fun writeUsageFile() {
+        val snap = db ?: return
+        val st = store ?: return
+        val uses = UsageLog.of(snap, pendingUse.keys)
+        val k = compositeCopy() ?: return
+        io.execute {
+            try { Store.writeAtomic(st.usageFile, UsageLog.encode(uses, k, snap)) } catch (_: Throwable) {} finally { k.fill(0) }
+        }
+    }
+
     /** Changes of [updateQuietly] not in the file yet. */
     val hasQuietUnsaved get() = db != null && quietVersion != savedQuietVersion
 
@@ -130,12 +176,14 @@ object Session {
             try {
                 val bytes = Kdbx.encodeVerified(snap, keepSalt = true)
                 st.write(bytes)
+                st.usageFile.delete()   // 0.4.42: every use so far is in this save
                 saveCount++
                 lastIoError = null
                 main.post {
                     if (gen != generation) return@post
                     if (v > savedVersion) savedVersion = v
                     if (qv > savedQuietVersion) savedQuietVersion = qv
+                    pendingUse.values.removeAll { it <= qv }
                     saveState = if (savedVersion == version) SaveState.SAVED else SaveState.PENDING
                     lastError = null
                     notifyListener()
@@ -235,8 +283,9 @@ object Session {
                 quietVersion = stashedQuiet.first; savedQuietVersion = stashedQuiet.second
             }
         }
-        // 0.4.40: with the uses recorded quietly (see [updateQuietly])
-        if (db != null && (version != savedVersion || quietVersion != savedQuietVersion)) flushAll()
+        // 0.4.42: edits saved, uses only to the side file (see [leave])
+        leave()
+        pendingUse.clear()
         main.removeCallbacks(saveRunnable)
         generation++
         db = null
